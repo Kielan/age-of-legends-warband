@@ -10,7 +10,16 @@ import {
   Oklcha,
   Xyza,
 } from "./colors";
-import { MismatchedUnitsError } from "./errors";
+//import { MismatchedUnitsError } from "./errors";
+export class MismatchedUnitsError extends Error {
+    constructor() {
+        super("cannot interpolate between two values of different units");
+        this.name = "MismatchedUnitsError";
+
+        // Set the prototype explicitly to maintain instanceof checks
+        Object.setPrototypeOf(this, MismatchedUnitsError.prototype);
+    }
+}
 /* ============================================================================
  * Color (tagged union)
  * ========================================================================== */
