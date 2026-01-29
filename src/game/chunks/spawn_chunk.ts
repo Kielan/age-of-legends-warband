@@ -80,3 +80,59 @@ class EntityMeta {
   );
 }
 
+export function spawnChunk(
+  commands: Commands,
+  meshes: Assets<Mesh>,
+  assets: GameAssets,
+  world: GameWorld,
+  chunk: ChunkPointer,
+  vertices: Vertex[]
+): Entity {
+  const mesh = StaticMeshComponent.spawn(
+    commands,
+    meshes,
+    assets,
+    vertices
+  );
+
+  commands
+    .entity(mesh)
+    .insert(ChunkMeshComponent)
+    .insert(new Name("chunk:mesh"));
+
+  const chunkPosVec = chunk.getTranslation();
+
+  const chunkEntity = commands.spawn([
+    InspectorGroupChunks,
+    new Name(
+      `chunk[${chunk.getPos()}-${chunk.getLevel()}]`
+    ),
+    new ChunkComponent({
+      chunk: chunk.clone(),
+    }),
+    GlobalTransform.default(),
+    Transform.fromTranslation(chunkPosVec),
+    VisibilityBundle.default(),
+  ]);
+
+  chunkEntity.addChild(mesh);
+
+  const pos = chunk.getPos();
+  const level = chunk.getLevel();
+
+  const entity = chunkEntity.id();
+
+  try {
+    world.updateChunk(chunk.clone(), entity);
+  } catch {
+    throw new Error(
+      `Failed to update chunk ${pos}-${level}`
+    );
+  }
+
+  if (chunk.isReal()) {
+    chunkEntity.insert(RealChunkComponent);
+  }
+
+  return entity;
+}
