@@ -3,11 +3,9 @@ export class Entity {}
 // Equivalent of `pub struct Tick { tick: u32 }`
 export class Tick {
   tick: number;
-
   constructor(tick: number) {
     this.tick = tick >>> 0; // force u32 semantics
   }
-
   static new(tick: number): Tick {
     return new Tick(tick);
   }
@@ -23,11 +21,9 @@ export interface EntityLocation {
 
 export class EntityGeneration {
   value: number;
-
   private constructor(value: number) {
     this.value = value >>> 0;
   }
-
   // pub const FIRST: Self = Self(0);
   static readonly FIRST = new EntityGeneration(0);
 }
@@ -42,7 +38,6 @@ export class MaybeLocation {
 class SpawnedOrDespawned {
   by: MaybeLocation;
   tick: Tick;
-
   constructor(by: MaybeLocation, tick: Tick) {
     this.by = by;
     this.tick = tick;
@@ -52,13 +47,10 @@ class SpawnedOrDespawned {
 class EntityMeta {
   // The current EntityGeneration of the EntityIndex
   generation: EntityGeneration;
-
   // The current location of the EntityIndex
   location: EntityLocation | null;
-
   // Location and tick of the last spawn/despawn
   spawnedOrDespawned: SpawnedOrDespawned;
-
   constructor(
     generation: EntityGeneration,
     location: EntityLocation | null,
@@ -68,7 +60,6 @@ class EntityMeta {
     this.location = location;
     this.spawnedOrDespawned = spawnedOrDespawned;
   }
-
   // const FRESH: EntityMeta = ...
   static readonly FRESH = new EntityMeta(
     EntityGeneration.FIRST,
@@ -94,14 +85,11 @@ export function spawnChunk(
     assets,
     vertices
   );
-
   commands
     .entity(mesh)
     .insert(ChunkMeshComponent)
     .insert(new Name("chunk:mesh"));
-
   const chunkPosVec = chunk.getTranslation();
-
   const chunkEntity = commands.spawn([
     InspectorGroupChunks,
     new Name(
@@ -114,14 +102,10 @@ export function spawnChunk(
     Transform.fromTranslation(chunkPosVec),
     VisibilityBundle.default(),
   ]);
-
   chunkEntity.addChild(mesh);
-
   const pos = chunk.getPos();
   const level = chunk.getLevel();
-
   const entity = chunkEntity.id();
-
   try {
     world.updateChunk(chunk.clone(), entity);
   } catch {
@@ -129,10 +113,8 @@ export function spawnChunk(
       `Failed to update chunk ${pos}-${level}`
     );
   }
-
   if (chunk.isReal()) {
     chunkEntity.insert(RealChunkComponent);
   }
-
   return entity;
 }
