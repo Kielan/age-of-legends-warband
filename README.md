@@ -1,6 +1,8 @@
 # warbanders-of-arakheen
 Demo for game engine in javascript, primitive-engineering, logic-projects
 
+```text
+.
 src/
 └── game/
     ├── color/
@@ -15,3 +17,4 @@ src/
         ├── voxel.ts
         ├── voxel_types.ts
         └── voxels_to_vertex.ts
+```
