@@ -173,7 +173,7 @@ export class WorldGenerator {
         return voxels;
     }
 }
-// ===== Helper Classes =====
+/* ===== Helper Classes ===== */
 export class VoxelColor {
     constructor(public r: number, public g: number, public b: number) {}
     static fromColor(c: Color): VoxelColor {
