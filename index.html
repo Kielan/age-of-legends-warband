@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hex Sphere – Dual Mesh (No Pentagons)</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #000; }
+</style>
+</head>
+<body>
+<!-- ✅ IMPORTMAP MUST COME FIRST -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+import { mergeVertices } from "https://unpkg.com/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js";
+import GUI from 'https://cdn.jsdelivr.net/npm/lil-gui@0.18/+esm';
+
+/* SCENE SETUP */
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(
+  60,
+  window.innerWidth / window.innerHeight,
+  0.01,
+  100
+);
+
+camera.position.set(3, 2, 3);
+camera.lookAt(0, 0, 0);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+
+sun.position.set(5, 3, 5);
+
+scene.add(sun);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+
+controls.enableDamping = true;
+
+/* BASE TRIANGULATED SPHERE (KEEP INDEXED) */
+const radius = 1;
+var base = new THREE.IcosahedronGeometry(radius, 4);
+base = mergeVertices(base);   // 🔑 THIS IS THE FIX
+base.computeVertexNormals();
+
+const pos = base.attributes.position;
+const indexAttr = base.index;
+
+/* TRIANGLE CENTERS (ROBUST) */
+const triCenters = [];
+
+if (indexAttr) {
+  const index = indexAttr.array;
+  for (let i = 0; i < index.length; i += 3) {
+    const a = new THREE.Vector3().fromBufferAttribute(pos, index[i]);
+    const b = new THREE.Vector3().fromBufferAttribute(pos, index[i + 1]);
+    const c = new THREE.Vector3().fromBufferAttribute(pos, index[i + 2]);
+
+    triCenters.push(
+      a.clone().add(b).add(c)
+        .divideScalar(3)
+        .normalize()
+        .multiplyScalar(radius)
+    );
+  }
+} else {
+  for (let i = 0; i < pos.count; i += 3) {
+    const a = new THREE.Vector3().fromBufferAttribute(pos, i);
+    const b = new THREE.Vector3().fromBufferAttribute(pos, i + 1);
+    const c = new THREE.Vector3().fromBufferAttribute(pos, i + 2);
+
+    triCenters.push(
+      a.clone().add(b).add(c)
+        .divideScalar(3)
+        .normalize()
+        .multiplyScalar(radius)
+    );
+  }
+}
+
+  /* MAP TRIANGLES → VERTICES (DUAL GRAPH) */
+const vertMap = Array(pos.count).fill(0).map(() => []);
+console.log('pos.count: ', pos.count); //267
+
+/** temp drop in after vertMap **/
+const histogram = {};
+vertMap.forEach(n => {
+  histogram[n.length] = (histogram[n.length] || 0) + 1;
+});
+/** Expected output (roughly):
+{
+  5: 12,
+  6: 300+,
+} **/
+/** Actual, meaning a bug where edges did not connect
+{
+  0: 267,
+} **/
+console.log('historgram: ', histogram);
+
+if (indexAttr) {
+  const index = indexAttr.array;
+  for (let t = 0, i = 0; i < index.length; i += 3, t++) {
+    vertMap[index[i]].push(triCenters[t]);
+    vertMap[index[i + 1]].push(triCenters[t]);
+    vertMap[index[i + 2]].push(triCenters[t]);
+  }
+} else {
+  for (let t = 0, i = 0; i < pos.count; i += 3, t++) {
+    vertMap[i].push(triCenters[t]);
+    vertMap[i + 1].push(triCenters[t]);
+    vertMap[i + 2].push(triCenters[t]);
+  }
+}
+
+/* BUILD HEX CELLS (DUAL POLYGONS) */
+const material = new THREE.MeshStandardMaterial({
+  color: 0x4caf50,
+  flatShading: true,
+  side: THREE.DoubleSide
+});
+
+for (let v = 0; v < vertMap.length; v++) {
+  const neighbors = vertMap[v];
+  if (neighbors.length < 5) {//continue; // unavoidable near curvature
+
+  //console.log("if (neighbors.length < 5) continue: ", neighbors.length);
+
+  const center = new THREE.Vector3()
+    .fromBufferAttribute(pos, v)
+    .normalize()
+    .multiplyScalar(radius * 1.01); // slight inset for visibility
+
+  neighbors.sort((a, b) => {
+    const na = a.clone().sub(center);
+    const nb = b.clone().sub(center);
+    return Math.atan2(na.z, na.x) - Math.atan2(nb.z, nb.x);
+  });
+
+  console.log("neighbors post sort: ", neighbors, v);
+
+  const verts = [];
+  for (let i = 1; i < neighbors.length - 1; i++) {
+    verts.push(
+      center.x, center.y, center.z,
+      neighbors[i].x, neighbors[i].y, neighbors[i].z,
+      neighbors[i + 1].x, neighbors[i + 1].y, neighbors[i + 1].z
+    );
+  }
+
+  console.log("verts[] for i++ verts.push ", verts);
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+  geom.computeVertexNormals();
+
+  scene.add(new THREE.Mesh(geom, material));
+
+  }
+}
+
+/* RESIZE + LOOP */
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* GUI */
+const gui = new GUI({ title: "Tiles" });
+gui.domElement.style.backgroundColor = '#1e1e1e';
+gui.domElement.style.color = '#eee';
+
+const settings = { showCenters: true };
+gui.add(settings, "showCenters").onChange(v =>
+  planet.centerSpheres.forEach(s => s.visible = v)
+);
+
+/* ANIMATE */
+function animate() {
+  requestAnimationFrame(animate);
+  scene.rotation.y += 0.0015;
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+</script>
+</body>
+</html>
