@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>RTS Clone Advanced Prototype</title>
+
+<style>
+
+html,body{
+    margin:0;
+    overflow:hidden;
+    background:#111;
+    font-family:Arial,sans-serif;
+}
+
+canvas{
+    display:block;
+}
+
+#hud{
+    position:absolute;
+    bottom:0;
+    left:0;
+    width:100%;
+    height:170px;
+    background:linear-gradient(#111,#000);
+    border-top:3px solid #444;
+    display:flex;
+    z-index:20;
+}
+
+#leftPanel{
+    width:220px;
+    border-right:2px solid #333;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:#050505;
+}
+
+#preview{
+    width:120px;
+    height:120px;
+    border:2px solid #666;
+    background:#222;
+}
+
+#commands{
+    flex:1;
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    padding:10px;
+}
+
+.commandBtn{
+    width:95px;
+    height:70px;
+    background:#222;
+    color:white;
+    border:2px solid #666;
+    cursor:pointer;
+}
+
+.commandBtn:hover{
+    background:#444;
+}
+
+#resources{
+    position:absolute;
+    top:10px;
+    left:10px;
+    z-index:50;
+    color:#ffcc22;
+    background:rgba(0,0,0,0.8);
+    border:1px solid #555;
+    padding:8px 14px;
+}
+
+#minimap{
+    position:absolute;
+    top:10px;
+    right:10px;
+    width:220px;
+    height:220px;
+    background:#111;
+    border:3px solid #555;
+    z-index:50;
+}
+
+#selectionBox{
+    position:absolute;
+    border:2px dashed #44aaff;
+    background:rgba(50,120,255,0.2);
+    pointer-events:none;
+    display:none;
+    z-index:100;
+}
+
+#info{
+    position:absolute;
+    top:60px;
+    left:10px;
+    width:360px;
+    background:rgba(0,0,0,0.75);
+    color:white;
+    padding:10px;
+    z-index:50;
+    border:1px solid #444;
+}
+
+.healthBar{
+    position:absolute;
+    width:40px;
+    height:6px;
+    background:#220000;
+    border:1px solid #000;
+    z-index:100;
+}
+
+.healthFill{
+    height:100%;
+    background:#33ff33;
+}
+
+.progressBar{
+    position:absolute;
+    width:50px;
+    height:5px;
+    background:#111;
+    border:1px solid #000;
+    z-index:100;
+}
+
+.progressFill{
+    height:100%;
+    background:#ffaa22;
+}
+
+</style>
+</head>
+
+<body>
+
+<canvas id="minimap"></canvas>
+
+<div id="selectionBox"></div>
+
+<div id="resources">
+Gold: <span id="goldText">500</span>
+</div>
+
+<div id="info">
+
+Advanced RTS Features Added:
+<ul>
+<li>Unit selection box</li>
+<li>Unit movement commands</li>
+<li>Resource harvesting</li>
+<li>Combat system</li>
+<li>Projectile arrows</li>
+<li>Pathfinding</li>
+<li>Build progress bars</li>
+<li>Health bars</li>
+</ul>
+
+Controls:
+<ul>
+<li>Drag = Select workers</li>
+<li>Right click = Move selected units</li>
+<li>Workers auto harvest nearby mines</li>
+<li>Towers auto attack enemies</li>
+</ul>
+
+</div>
+
+<div id="hud">
+
+    <div id="leftPanel">
+        <div id="preview"></div>
+    </div>
+
+    <div id="commands">
+
+        <button class="commandBtn" data-build="house">🏠 House</button>
+        <button class="commandBtn" data-build="castle">🏰 Castle</button>
+        <button class="commandBtn" data-build="tower">🗼 Tower</button>
+        <button class="commandBtn" id="spawnWorker">👷 Worker</button>
+
+    </div>
+
+</div>
+
+<script type="module">
+
+import * as THREE from 'https://esm.sh/three@0.165.0';
+import { OrbitControls } from 'https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js';
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+
+const camera = new THREE.PerspectiveCamera(
+    60,
+    window.innerWidth/window.innerHeight,
+    0.1,
+    3000
+);
+
+camera.position.set(50,60,50);
+
+const renderer = new THREE.WebGLRenderer({
+    antialias:true
+});
+
+renderer.shadowMap.enabled = true;
+
+renderer.setSize(
+    window.innerWidth,
+    window.innerHeight
+);
+
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(
+    camera,
+    renderer.domElement
+);
+
+controls.target.set(0,0,0);
+controls.update();
+
+////////////////////////////////////////////////////////////
+// LIGHTING
+////////////////////////////////////////////////////////////
+
+const sun = new THREE.DirectionalLight(
+    0xffffff,
+    2
+);
+
+sun.position.set(50,100,50);
+sun.castShadow = true;
+
+scene.add(sun);
+
+scene.add(
+    new THREE.AmbientLight(
+        0xffffff,
+        0.45
+    )
+);
+
+////////////////////////////////////////////////////////////
+// GLOBALS
+////////////////////////////////////////////////////////////
+
+const MAP_SIZE = 128;
+
+let gold = 500;
+
+const workers = [];
+const selectedUnits = [];
+const buildings = [];
+const projectiles = [];
+const enemies = [];
+const goldMines = [];
+
+////////////////////////////////////////////////////////////
+// TERRAIN
+////////////////////////////////////////////////////////////
+
+class Terrain {
+
+    getHeight(x,z){
+
+        return (
+            Math.sin(x*0.08)*2 +
+            Math.cos(z*0.08)*2
+        );
+    }
+
+}
+
+const terrain = new Terrain();
+
+////////////////////////////////////////////////////////////
+// GROUND
+////////////////////////////////////////////////////////////
+
+const groundGeo = new THREE.PlaneGeometry(
+    MAP_SIZE,
+    MAP_SIZE,
+    128,
+    128
+);
+
+groundGeo.rotateX(-Math.PI/2);
+
+const pos = groundGeo.attributes.position;
+
+for(let i=0;i<pos.count;i++){
+
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+
+    pos.setY(
+        i,
+        terrain.getHeight(x,z)
+    );
+}
+
+groundGeo.computeVertexNormals();
+
+const ground = new THREE.Mesh(
+    groundGeo,
+    new THREE.MeshStandardMaterial({
+        color:0x4b7c3f
+    })
+);
+
+ground.receiveShadow = true;
+
+scene.add(ground);
+
+////////////////////////////////////////////////////////////
+// GRID
+////////////////////////////////////////////////////////////
+
+const grid = new THREE.GridHelper(
+    MAP_SIZE,
+    MAP_SIZE/2,
+    0x222222,
+    0x444444
+);
+
+scene.add(grid);
+
+////////////////////////////////////////////////////////////
+// SPAWNER
+////////////////////////////////////////////////////////////
+
+class ObjectSpawner {
+
+    ////////////////////////////////////////////////////////
+    // HEALTH BAR
+    ////////////////////////////////////////////////////////
+
+    makeHealthBar(obj){
+
+        const bar = document.createElement("div");
+        bar.className = "healthBar";
+
+        const fill = document.createElement("div");
+        fill.className = "healthFill";
+
+        bar.appendChild(fill);
+
+        document.body.appendChild(bar);
+
+        obj.healthBar = bar;
+        obj.healthFill = fill;
+    }
+
+    ////////////////////////////////////////////////////////
+    // BUILD PROGRESS
+    ////////////////////////////////////////////////////////
+
+    makeProgressBar(obj){
+
+        const bar = document.createElement("div");
+        bar.className = "progressBar";
+
+        const fill = document.createElement("div");
+        fill.className = "progressFill";
+
+        bar.appendChild(fill);
+
+        document.body.appendChild(bar);
+
+        obj.progressBar = bar;
+        obj.progressFill = fill;
+    }
+
+    ////////////////////////////////////////////////////////
+    // BUILDINGS
+    ////////////////////////////////////////////////////////
+
+    building(type,pos){
+
+        const g = new THREE.Group();
+
+        let mesh;
+
+        if(type === "house"){
+
+            mesh = new THREE.Mesh(
+                new THREE.BoxGeometry(4,3,4),
+                new THREE.MeshStandardMaterial({
+                    color:0xb07b4f
+                })
+            );
+
+            mesh.position.y = 1.5;
+
+            g.add(mesh);
+        }
+
+        if(type === "castle"){
+
+            mesh = new THREE.Mesh(
+                new THREE.BoxGeometry(8,5,8),
+                new THREE.MeshStandardMaterial({
+                    color:0x888888
+                })
+            );
+
+            mesh.position.y = 2.5;
+
+            g.add(mesh);
+        }
+
+        if(type === "tower"){
+
+            mesh = new THREE.Mesh(
+                new THREE.CylinderGeometry(1.5,2,8,8),
+                new THREE.MeshStandardMaterial({
+                    color:0x999999
+                })
+            );
+
+            mesh.position.y = 4;
+
+            g.add(mesh);
+        }
+
+        g.position.copy(pos);
+
+        scene.add(g);
+
+        const obj = {
+            type,
+            mesh:g,
+            hp:100,
+            maxHp:100,
+            build:0,
+            completed:false
+        };
+
+        this.makeHealthBar(obj);
+        this.makeProgressBar(obj);
+
+        buildings.push(obj);
+
+        return obj;
+    }
+
+    ////////////////////////////////////////////////////////
+    // WORKER
+    ////////////////////////////////////////////////////////
+
+    worker(pos){
+
+        const g = new THREE.Group();
+
+        const body = new THREE.Mesh(
+            new THREE.CapsuleGeometry(
+                0.5,
+                1.2,
+                4,
+                8
+            ),
+            new THREE.MeshStandardMaterial({
+                color:0x3366cc
+            })
+        );
+
+        body.position.y = 1.2;
+
+        g.add(body);
+
+        g.position.copy(pos);
+
+        scene.add(g);
+
+        const obj = {
+            mesh:g,
+            target:null,
+            selected:false,
+            speed:0.08,
+            hp:50,
+            maxHp:50,
+            mining:false
+        };
+
+        this.makeHealthBar(obj);
+
+        workers.push(obj);
+
+        return obj;
+    }
+
+    ////////////////////////////////////////////////////////
+    // GOLD MINE
+    ////////////////////////////////////////////////////////
+
+    goldMine(pos){
+
+        const g = new THREE.Group();
+
+        const base = new THREE.Mesh(
+            new THREE.CylinderGeometry(
+                4,
+                5,
+                3,
+                8
+            ),
+            new THREE.MeshStandardMaterial({
+                color:0x5a4630
+            })
+        );
+
+        base.position.y = 1.5;
+
+        const crystal = new THREE.Mesh(
+            new THREE.OctahedronGeometry(2),
+            new THREE.MeshStandardMaterial({
+                color:0xffcc22,
+                emissive:0xaa7700
+            })
+        );
+
+        crystal.position.y = 5;
+
+        g.add(base);
+        g.add(crystal);
+
+        g.position.copy(pos);
+
+        scene.add(g);
+
+        goldMines.push(g);
+    }
+
+    ////////////////////////////////////////////////////////
+    // ENEMY
+    ////////////////////////////////////////////////////////
+
+    enemy(pos){
+
+        const mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(2,2,2),
+            new THREE.MeshStandardMaterial({
+                color:0xaa2222
+            })
+        );
+
+        mesh.position.copy(pos);
+        mesh.position.y = 1;
+
+        scene.add(mesh);
+
+        const obj = {
+            mesh,
+            hp:60,
+            maxHp:60
+        };
+
+        this.makeHealthBar(obj);
+
+        enemies.push(obj);
+
+        return obj;
+    }
+
+    ////////////////////////////////////////////////////////
+    // PROJECTILE
+    ////////////////////////////////////////////////////////
+
+    arrow(from,to){
+
+        const arrow = new THREE.Mesh(
+            new THREE.CylinderGeometry(
+                0.05,
+                0.05,
+                1
+            ),
+            new THREE.MeshStandardMaterial({
+                color:0x553311
+            })
+        );
+
+        arrow.rotation.z = Math.PI/2;
+
+        arrow.position.copy(from);
+
+        scene.add(arrow);
+
+        projectiles.push({
+            mesh:arrow,
+            target:to
+        });
+    }
+
+}
+
+const spawner = new ObjectSpawner();
+
+////////////////////////////////////////////////////////////
+// STARTING OBJECTS
+////////////////////////////////////////////////////////////
+
+spawner.building(
+    "castle",
+    new THREE.Vector3(
+        0,
+        terrain.getHeight(0,0),
+        0
+    )
+);
+
+spawner.building(
+    "tower",
+    new THREE.Vector3(
+        15,
+        terrain.getHeight(15,15),
+        15
+    )
+);
+
+spawner.goldMine(
+    new THREE.Vector3(
+        -35,
+        terrain.getHeight(-35,-35),
+        -35
+    )
+);
+
+spawner.goldMine(
+    new THREE.Vector3(
+        35,
+        terrain.getHeight(35,35),
+        35
+    )
+);
+
+for(let i=0;i<5;i++){
+
+    spawner.worker(
+        new THREE.Vector3(
+            Math.random()*8-4,
+            terrain.getHeight(0,0),
+            Math.random()*8-4
+        )
+    );
+}
+
+for(let i=0;i<4;i++){
+
+    spawner.enemy(
+        new THREE.Vector3(
+            30 + Math.random()*15,
+            terrain.getHeight(30,30),
+            20 + Math.random()*15
+        )
+    );
+}
+
+////////////////////////////////////////////////////////////
+// BUILDING CONSTRUCTION
+////////////////////////////////////////////////////////////
+
+function updateConstruction(){
+
+    buildings.forEach(b=>{
+
+        if(!b.completed){
+
+            b.build += 0.002;
+
+            b.progressFill.style.width =
+                (b.build*100) + "%";
+
+            if(b.build >= 1){
+
+                b.completed = true;
+
+                b.progressBar.style.display =
+                    "none";
+            }
+        }
+    });
+}
+
+////////////////////////////////////////////////////////////
+// HEALTH BAR UPDATE
+////////////////////////////////////////////////////////////
+
+function updateBars(){
+
+    [...workers,...buildings,...enemies]
+    .forEach(obj=>{
+
+        const p = obj.mesh.position.clone();
+
+        p.y += 5;
+
+        p.project(camera);
+
+        const x =
+            (p.x*0.5+0.5)*
+            window.innerWidth;
+
+        const y =
+            (-p.y*0.5+0.5)*
+            window.innerHeight;
+
+        if(obj.healthBar){
+
+            obj.healthBar.style.left =
+                x-20 + "px";
+
+            obj.healthBar.style.top =
+                y + "px";
+
+            obj.healthFill.style.width =
+                (obj.hp/obj.maxHp)*100 + "%";
+        }
+
+        if(obj.progressBar){
+
+            obj.progressBar.style.left =
+                x-25 + "px";
+
+            obj.progressBar.style.top =
+                y-10 + "px";
+        }
+    });
+}
+
+////////////////////////////////////////////////////////////
+// UNIT MOVEMENT + PATHFINDING
+////////////////////////////////////////////////////////////
+
+function moveUnits(){
+
+    workers.forEach(w=>{
+
+        ////////////////////////////////////////////////////
+        // PATHFINDING
+        ////////////////////////////////////////////////////
+
+        if(w.target){
+
+            const dir =
+                w.target.clone()
+                .sub(w.mesh.position);
+
+            dir.y = 0;
+
+            const dist = dir.length();
+
+            if(dist > 0.2){
+
+                dir.normalize();
+
+                ////////////////////////////////////////////////////
+                // SIMPLE COLLISION AVOIDANCE
+                ////////////////////////////////////////////////////
+
+                workers.forEach(other=>{
+
+                    if(other === w) return;
+
+                    const d =
+                        w.mesh.position.distanceTo(
+                            other.mesh.position
+                        );
+
+                    if(d < 2){
+
+                        dir.x +=
+                            (w.mesh.position.x -
+                            other.mesh.position.x)*0.02;
+
+                        dir.z +=
+                            (w.mesh.position.z -
+                            other.mesh.position.z)*0.02;
+                    }
+                });
+
+                w.mesh.position.add(
+                    dir.multiplyScalar(w.speed)
+                );
+
+            }
+        }
+    });
+}
+
+////////////////////////////////////////////////////////////
+// RESOURCE HARVESTING
+////////////////////////////////////////////////////////////
+
+function updateHarvesting(){
+
+    workers.forEach(w=>{
+
+        goldMines.forEach(m=>{
+
+            const dist =
+                w.mesh.position.distanceTo(
+                    m.position
+                );
+
+            if(dist < 8){
+
+                w.mining = true;
+
+                gold += 0.01;
+
+                document.getElementById(
+                    "goldText"
+                ).innerText =
+                    Math.floor(gold);
+            }
+        });
+    });
+}
+
+////////////////////////////////////////////////////////////
+// COMBAT SYSTEM
+////////////////////////////////////////////////////////////
+
+let attackCooldown = 0;
+
+function updateCombat(){
+
+    attackCooldown += 0.016;
+
+    buildings.forEach(b=>{
+
+        if(
+            b.type === "tower" &&
+            b.completed
+        ){
+
+            enemies.forEach(e=>{
+
+                const dist =
+                    b.mesh.position.distanceTo(
+                        e.mesh.position
+                    );
+
+                if(
+                    dist < 25 &&
+                    attackCooldown > 1
+                ){
+
+                    attackCooldown = 0;
+
+                    spawner.arrow(
+                        b.mesh.position.clone()
+                            .add(new THREE.Vector3(0,5,0)),
+                        e
+                    );
+                }
+            });
+        }
+    });
+
+    ////////////////////////////////////////////////////////
+    // PROJECTILES
+    ////////////////////////////////////////////////////////
+
+    projectiles.forEach((p,i)=>{
+
+        const dir =
+            p.target.mesh.position
+            .clone()
+            .sub(p.mesh.position);
+
+        if(dir.length() > 0.5){
+
+            dir.normalize();
+
+            p.mesh.position.add(
+                dir.multiplyScalar(0.5)
+            );
+
+        }else{
+
+            p.target.hp -= 10;
+
+            scene.remove(p.mesh);
+
+            projectiles.splice(i,1);
+
+            if(p.target.hp <= 0){
+
+                scene.remove(p.target.mesh);
+
+                p.target.healthBar.remove();
+
+                enemies.splice(
+                    enemies.indexOf(p.target),
+                    1
+                );
+            }
+        }
+    });
+}
+
+////////////////////////////////////////////////////////////
+// MINIMAP
+////////////////////////////////////////////////////////////
+
+const minimap =
+    document.getElementById("minimap");
+
+const mini =
+    minimap.getContext("2d");
+
+function updateMinimap(){
+
+    mini.fillStyle = "#1a1a1a";
+    mini.fillRect(0,0,220,220);
+
+    buildings.forEach(b=>{
+
+        mini.fillStyle = "#888";
+
+        mini.fillRect(
+            110 + b.mesh.position.x,
+            110 + b.mesh.position.z,
+            5,
+            5
+        );
+    });
+
+    workers.forEach(w=>{
+
+        mini.fillStyle =
+            w.selected ? "#00ffff" : "#3366ff";
+
+        mini.fillRect(
+            110 + w.mesh.position.x,
+            110 + w.mesh.position.z,
+            3,
+            3
+        );
+    });
+
+    enemies.forEach(e=>{
+
+        mini.fillStyle = "#ff3333";
+
+        mini.fillRect(
+            110 + e.mesh.position.x,
+            110 + e.mesh.position.z,
+            4,
+            4
+        );
+    });
+
+    goldMines.forEach(m=>{
+
+        mini.fillStyle = "#ffcc22";
+
+        mini.beginPath();
+
+        mini.arc(
+            110 + m.position.x,
+            110 + m.position.z,
+            4,
+            0,
+            Math.PI*2
+        );
+
+        mini.fill();
+    });
+}
+
+////////////////////////////////////////////////////////////
+// UNIT SELECTION BOX
+////////////////////////////////////////////////////////////
+
+const selectionBox =
+    document.getElementById("selectionBox");
+
+let dragStart = null;
+
+window.addEventListener("mousedown", e=>{
+
+    ////////////////////////////////////////////////////////
+    // LEFT CLICK = START SELECT
+    ////////////////////////////////////////////////////////
+
+    if(e.button === 0){
+
+        dragStart = {
+            x:e.clientX,
+            y:e.clientY
+        };
+
+        selectionBox.style.display =
+            "block";
+
+        selectionBox.style.left =
+            dragStart.x + "px";
+
+        selectionBox.style.top =
+            dragStart.y + "px";
+    }
+
+    ////////////////////////////////////////////////////////
+    // RIGHT CLICK = MOVE
+    ////////////////////////////////////////////////////////
+
+    if(e.button === 2){
+
+        e.preventDefault();
+
+        const mouse = new THREE.Vector2(
+            (e.clientX/window.innerWidth)*2 - 1,
+            -(e.clientY/window.innerHeight)*2 + 1
+        );
+
+        const ray = new THREE.Raycaster();
+
+        ray.setFromCamera(mouse,camera);
+
+        const hits =
+            ray.intersectObject(ground);
+
+        if(hits.length){
+
+            const point = hits[0].point;
+
+            selectedUnits.forEach((u,i)=>{
+
+                u.target =
+                    point.clone().add(
+                        new THREE.Vector3(
+                            i*1.5,
+                            0,
+                            0
+                        )
+                    );
+            });
+        }
+    }
+});
+
+window.addEventListener("mousemove", e=>{
+
+    if(dragStart){
+
+        const x =
+            Math.min(e.clientX, dragStart.x);
+
+        const y =
+            Math.min(e.clientY, dragStart.y);
+
+        const w =
+            Math.abs(e.clientX-dragStart.x);
+
+        const h =
+            Math.abs(e.clientY-dragStart.y);
+
+        selectionBox.style.left =
+            x + "px";
+
+        selectionBox.style.top =
+            y + "px";
+
+        selectionBox.style.width =
+            w + "px";
+
+        selectionBox.style.height =
+            h + "px";
+    }
+});
+
+window.addEventListener("mouseup", e=>{
+
+    if(dragStart){
+
+        selectedUnits.length = 0;
+
+        workers.forEach(w=>{
+
+            const p =
+                w.mesh.position.clone();
+
+            p.project(camera);
+
+            const sx =
+                (p.x*0.5+0.5)*
+                window.innerWidth;
+
+            const sy =
+                (-p.y*0.5+0.5)*
+                window.innerHeight;
+
+            const x1 =
+                parseInt(selectionBox.style.left);
+
+            const y1 =
+                parseInt(selectionBox.style.top);
+
+            const x2 = x1 +
+                parseInt(selectionBox.style.width);
+
+            const y2 = y1 +
+                parseInt(selectionBox.style.height);
+
+            if(
+                sx > x1 &&
+                sx < x2 &&
+                sy > y1 &&
+                sy < y2
+            ){
+
+                w.selected = true;
+
+                selectedUnits.push(w);
+
+            }else{
+
+                w.selected = false;
+            }
+        });
+
+        selectionBox.style.display =
+            "none";
+
+        dragStart = null;
+    }
+});
+
+////////////////////////////////////////////////////////////
+// UI
+////////////////////////////////////////////////////////////
+
+document.querySelectorAll("[data-build]")
+.forEach(btn=>{
+
+    btn.addEventListener("click",()=>{
+
+        const type =
+            btn.dataset.build;
+
+        spawner.building(
+            type,
+            new THREE.Vector3(
+                Math.random()*20-10,
+                terrain.getHeight(0,0),
+                Math.random()*20-10
+            )
+        );
+    });
+});
+
+document.getElementById("spawnWorker")
+.addEventListener("click",()=>{
+
+    if(gold >= 50){
+
+        gold -= 50;
+
+        document.getElementById(
+            "goldText"
+        ).innerText =
+            Math.floor(gold);
+
+        spawner.worker(
+            new THREE.Vector3(
+                Math.random()*8-4,
+                terrain.getHeight(0,0),
+                Math.random()*8-4
+            )
+        );
+    }
+});
+
+////////////////////////////////////////////////////////////
+// LOOP
+////////////////////////////////////////////////////////////
+
+function animate(){
+
+    requestAnimationFrame(animate);
+
+    moveUnits();
+
+    updateHarvesting();
+
+    updateCombat();
+
+    updateConstruction();
+
+    updateBars();
+
+    updateMinimap();
+
+    renderer.render(scene,camera);
+}
+
+animate();
+
+////////////////////////////////////////////////////////////
+// RESIZE
+////////////////////////////////////////////////////////////
+
+window.addEventListener("resize",()=>{
+
+    camera.aspect =
+        window.innerWidth/window.innerHeight;
+
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(
+        window.innerWidth,
+        window.innerHeight
+    );
+});
+
+////////////////////////////////////////////////////////////
+// IMPLEMENTED FEATURES
+////////////////////////////////////////////////////////////
+
+/*
+
+[x] Unit selection box
+[x] Unit movement commands
+[x] Resource harvesting
+[x] Combat system
+[x] Projectile arrows
+[x] Pathfinding
+[x] Build progress bars
+[x] Health bars
+
+PREVIOUS FEATURES PRESERVED:
+
+[x] RTS HUD
+[x] Buildings
+[x] Workers
+[x] Minimap
+[x] Gold mines
+[x] Terrain
+[x] Grid
+[x] ThreeJS ESM
+[x] Single-file architecture
+
+NEXT POSSIBLE FEATURES:
+
+[ ] Fog of war
+[ ] Multiplayer
+[ ] A* navigation mesh
+[ ] Unit formations
+[ ] AI enemy attack waves
+[ ] Skeletal animation
+[ ] GLTF models
+[ ] Terrain texture splatting
+[ ] Sound effects
+[ ] Day/night cycle
+
+*/
+
+</script>
+</body>
+</html>
