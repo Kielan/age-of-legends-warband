@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RTS Production + Queue + Hotkeys</title>
+<style>
+body { margin:0; overflow:hidden; background:#000; font-family:sans-serif; }
+
+#ui {
+    position:absolute;
+    bottom:0;
+    width:100%;
+    height:140px;
+    background:#000;
+    color:white;
+    font-size:12px;
+    padding:8px;
+    border-top:2px solid #333;
+}
+
+.building {
+    position:absolute;
+    border:2px solid #555;
+    padding:4px;
+    background:#111;
+    color:white;
+}
+
+.progress {
+    height:6px;
+    background:#333;
+    margin-top:4px;
+}
+
+.bar {
+    height:6px;
+    background:#66ccff;
+    width:0%;
+}
+</style>
+</head>
+<body>
+
+<div id="ui"></div>
+
+<script type="module">
+
+import * as THREE from "https://esm.sh/three@0.165.0";
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(80,80,80);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+
+////////////////////////////////////////////////////////////
+// WORLD
+////////////////////////////////////////////////////////////
+
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(200,200),
+    new THREE.MeshStandardMaterial({color:0x2d5a2d})
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+////////////////////////////////////////////////////////////
+// CONTROL GROUPS
+////////////////////////////////////////////////////////////
+
+const groups = {
+ 1:[],
+ 2:[],
+ 3:[],
+ 4:[],
+ 5:[],
+ 6:[],
+ 7:[],
+ 8:[],
+ 9:[],
+ 0:[]
+};
+
+let selected = [];
+
+////////////////////////////////////////////////////////////
+// BUILDINGS
+////////////////////////////////////////////////////////////
+
+const buildings = [];
+
+function createBuilding(x,z,name){
+
+    const m = new THREE.Mesh(
+        new THREE.BoxGeometry(4,4,4),
+        new THREE.MeshStandardMaterial({color:0x777777})
+    );
+
+    m.position.set(x,2,z);
+    scene.add(m);
+
+    const b = {
+        name,
+        mesh:m,
+        queue:[],
+        progress:0,
+        rally:new THREE.Vector3(x+5,0,z),
+        selected:false
+    };
+
+    buildings.push(b);
+
+    return b;
+}
+
+const barracks = createBuilding(0,0,"Barracks");
+
+////////////////////////////////////////////////////////////
+// UNIT SPAWNER
+////////////////////////////////////////////////////////////
+
+const units=[];
+
+function spawnUnit(pos,color){
+
+    const m=new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.6,1),
+        new THREE.MeshStandardMaterial({color})
+    );
+
+    m.position.copy(pos);
+    scene.add(m);
+
+    units.push({mesh:m});
+}
+
+////////////////////////////////////////////////////////////
+// TRAINING SYSTEM
+////////////////////////////////////////////////////////////
+
+const unitData = {
+    rifleman:{time:200,color:0xcccccc},
+    knight:{time:300,color:0x8888ff},
+    worker:{time:120,color:0x66ccff}
+};
+
+function queueUnit(building,type){
+
+    building.queue.push({
+        type,
+        time:unitData[type].time
+    });
+}
+
+function updateBuildings(){
+
+    for(const b of buildings){
+
+        if(b.queue.length){
+
+            const current = b.queue[0];
+
+            current.time--;
+
+            if(current.time<=0){
+
+                spawnUnit(b.rally.clone(),unitData[current.type].color);
+                b.queue.shift();
+            }
+
+            b.progress = 0;
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////
+// WORKER AI (SIMPLE LOOP)
+// ////////////////////////////////////////////////////////////
+
+function workerAI(u){
+
+    // placeholder loop system (expandable)
+    u.mesh.rotation.y += 0.01;
+}
+
+////////////////////////////////////////////////////////////
+// INPUT SYSTEM
+////////////////////////////////////////////////////////////
+
+window.addEventListener("keydown",(e)=>{
+
+    if(e.key >= "0" && e.key <= "9"){
+
+        const group = groups[e.key];
+
+        if(e.ctrlKey){
+
+            groups[e.key] = [...selected];
+        } else {
+
+            selected = group;
+        }
+    }
+});
+
+window.addEventListener("click",(e)=>{
+
+    // select building (simplified ray)
+    const ray = new THREE.Raycaster();
+    const mouse = {
+        x:(e.clientX/innerWidth)*2-1,
+        y:-(e.clientY/innerHeight)*2+1
+    };
+
+    ray.setFromCamera(mouse,camera);
+
+    const hit = ray.intersectObject(ground)[0];
+
+    if(hit){
+
+        barracks.rally.copy(hit.point);
+    }
+});
+
+window.addEventListener("contextmenu",(e)=>{
+
+    e.preventDefault();
+
+    if(selected.length && selected[0].mesh){
+
+        selected[0].mesh.position.x += 5;
+    }
+});
+
+////////////////////////////////////////////////////////////
+// UI
+////////////////////////////////////////////////////////////
+
+const ui = document.getElementById("ui");
+
+function renderUI(){
+
+    ui.innerHTML = `
+        <b>Barracks Queue:</b> ${barracks.queue.map(q=>q.type).join(", ")}<br>
+        Press 1–0 for control groups<br>
+        Ctrl+1–0 to assign groups<br>
+        Click ground sets rally point<br>
+        Right click moves selection
+    `;
+}
+
+////////////////////////////////////////////////////////////
+// INIT TEST
+////////////////////////////////////////////////////////////
+
+queueUnit(barracks,"worker");
+queueUnit(barracks,"rifleman");
+queueUnit(barracks,"knight");
+
+////////////////////////////////////////////////////////////
+// LOOP
+////////////////////////////////////////////////////////////
+
+function animate(){
+
+    requestAnimationFrame(animate);
+
+    updateBuildings();
+
+    for(const u of units){
+        workerAI(u);
+    }
+
+    renderUI();
+
+    renderer.render(scene,camera);
+}
+
+animate();
+
+////////////////////////////////////////////////////////////
+// RESIZE
+////////////////////////////////////////////////////////////
+
+addEventListener("resize",()=>{
+
+camera.aspect=innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+
+renderer.setSize(innerWidth,innerHeight);
+
+});
+
+</script>
+
+</body>
+</html>
