@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RTS Combat + Fog + Heroes + Items</title>
+<style>
+body { margin:0; overflow:hidden; background:#000; font-family:sans-serif; }
+
+#ui {
+    position:absolute;
+    bottom:0;
+    width:100%;
+    height:150px;
+    background:#000;
+    color:white;
+    padding:10px;
+    font-size:12px;
+    border-top:2px solid #333;
+}
+
+#fog {
+    position:absolute;
+    top:0;
+    left:0;
+    pointer-events:none;
+}
+</style>
+</head>
+<body>
+
+<canvas id="fog"></canvas>
+<div id="ui"></div>
+
+<script type="module">
+
+import * as THREE from "https://esm.sh/three@0.165.0";
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(80,80,80);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+
+////////////////////////////////////////////////////////////
+// WORLD
+////////////////////////////////////////////////////////////
+
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(200,200),
+    new THREE.MeshStandardMaterial({color:0x2d5a2d})
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+////////////////////////////////////////////////////////////
+// FOG OF WAR
+////////////////////////////////////////////////////////////
+
+const fogCanvas = document.getElementById("fog");
+const fogCtx = fogCanvas.getContext("2d");
+
+function resizeFog(){
+    fogCanvas.width = innerWidth;
+    fogCanvas.height = innerHeight;
+}
+resizeFog();
+
+const explored = new Set();
+
+function worldToScreen(v){
+    const p = v.clone().project(camera);
+    return {
+        x:(p.x*0.5+0.5)*innerWidth,
+        y:(-p.y*0.5+0.5)*innerHeight
+    };
+}
+
+////////////////////////////////////////////////////////////
+// UNITS
+////////////////////////////////////////////////////////////
+
+const units = [];
+
+function createUnit(x,z,opts){
+
+    const m = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.6,1),
+        new THREE.MeshStandardMaterial({color:opts.color})
+    );
+
+    m.position.set(x,1,z);
+    scene.add(m);
+
+    return {
+        mesh:m,
+        hp:opts.hp,
+        dmg:opts.dmg,
+        range:opts.range,
+        vision:10,
+        xp:0,
+        level:1,
+        cooldown:0,
+        spellCooldown:0,
+        hero:opts.hero || false,
+        enemy:opts.enemy || false
+    };
+}
+
+const hero = createUnit(0,0,{
+    color:0x66ccff,
+    hp:200,
+    dmg:15,
+    range:6,
+    hero:true
+});
+
+for(let i=0;i<6;i++){
+    units.push(createUnit(20+i*2,10,{
+        color:0xff6666,
+        hp:60,
+        dmg:6,
+        range:5,
+        enemy:true
+    }));
+}
+
+////////////////////////////////////////////////////////////
+// CREEP CAMPS
+////////////////////////////////////////////////////////////
+
+const camps = [];
+
+function createCamp(x,z){
+
+    const mobs=[];
+
+    for(let i=0;i<4;i++){
+        mobs.push(createUnit(x+i,z+i,{
+            color:0x8844ff,
+            hp:40,
+            dmg:5,
+            range:4,
+            enemy:true
+        }));
+    }
+
+    camps.push({mobs,respawn:600});
+}
+
+createCamp(-20,20);
+createCamp(30,-30);
+
+////////////////////////////////////////////////////////////
+// PROJECTILES
+////////////////////////////////////////////////////////////
+
+const projectiles = [];
+
+function shoot(from,to,dmg){
+
+    const m = new THREE.Mesh(
+        new THREE.SphereGeometry(0.2),
+        new THREE.MeshBasicMaterial({color:0xffaa00})
+    );
+
+    m.position.copy(from);
+    scene.add(m);
+
+    projectiles.push({mesh:m,to,dmg,speed:1});
+}
+
+////////////////////////////////////////////////////////////
+// COMBAT + AGGRO
+////////////////////////////////////////////////////////////
+
+function nearestEnemy(u){
+
+    let best=null;
+    let d=999;
+
+    for(const v of units){
+
+        if(v.enemy===u.enemy) continue;
+
+        const dist = u.mesh.position.distanceTo(v.mesh.position);
+
+        if(dist<d){
+            d=dist;
+            best=v;
+        }
+    }
+
+    return best;
+}
+
+function attack(u,t){
+
+    if(u.cooldown>0) return;
+
+    shoot(u.mesh.position.clone(),t.mesh.position.clone(),u.dmg);
+
+    u.cooldown = 60;
+}
+
+////////////////////////////////////////////////////////////
+// HERO XP SYSTEM
+////////////////////////////////////////////////////////////
+
+function gainXP(u,amount){
+
+    u.xp += amount;
+
+    if(u.xp > u.level*50){
+
+        u.level++;
+
+        u.hp += 20;
+        u.dmg += 3;
+    }
+}
+
+////////////////////////////////////////////////////////////
+// ITEM DROP SYSTEM
+////////////////////////////////////////////////////////////
+
+const items = [];
+
+function dropItem(pos){
+
+    const roll = Math.random();
+
+    let color = 0xffff00;
+    let name = "Gold";
+
+    if(roll>0.7){
+        color=0xff00ff;
+        name="Vampiric Mask";
+    }
+
+    const m = new THREE.Mesh(
+        new THREE.BoxGeometry(1,1,1),
+        new THREE.MeshBasicMaterial({color})
+    );
+
+    m.position.copy(pos);
+    scene.add(m);
+
+    items.push({mesh:m,name});
+}
+
+////////////////////////////////////////////////////////////
+// FOG UPDATE
+////////////////////////////////////////////////////////////
+
+function updateFog(){
+
+    fogCtx.fillStyle="rgba(0,0,0,0.3)";
+    fogCtx.fillRect(0,0,fogCanvas.width,fogCanvas.height);
+
+    for(const u of units){
+
+        const screen = worldToScreen(u.mesh.position);
+
+        const r = u.vision * 10;
+
+        const g = fogCtx.createRadialGradient(screen.x,screen.y,0,screen.x,screen.y,r);
+        g.addColorStop(0,"rgba(0,0,0,0)");
+        g.addColorStop(1,"rgba(0,0,0,1)");
+
+        fogCtx.globalCompositeOperation="destination-out";
+        fogCtx.fillStyle=g;
+        fogCtx.fillRect(screen.x-r,screen.y-r,r*2,r*2);
+    }
+
+    fogCtx.globalCompositeOperation="source-over";
+}
+
+////////////////////////////////////////////////////////////
+// PROJECTILES UPDATE
+////////////////////////////////////////////////////////////
+
+function updateProjectiles(){
+
+    for(let i=projectiles.length-1;i>=0;i--){
+
+        const p=projectiles[i];
+
+        const dir=p.to.clone().sub(p.mesh.position);
+        const d=dir.length();
+
+        p.mesh.position.add(dir.normalize().multiplyScalar(p.speed));
+
+        // collision
+        for(const u of units){
+
+            if(u.enemy && p.mesh.position.distanceTo(u.mesh.position)<1){
+
+                u.hp -= p.dmg;
+
+                if(u.hp<=0){
+
+                    gainXP(hero,20);
+                    dropItem(u.mesh.position);
+
+                    scene.remove(u.mesh);
+                    units.splice(units.indexOf(u),1);
+                }
+            }
+        }
+
+        if(d<1){
+            scene.remove(p.mesh);
+            projectiles.splice(i,1);
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////
+// COMBAT LOOP
+////////////////////////////////////////////////////////////
+
+function updateUnits(){
+
+    for(const u of units){
+
+        if(u.cooldown>0) u.cooldown--;
+
+        const target = nearestEnemy(u);
+
+        if(target && u.mesh.position.distanceTo(target.mesh.position)<u.range){
+
+            attack(u,target);
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////
+// CAMP SYSTEM
+////////////////////////////////////////////////////////////
+
+function updateCamps(){
+
+    for(const c of camps){
+
+        c.respawn--;
+
+        if(c.respawn<=0){
+
+            c.respawn=600;
+
+            c.mobs.forEach(m=>{
+                if(m.hp<=0){
+                    m.hp=40;
+                }
+            });
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////
+// LOOP
+////////////////////////////////////////////////////////////
+
+function animate(){
+
+    requestAnimationFrame(animate);
+
+    updateUnits();
+    updateProjectiles();
+    updateFog();
+    updateCamps();
+
+    renderer.render(scene,camera);
+}
+
+animate();
+
+////////////////////////////////////////////////////////////
+// RESIZE
+////////////////////////////////////////////////////////////
+
+addEventListener("resize",()=>{
+
+camera.aspect=innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+
+renderer.setSize(innerWidth,innerHeight);
+
+resizeFog();
+
+});
+
+</script>
+
+</body>
+</html>
