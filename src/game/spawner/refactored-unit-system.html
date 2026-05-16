@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RTS Production System Refactor</title>
+<style>
+body { margin:0; overflow:hidden; background:#111; font-family:sans-serif; }
+
+#ui {
+    position:absolute;
+    bottom:0;
+    width:100%;
+    height:160px;
+    background:#000;
+    color:white;
+    display:flex;
+    gap:6px;
+    padding:6px;
+    border-top:2px solid #333;
+    flex-wrap:wrap;
+}
+
+button {
+    background:#222;
+    color:white;
+    border:1px solid #555;
+    padding:6px;
+    cursor:pointer;
+}
+
+#hud {
+    position:absolute;
+    top:10px;
+    left:10px;
+    color:white;
+    font-size:12px;
+}
+</style>
+</head>
+<body>
+
+<div id="hud"></div>
+<div id="ui"></div>
+
+<script type="module">
+
+import * as THREE from "https://esm.sh/three@0.165.0";
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1c2a1c);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(60,60,60);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+const sun = new THREE.DirectionalLight(0xffffff,1);
+sun.position.set(50,80,30);
+scene.add(sun);
+
+////////////////////////////////////////////////////////////
+// GROUND
+////////////////////////////////////////////////////////////
+
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(200,200),
+    new THREE.MeshStandardMaterial({ color:0x2d5a2d })
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+////////////////////////////////////////////////////////////
+// ECONOMY (simplified)
+////////////////////////////////////////////////////////////
+
+let gold = 200;
+
+////////////////////////////////////////////////////////////
+// BUILDINGS
+////////////////////////////////////////////////////////////
+
+const buildings = [];
+
+const BuildingType = {
+    KEEP:"keep",
+    BARRACKS:"barracks",
+    WORKSHOP:"workshop",
+    ALTAR:"altar",
+    ARCANE:"arcane"
+};
+
+function createBuilding(type,pos){
+
+    const colors = {
+        keep:0x3355ff,
+        barracks:0x777777,
+        workshop:0x999999,
+        altar:0xaa55ff,
+        arcane:0x55ffff
+    };
+
+    const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(4,4,4),
+        new THREE.MeshStandardMaterial({color:colors[type]||0xffffff})
+    );
+
+    mesh.position.copy(pos);
+    scene.add(mesh);
+
+    const b = { type, mesh };
+
+    buildings.push(b);
+    return b;
+}
+
+////////////////////////////////////////////////////////////
+// UNITS
+////////////////////////////////////////////////////////////
+
+const units = [];
+
+function spawnUnit(type,pos){
+
+    let mesh;
+
+    const colorMap = {
+        peon:0x33aaff,
+        knight:0xffffff,
+        rifle:0x333333,
+        horse:0xaa8844,
+        griffin:0xffdd55,
+        mech:0x888888,
+        cannon:0x444444,
+        paladin:0x66ccff,
+        whisp:0x99ffff
+    };
+
+    mesh = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.6,1.2),
+        new THREE.MeshStandardMaterial({color:colorMap[type]||0xffffff})
+    );
+
+    mesh.position.copy(pos);
+    scene.add(mesh);
+
+    units.push({
+        type,
+        mesh,
+        hp:100,
+        speed:10,
+        atk:10,
+        cooldown:0
+    });
+}
+
+////////////////////////////////////////////////////////////
+// BUILDING PRODUCTION RULES
+////////////////////////////////////////////////////////////
+
+const Production = {
+    keep:["peon"],
+
+    barracks:["knight","rifle","horse","griffin"],
+
+    workshop:["mech","cannon"],
+
+    altar:["paladin"],
+
+    arcane:["whisp"]
+};
+
+////////////////////////////////////////////////////////////
+// SELECTION STATE
+////////////////////////////////////////////////////////////
+
+let selectedBuilding = null;
+
+////////////////////////////////////////////////////////////
+// BUILDING SELECTION (CLICK)
+////////////////////////////////////////////////////////////
+
+window.addEventListener("click",(e)=>{
+
+    const x = (e.clientX/innerWidth)*2-1;
+    const y = -(e.clientY/innerHeight)*2+1;
+
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera({x,y},camera);
+
+    const hits = ray.intersectObjects(buildings.map(b=>b.mesh));
+
+    if(hits.length){
+
+        selectedBuilding = buildings.find(b=>b.mesh===hits[0].object);
+        renderUI();
+    }
+});
+
+////////////////////////////////////////////////////////////
+// UNIT SPAWN FROM BUILDING
+////////////////////////////////////////////////////////////
+
+function produceUnit(type){
+
+    if(!selectedBuilding) return;
+
+    const allowed = Production[selectedBuilding.type];
+
+    if(!allowed.includes(type)){
+        console.log("Not allowed from this building");
+        return;
+    }
+
+    spawnUnit(type,selectedBuilding.mesh.position.clone().add(new THREE.Vector3(3,0,0)));
+}
+
+////////////////////////////////////////////////////////////
+// SIMPLE AI LOOP
+////////////////////////////////////////////////////////////
+
+function updateUnits(dt){
+
+    for(const u of units){
+
+        const enemy = units.find(e=>e!==u);
+        if(!enemy) continue;
+
+        const dir = enemy.mesh.position.clone()
+            .sub(u.mesh.position)
+            .normalize();
+
+        u.mesh.position.add(dir.multiplyScalar(u.speed*dt));
+
+        u.cooldown -= dt;
+    }
+}
+
+////////////////////////////////////////////////////////////
+// UI SYSTEM (BUILDING CONTEXT SENSITIVE)
+////////////////////////////////////////////////////////////
+
+const ui = document.getElementById("ui");
+
+function renderUI(){
+
+    ui.innerHTML = "";
+
+    if(!selectedBuilding){
+        ui.innerHTML = "<div style='color:white'>Select a building</div>";
+        return;
+    }
+
+    const allowed = Production[selectedBuilding.type];
+
+    for(const unit of allowed){
+
+        const btn = document.createElement("button");
+        btn.innerText = `Train ${unit}`;
+
+        btn.onclick = () => produceUnit(unit);
+
+        ui.appendChild(btn);
+    }
+
+    const label = document.createElement("div");
+    label.style.color = "#fff";
+    label.innerText = "Selected: " + selectedBuilding.type;
+
+    ui.appendChild(label);
+}
+
+////////////////////////////////////////////////////////////
+// START WORLD
+////////////////////////////////////////////////////////////
+
+createBuilding("keep",new THREE.Vector3(0,0,0));
+createBuilding("barracks",new THREE.Vector3(-10,0,0));
+createBuilding("workshop",new THREE.Vector3(10,0,0));
+createBuilding("altar",new THREE.Vector3(0,0,10));
+createBuilding("arcane",new THREE.Vector3(10,0,10));
+
+spawnUnit("peon",new THREE.Vector3(5,0,5));
+spawnUnit("knight",new THREE.Vector3(-5,0,-5));
+spawnUnit("rifle",new THREE.Vector3(5,0,-5));
+
+renderUI();
+
+////////////////////////////////////////////////////////////
+// LOOP
+////////////////////////////////////////////////////////////
+
+let last=performance.now();
+
+function animate(){
+
+    requestAnimationFrame(animate);
+
+    const now=performance.now();
+    const dt=(now-last)/1000;
+    last=now;
+
+    updateUnits(dt);
+
+    renderer.render(scene,camera);
+}
+
+animate();
+
+////////////////////////////////////////////////////////////
+// RESIZE
+////////////////////////////////////////////////////////////
+
+addEventListener("resize",()=>{
+    camera.aspect=innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+
+</body>
+</html>
