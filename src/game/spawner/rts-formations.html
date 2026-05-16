@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RTS Engine - Formations + Fog + Projectiles</title>
+<style>
+body { margin:0; overflow:hidden; background:#111; }
+
+#minimap {
+    position:absolute;
+    top:10px;
+    right:10px;
+    width:160px;
+    height:160px;
+    border:2px solid #333;
+    background:#000;
+}
+</style>
+</head>
+<body>
+
+<canvas id="minimap" width="160" height="160"></canvas>
+
+<script type="module">
+
+import * as THREE from 'https://esm.sh/three@0.165.0';
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1e2a1e);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(60,60,60);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+////////////////////////////////////////////////////////////
+// LIGHT
+////////////////////////////////////////////////////////////
+
+scene.add(new THREE.AmbientLight(0xffffff,0.5));
+const sun = new THREE.DirectionalLight(0xffffff,1);
+sun.position.set(50,80,30);
+scene.add(sun);
+
+////////////////////////////////////////////////////////////
+// GROUND
+////////////////////////////////////////////////////////////
+
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(200,200),
+    new THREE.MeshStandardMaterial({ color:0x2d5a2d })
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+////////////////////////////////////////////////////////////
+// FOG OF WAR GRID
+////////////////////////////////////////////////////////////
+
+const GRID = 40;
+const fog = Array.from({length:GRID}, () =>
+    Array.from({length:GRID}, () => 0)
+);
+
+function worldToFog(pos) {
+    const x = Math.floor((pos.x + 100) / 5);
+    const z = Math.floor((pos.z + 100) / 5);
+    return {x,z};
+}
+
+function reveal(pos, radius=3) {
+    const p = worldToFog(pos);
+
+    for (let x=-radius;x<=radius;x++) {
+        for (let z=-radius;z<=radius;z++) {
+            const fx = p.x + x;
+            const fz = p.z + z;
+
+            if (fog[fx]?.[fz] !== undefined) {
+                fog[fx][fz] = 1;
+            }
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////
+// UNITS
+////////////////////////////////////////////////////////////
+
+const units = [];
+const projectiles = [];
+
+const Armor = {
+    LIGHT:"light",
+    HEAVY:"heavy"
+};
+
+const DamageType = {
+    SLASH:"slash",
+    PIERCE:"pierce"
+};
+
+////////////////////////////////////////////////////////////
+// FORMATIONS
+////////////////////////////////////////////////////////////
+
+const Formation = {
+    LINE:"line",
+    WEDGE:"wedge",
+    BOX:"box"
+};
+
+function getFormationOffsets(type, count) {
+
+    const offsets = [];
+
+    if (type === Formation.LINE) {
+        for (let i=0;i<count;i++) {
+            offsets.push(new THREE.Vector3(i*2,0,0));
+        }
+    }
+
+    if (type === Formation.BOX) {
+        const size = Math.ceil(Math.sqrt(count));
+        for (let i=0;i<count;i++) {
+            offsets.push(new THREE.Vector3(
+                (i%size)*2,
+                0,
+                Math.floor(i/size)*2
+            ));
+        }
+    }
+
+    if (type === Formation.WEDGE) {
+        let row = 0, col = 0;
+        for (let i=0;i<count;i++) {
+            offsets.push(new THREE.Vector3(col*2,0,row*2));
+            col++;
+            if (col > row) {
+                row++;
+                col = 0;
+            }
+        }
+    }
+
+    return offsets;
+}
+
+////////////////////////////////////////////////////////////
+// UNIT SPAWN
+////////////////////////////////////////////////////////////
+
+function spawnUnit(type, pos, list = units) {
+
+    let color = 0x3399ff;
+    let armor = Armor.LIGHT;
+    let atk = 10;
+    let range = 0;
+
+    if (type === "rifle") {
+        color = 0x333333;
+        range = 18;
+    }
+
+    if (type === "horse") {
+        color = 0xaa8844;
+        atk = 14;
+    }
+
+    const mesh = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.6,1.2),
+        new THREE.MeshStandardMaterial({ color })
+    );
+
+    mesh.position.copy(pos);
+    scene.add(mesh);
+
+    list.push({
+        type,
+        mesh,
+        hp:100,
+        atk,
+        armor,
+        range,
+        cooldown:0,
+        formationIndex:0
+    });
+}
+
+////////////////////////////////////////////////////////////
+// ARMOR PENETRATION
+////////////////////////////////////////////////////////////
+
+function calcDamage(base, type, armor) {
+
+    if (type === DamageType.PIERCE && armor === Armor.HEAVY) {
+        return base * 0.6;
+    }
+
+    if (type === DamageType.SLASH && armor === Armor.LIGHT) {
+        return base * 1.2;
+    }
+
+    return base;
+}
+
+////////////////////////////////////////////////////////////
+// PROJECTILES
+////////////////////////////////////////////////////////////
+
+function spawnProjectile(from, to, damage, type) {
+
+    const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.2),
+        new THREE.MeshStandardMaterial({ color:0xffff00 })
+    );
+
+    mesh.position.copy(from);
+    scene.add(mesh);
+
+    projectiles.push({
+        mesh,
+        to: to.clone(),
+        damage,
+        type
+    });
+}
+
+function updateProjectiles(dt) {
+
+    for (const p of projectiles) {
+
+        const dir = p.to.clone().sub(p.mesh.position).normalize();
+        p.mesh.position.add(dir.multiplyScalar(40 * dt));
+
+        if (p.mesh.position.distanceTo(p.to) < 1) {
+
+            scene.remove(p.mesh);
+
+            // hit nearest unit
+            for (const u of units) {
+                if (u.mesh.position.distanceTo(p.to) < 2) {
+
+                    u.hp -= calcDamage(p.damage, p.type, u.armor);
+
+                    if (u.hp <= 0) {
+                        scene.remove(u.mesh);
+                    }
+                }
+            }
+
+            projectiles.splice(projectiles.indexOf(p),1);
+            break;
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////
+// MOVEMENT WITH FORMATION
+////////////////////////////////////////////////////////////
+
+function moveGroup(group, target, formation) {
+
+    const offsets = getFormationOffsets(formation, group.length);
+
+    group.forEach((u,i) => {
+        u.target = target.clone().add(offsets[i]);
+        u.formationIndex = i;
+    });
+}
+
+////////////////////////////////////////////////////////////
+// AI UPDATE
+////////////////////////////////////////////////////////////
+
+function updateUnits(dt) {
+
+    for (const u of units) {
+
+        reveal(u.mesh.position);
+
+        if (!u.target) continue;
+
+        const dir = u.target.clone()
+            .sub(u.mesh.position)
+            .normalize();
+
+        u.mesh.position.add(dir.multiplyScalar(10 * dt));
+
+        u.cooldown -= dt;
+
+        ////////////////////////////////////////////////////
+        // RANGED ATTACK (RIFLE)
+        ////////////////////////////////////////////////////
+
+        if (u.range > 0 && u.cooldown <= 0) {
+
+            const enemy = units.find(o => o !== u);
+
+            if (enemy &&
+                u.mesh.position.distanceTo(enemy.mesh.position) < u.range) {
+
+                spawnProjectile(
+                    u.mesh.position.clone(),
+                    enemy.mesh.position.clone(),
+                    u.atk,
+                    DamageType.PIERCE
+                );
+
+                u.cooldown = 1.2;
+            }
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////
+// FOG RENDER
+////////////////////////////////////////////////////////////
+
+const minimap = document.getElementById("minimap");
+const ctx = minimap.getContext("2d");
+
+function drawMinimap() {
+
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0,0,160,160);
+
+    for (let x=0;x<GRID;x++) {
+        for (let z=0;z<GRID;z++) {
+
+            if (!fog[x][z]) continue;
+
+            ctx.fillStyle = "#1f5f1f";
+            ctx.fillRect(x*4,z*4,4,4);
+        }
+    }
+
+    for (const u of units) {
+
+        const p = worldToFog(u.mesh.position);
+
+        ctx.fillStyle = "#00aaff";
+        ctx.fillRect(p.x*4,p.z*4,3,3);
+    }
+}
+
+////////////////////////////////////////////////////////////
+// DEMO SETUP
+////////////////////////////////////////////////////////////
+
+spawnUnit("rifle", new THREE.Vector3(-20,0,-20));
+spawnUnit("rifle", new THREE.Vector3(-22,0,-20));
+spawnUnit("horse", new THREE.Vector3(-18,0,-20));
+
+spawnUnit("rifle", new THREE.Vector3(20,0,20));
+spawnUnit("horse", new THREE.Vector3(22,0,20));
+
+moveGroup(units, new THREE.Vector3(0,0,0), Formation.WEDGE);
+
+////////////////////////////////////////////////////////////
+// LOOP
+////////////////////////////////////////////////////////////
+
+let last = performance.now();
+
+function animate() {
+
+    requestAnimationFrame(animate);
+
+    const now = performance.now();
+    const dt = (now-last)/1000;
+    last = now;
+
+    updateUnits(dt);
+    updateProjectiles(dt);
+    drawMinimap();
+
+    renderer.render(scene,camera);
+}
+
+animate();
+
+</script>
+
+</body>
+</html>
