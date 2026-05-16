@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RTS Core Systems Engine</title>
+<style>
+body { margin:0; overflow:hidden; background:#000; font-family:sans-serif; }
+
+#ui {
+    position:absolute;
+    bottom:0;
+    width:100%;
+    height:140px;
+    background:#000;
+    color:white;
+    display:flex;
+    gap:10px;
+    padding:8px;
+    font-size:12px;
+    border-top:2px solid #333;
+}
+
+.ability {
+    width:80px;
+    height:80px;
+    background:#222;
+    border:1px solid #555;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+}
+</style>
+</head>
+<body>
+
+<div id="ui"></div>
+
+<script type="module">
+
+import * as THREE from "https://esm.sh/three@0.165.0";
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(80,80,80);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+
+////////////////////////////////////////////////////////////
+// TECH TREE (GLOBAL UPGRADES)
+// ////////////////////////////////////////////////////////////
+
+const Tech = {
+  attack:1,
+  armor:1,
+  speed:1
+};
+
+function upgradeTech(type){
+
+  Tech[type] += 0.1;
+
+  for(const u of units){
+    u.dmg *= Tech.attack;
+    u.armor *= Tech.armor;
+    u.speed *= Tech.speed;
+  }
+}
+
+////////////////////////////////////////////////////////////
+// ARMOR SYSTEM
+////////////////////////////////////////////////////////////
+
+function calcDamage(dmg,type,target){
+
+  const armor = target.armor || 0;
+
+  if(type==="piercing") return dmg * (1 - armor*0.3);
+  if(type==="heavy") return dmg * (1 - armor*0.5);
+  if(type==="magic") return dmg * 1.2;
+
+  return dmg;
+}
+
+////////////////////////////////////////////////////////////
+// BUFF SYSTEM
+////////////////////////////////////////////////////////////
+
+function applyBuff(u,buff){
+
+  let existing = u.buffs.find(b=>b.type===buff.type);
+
+  if(existing){
+    existing.duration = buff.duration;
+    existing.stacks++;
+  } else {
+    u.buffs.push({...buff,stacks:1});
+  }
+}
+
+function updateBuffs(u){
+
+  for(let i=u.buffs.length-1;i>=0;i--){
+
+    const b=u.buffs[i];
+
+    b.duration--;
+
+    if(b.duration<=0) u.buffs.splice(i,1);
+  }
+}
+
+////////////////////////////////////////////////////////////
+// AURA SYSTEM
+////////////////////////////////////////////////////////////
+
+function applyAuras(u){
+
+  let armorBonus=0;
+
+  for(const o of units){
+
+    if(o.aura){
+
+      const d=u.mesh.position.distanceTo(o.mesh.position);
+
+      if(d<10) armorBonus += o.aura.value;
+    }
+  }
+
+  u.armor += armorBonus*0.1; // diminishing returns
+}
+
+////////////////////////////////////////////////////////////
+// SPELL SYSTEM
+////////////////////////////////////////////////////////////
+
+const Spells = {
+
+fireball:{
+  cost:10,
+  range:20,
+  cast(u,target){
+
+    projectiles.push({
+      from:u.mesh.position.clone(),
+      to:target.mesh.position.clone(),
+      dmg:25,
+      type:"magic"
+    });
+
+  }
+},
+
+heal:{
+  cost:8,
+  cast(u,target){
+
+    target.hp += 20;
+
+    applyBuff(target,{
+      type:"regen",
+      duration:120,
+      value:2
+    });
+
+  }
+}
+
+};
+
+////////////////////////////////////////////////////////////
+// UNITS
+////////////////////////////////////////////////////////////
+
+const units=[];
+const projectiles=[];
+
+function createUnit(x,z){
+
+  const m=new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.6,1),
+    new THREE.MeshStandardMaterial({color:0x66ccff})
+  );
+
+  m.position.set(x,1,z);
+  scene.add(m);
+
+  return {
+    mesh:m,
+    hp:100,
+    mana:50,
+    dmg:10,
+    armor:1,
+    speed:0.1,
+    buffs:[],
+    aura:{value:2},
+    cooldown:0,
+    selectedSpell:null
+  };
+}
+
+const hero=createUnit(0,0);
+
+for(let i=0;i<6;i++){
+  units.push(createUnit(20+i*2,10));
+}
+
+////////////////////////////////////////////////////////////
+// FORMATIONS
+////////////////////////////////////////////////////////////
+
+function formation(type,count){
+
+  const out=[];
+
+  for(let i=0;i<count;i++){
+
+    if(type==="line") out.push(new THREE.Vector3(i*2,0,0));
+    if(type==="wedge") out.push(new THREE.Vector3(i,i*0.5,0));
+    if(type==="box") out.push(new THREE.Vector3((i%3)*2,0,Math.floor(i/3)*2));
+  }
+
+  return out;
+}
+
+////////////////////////////////////////////////////////////
+// COLLISION
+////////////////////////////////////////////////////////////
+
+function resolveCollision(){
+
+  for(let i=0;i<units.length;i++){
+
+    for(let j=i+1;j<units.length;j++){
+
+      const a=units[i];
+      const b=units[j];
+
+      const d=a.mesh.position.distanceTo(b.mesh.position);
+
+      if(d<1.2){
+
+        const dir=a.mesh.position.clone().sub(b.mesh.position).normalize();
+
+        a.mesh.position.add(dir.multiplyScalar(0.05));
+        b.mesh.position.add(dir.multiplyScalar(-0.05));
+      }
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////
+// PROJECTILES
+////////////////////////////////////////////////////////////
+
+function updateProjectiles(){
+
+  for(let i=projectiles.length-1;i>=0;i--){
+
+    const p=projectiles[i];
+
+    const dir=p.to.clone().sub(p.from);
+    p.from.add(dir.normalize().multiplyScalar(0.8));
+
+    for(const u of units){
+
+      if(u.mesh.position.distanceTo(p.from)<1){
+
+        const dmg=calcDamage(p.dmg,p.type||"magic",u);
+
+        u.hp -= dmg;
+
+        if(u.hp<=0){
+          scene.remove(u.mesh);
+          units.splice(units.indexOf(u),1);
+        }
+
+        projectiles.splice(i,1);
+        break;
+      }
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////
+// UI SPELL BAR
+////////////////////////////////////////////////////////////
+
+const ui=document.getElementById("ui");
+
+let selectedSpell=null;
+
+function renderUI(){
+
+  ui.innerHTML=Object.keys(Spells).map(k=>`
+    <div class="ability" onclick="selectSpell('${k}')">${k}</div>
+  `).join("") + `
+  <div class="ability" onclick="upgradeTech('attack')">+ATK</div>
+  <div class="ability" onclick="upgradeTech('armor')">+ARM</div>
+  <div class="ability" onclick="upgradeTech('speed')">+SPD</div>
+  `;
+}
+
+window.selectSpell=(s)=>{
+  selectedSpell=s;
+};
+
+window.upgradeTech=upgradeTech;
+
+////////////////////////////////////////////////////////////
+// INPUT
+////////////////////////////////////////////////////////////
+
+window.addEventListener("click",(e)=>{
+
+  if(!selectedSpell) return;
+
+  const target=units[0];
+
+  Spells[selectedSpell].cast(hero,target);
+
+  selectedSpell=null;
+});
+
+////////////////////////////////////////////////////////////
+// LOOP
+////////////////////////////////////////////////////////////
+
+function animate(){
+
+  requestAnimationFrame(animate);
+
+  for(const u of units){
+
+    updateBuffs(u);
+    applyAuras(u);
+  }
+
+  resolveCollision();
+  updateProjectiles();
+
+  renderer.render(scene,camera);
+}
+
+renderUI();
+animate();
+
+////////////////////////////////////////////////////////////
+// RESIZE
+////////////////////////////////////////////////////////////
+
+addEventListener("resize",()=>{
+
+camera.aspect=innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+
+renderer.setSize(innerWidth,innerHeight);
+
+});
+
+</script>
+
+</body>
+</html>
