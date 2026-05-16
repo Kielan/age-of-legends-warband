@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>WC3 RTS UI System</title>
+<style>
+body { margin:0; overflow:hidden; font-family:sans-serif; background:#000; }
+
+#topbar {
+    position:absolute;
+    top:0;
+    width:100%;
+    height:40px;
+    background:#111;
+    color:white;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:12px;
+}
+
+#bottombar {
+    position:absolute;
+    bottom:0;
+    width:100%;
+    height:140px;
+    background:#000;
+    color:white;
+    display:flex;
+    padding:8px;
+    gap:10px;
+    font-size:12px;
+    border-top:2px solid #333;
+}
+
+.panel {
+    border:1px solid #444;
+    padding:6px;
+    min-width:200px;
+}
+button {
+    background:#222;
+    color:white;
+    border:1px solid #555;
+    padding:4px;
+    cursor:pointer;
+}
+</style>
+</head>
+<body>
+
+<div id="topbar"></div>
+<div id="bottombar"></div>
+
+<script type="module">
+
+import * as THREE from "https://esm.sh/three@0.165.0";
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(80,80,80);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+////////////////////////////////////////////////////////////
+// LIGHT (DAY/NIGHT CONTROLLED)
+// ////////////////////////////////////////////////////////////
+
+const sunLight = new THREE.DirectionalLight(0xffffff,1);
+scene.add(sunLight);
+
+const ambient = new THREE.AmbientLight(0xffffff,0.4);
+scene.add(ambient);
+
+////////////////////////////////////////////////////////////
+// GROUND
+////////////////////////////////////////////////////////////
+
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(200,200),
+    new THREE.MeshStandardMaterial({color:0x2d5a2d})
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+////////////////////////////////////////////////////////////
+// HERO
+////////////////////////////////////////////////////////////
+
+const paladin = {
+    mesh: new THREE.Mesh(
+        new THREE.CapsuleGeometry(1,2),
+        new THREE.MeshStandardMaterial({color:0x66ccff})
+    ),
+    hp:100,
+    mana:100,
+    invincible:false,
+    cooldowns:{}
+};
+
+paladin.mesh.position.set(0,0,0);
+scene.add(paladin.mesh);
+
+////////////////////////////////////////////////////////////
+// ITEMS
+////////////////////////////////////////////////////////////
+
+const items = {
+    vampiric_hood:{
+        name:"Vampiric Hood",
+        speed:0.1,
+        lifesteal:0.15
+    }
+};
+
+let equipped = [];
+
+////////////////////////////////////////////////////////////
+// APPLY PASSIVES
+////////////////////////////////////////////////////////////
+
+function getSpeed(){
+    let s = 1;
+    for(const i of equipped){
+        s += i.speed || 0;
+    }
+    return s;
+}
+
+function getLifesteal(){
+    let l = 0;
+    for(const i of equipped){
+        l += i.lifesteal || 0;
+    }
+    return l;
+}
+
+////////////////////////////////////////////////////////////
+// ABILITIES (PALADIN)
+// ////////////////////////////////////////////////////////////
+
+const abilities = {
+
+    smite:{
+        cd:3,
+        mana:20,
+        cast(target){
+
+            target.hp -= 40;
+        }
+    },
+
+    invincibility:{
+        cd:12,
+        mana:40,
+        cast(hero){
+
+            hero.invincible = true;
+
+            setTimeout(()=>{
+                hero.invincible = false;
+            },4000);
+        }
+    },
+
+    aura_armor:{
+        passive:true,
+        effect:()=>1.2
+    }
+};
+
+////////////////////////////////////////////////////////////
+// ENEMIES
+////////////////////////////////////////////////////////////
+
+const enemies = [];
+
+function spawnEnemy(pos){
+
+    const m = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.5,1),
+        new THREE.MeshStandardMaterial({color:0x33aa33})
+    );
+
+    m.position.copy(pos);
+    scene.add(m);
+
+    enemies.push({mesh:m,hp:50});
+}
+
+for(let i=0;i<10;i++){
+    spawnEnemy(new THREE.Vector3(
+        (Math.random()-0.5)*100,
+        0,
+        (Math.random()-0.5)*100
+    ));
+}
+
+////////////////////////////////////////////////////////////
+// DAY / NIGHT SYSTEM (10 MIN CYCLE)
+// ////////////////////////////////////////////////////////////
+
+const DAY_LENGTH = 600;
+
+function updateDayNight(t){
+
+    const cycle = (t % DAY_LENGTH) / DAY_LENGTH;
+
+    const sunAngle = cycle * Math.PI * 2;
+
+    sunLight.position.set(
+        Math.cos(sunAngle)*100,
+        Math.sin(sunAngle)*100,
+        50
+    );
+
+    const intensity = Math.max(0.2, Math.sin(sunAngle)+0.5);
+
+    sunLight.intensity = intensity;
+    ambient.intensity = intensity * 0.4;
+
+    return cycle;
+}
+
+////////////////////////////////////////////////////////////
+// UI
+////////////////////////////////////////////////////////////
+
+const topbar = document.getElementById("topbar");
+const bottombar = document.getElementById("bottombar");
+
+function renderUI(){
+
+    bottombar.innerHTML = `
+        <div class="panel">
+            <b>Paladin</b><br>
+            HP: ${paladin.hp}<br>
+            Mana: ${paladin.mana}<br>
+            Speed: ${getSpeed().toFixed(2)}<br>
+            Lifesteal: ${(getLifesteal()*100).toFixed(0)}%
+        </div>
+
+        <div class="panel">
+            <button onclick="cast('smite')">Smite</button>
+            <button onclick="cast('invincibility')">Invincibility</button>
+        </div>
+
+        <div class="panel">
+            <button onclick="equip('vampiric_hood')">Equip Vampiric Hood</button>
+        </div>
+    `;
+}
+
+window.cast = (a)=>{
+
+    const skill = abilities[a];
+
+    if(skill.cast){
+        skill.cast(paladin, enemies[0]);
+    }
+};
+
+window.equip = (id)=>{
+
+    equipped.push(items[id]);
+};
+
+////////////////////////////////////////////////////////////
+// MOVEMENT + COMBAT LOOP
+////////////////////////////////////////////////////////////
+
+window.addEventListener("mousemove",(e)=>{
+
+    const x=(e.clientX/innerWidth)*2-1;
+    const y=-(e.clientY/innerHeight)*2+1;
+
+    const ray=new THREE.Raycaster();
+    ray.setFromCamera({x,y},camera);
+
+    const hit = ray.intersectObject(ground)[0];
+
+    if(hit){
+        const dir = hit.point.sub(paladin.mesh.position);
+        paladin.mesh.position.add(dir.multiplyScalar(0.02 * getSpeed()));
+    }
+});
+
+////////////////////////////////////////////////////////////
+// LOOP
+////////////////////////////////////////////////////////////
+
+function animate(){
+
+    requestAnimationFrame(animate);
+
+    const t = performance.now()/1000;
+
+    updateDayNight(t);
+
+    const cycle = updateDayNight(t);
+
+    topbar.innerHTML = `
+        Day/Night Cycle: ${(cycle*100).toFixed(0)}%
+        <div style="width:200px;height:6px;background:#333;display:inline-block;margin-left:10px;">
+            <div style="width:${cycle*200}px;height:6px;background:yellow;"></div>
+        </div>
+    `;
+
+    renderUI();
+
+    renderer.render(scene,camera);
+}
+
+animate();
+
+////////////////////////////////////////////////////////////
+// RESIZE
+////////////////////////////////////////////////////////////
+
+addEventListener("resize",()=>{
+    camera.aspect=innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+
+</body>
+</html>
