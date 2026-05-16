@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RTS Mech + Rifleman Animation System</title>
+<style>
+body { margin:0; overflow:hidden; background:#000; font-family:sans-serif; }
+
+#ui {
+    position:absolute;
+    bottom:0;
+    width:100%;
+    height:140px;
+    background:#000;
+    color:white;
+    display:flex;
+    gap:10px;
+    padding:8px;
+    font-size:12px;
+    border-top:2px solid #333;
+}
+
+#animPreview {
+    position:absolute;
+    top:10px;
+    right:10px;
+    width:180px;
+    height:180px;
+    background:#111;
+    border:2px solid #444;
+    color:white;
+    font-size:10px;
+    padding:4px;
+}
+button {
+    background:#222;
+    color:white;
+    border:1px solid #555;
+    padding:5px;
+}
+</style>
+</head>
+<body>
+
+<div id="animPreview">Animation Preview</div>
+<div id="ui"></div>
+
+<script type="module">
+
+import * as THREE from "https://esm.sh/three@0.165.0";
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(90,90,90);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+const light = new THREE.DirectionalLight(0xffffff,1);
+scene.add(light);
+
+////////////////////////////////////////////////////////////
+// GROUND
+////////////////////////////////////////////////////////////
+
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(200,200),
+    new THREE.MeshStandardMaterial({color:0x2d5a2d})
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+////////////////////////////////////////////////////////////
+// ANIMATION SYSTEM
+////////////////////////////////////////////////////////////
+
+const AnimationState = {
+    IDLE:"idle",
+    MOVE:"move",
+    FIRE:"fire",
+    DIE:"die"
+};
+
+////////////////////////////////////////////////////////////
+// UNIT BUILDER (MECH + RIFLEMAN)
+// ////////////////////////////////////////////////////////////
+
+const units = [];
+
+function createMech(x,z){
+
+    const body = new THREE.Group();
+
+    const core = new THREE.Mesh(
+        new THREE.BoxGeometry(2,2,2),
+        new THREE.MeshStandardMaterial({color:0x666666})
+    );
+
+    const armL = new THREE.Mesh(new THREE.BoxGeometry(0.5,2,0.5), new THREE.MeshStandardMaterial({color:0x444444}));
+    const armR = armL.clone();
+
+    armL.position.set(-1.5,0,0);
+    armR.position.set(1.5,0,0);
+
+    const legL = new THREE.Mesh(new THREE.BoxGeometry(0.5,2,0.5), new THREE.MeshStandardMaterial({color:0x333333}));
+    const legR = legL.clone();
+
+    legL.position.set(-0.5,-2,0);
+    legR.position.set(0.5,-2,0);
+
+    body.add(core,armL,armR,legL,legR);
+
+    body.position.set(x,2,z);
+    scene.add(body);
+
+    return {
+        type:"mech",
+        mesh:body,
+        state:AnimationState.IDLE,
+        burst:0,
+        cooldown:0,
+        hp:500,
+        range:14
+    };
+}
+
+function createRifleman(x,z){
+
+    const body = new THREE.Group();
+
+    const torso = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.8,1.5),
+        new THREE.MeshStandardMaterial({color:0xcccccc})
+    );
+
+    const rifle = new THREE.Mesh(
+        new THREE.BoxGeometry(2,0.2,0.2),
+        new THREE.MeshStandardMaterial({color:0x222222})
+    );
+
+    const cape = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.5,2),
+        new THREE.MeshStandardMaterial({color:0x3333aa,side:THREE.DoubleSide})
+    );
+
+    cape.position.set(-0.8,0,0);
+
+    body.add(torso,rifle,cape);
+
+    body.position.set(x,1.5,z);
+    scene.add(body);
+
+    return {
+        type:"rifleman",
+        mesh:body,
+        state:AnimationState.IDLE,
+        hp:150,
+        cooldown:0,
+        range:18
+    };
+}
+
+////////////////////////////////////////////////////////////
+// PROJECTILES
+////////////////////////////////////////////////////////////
+
+const projectiles = [];
+
+function spawnProjectile(from,to,dmg){
+
+    const m = new THREE.Mesh(
+        new THREE.SphereGeometry(0.2),
+        new THREE.MeshBasicMaterial({color:0xffaa00})
+    );
+
+    m.position.copy(from);
+    scene.add(m);
+
+    projectiles.push({
+        mesh:m,
+        to,
+        dmg,
+        speed:0.7
+    });
+}
+
+////////////////////////////////////////////////////////////
+// UNITS
+////////////////////////////////////////////////////////////
+
+for(let i=0;i<3;i++) units.push(createMech(-10+i*3,0));
+for(let i=0;i<4;i++) units.push(createRifleman(-10+i*2,-8));
+
+for(let i=0;i<6;i++){
+    const enemy = createRifleman(20+i*2,10);
+    enemy.enemy = true;
+    units.push(enemy);
+}
+
+////////////////////////////////////////////////////////////
+// AI + BURST FIRE MECH
+////////////////////////////////////////////////////////////
+
+function nearestEnemy(u){
+
+    let best=null;
+    let d=999;
+
+    for(const o of units){
+
+        if(o.enemy === u.enemy) continue;
+
+        const dist = u.mesh.position.distanceTo(o.mesh.position);
+
+        if(dist<d){
+            d=dist;
+            best=o;
+        }
+    }
+
+    return best;
+}
+
+function fireBurst(mech,target){
+
+    if(mech.cooldown>0) return;
+
+    mech.state = AnimationState.FIRE;
+
+    mech.burst++;
+
+    spawnProjectile(mech.mesh.position.clone(),target.mesh.position.clone(),12);
+
+    if(mech.burst>=5){
+        mech.burst=0;
+        mech.cooldown=120; // pause after burst
+    }
+}
+
+function updateUnit(u){
+
+    const enemy = nearestEnemy(u);
+
+    if(!enemy) return;
+
+    const dist = u.mesh.position.distanceTo(enemy.mesh.position);
+
+    if(u.type==="mech"){
+
+        if(dist<u.range){
+
+            fireBurst(u,enemy);
+
+        } else {
+
+            u.mesh.position.lerp(enemy.mesh.position,0.01);
+            u.state=AnimationState.MOVE;
+        }
+
+    } else {
+
+        // rifleman behavior
+        if(dist<u.range){
+
+            if(u.cooldown<=0){
+
+                spawnProjectile(u.mesh.position.clone(),enemy.mesh.position.clone(),8);
+                u.cooldown=60;
+
+                u.state=AnimationState.FIRE;
+            }
+
+        } else {
+            u.mesh.position.lerp(enemy.mesh.position,0.02);
+            u.state=AnimationState.MOVE;
+        }
+    }
+
+    if(u.cooldown>0) u.cooldown--;
+}
+
+////////////////////////////////////////////////////////////
+// PROJECTILE LOOP
+////////////////////////////////////////////////////////////
+
+function updateProjectiles(){
+
+    for(let i=projectiles.length-1;i>=0;i--){
+
+        const p=projectiles[i];
+
+        const dir=p.to.clone().sub(p.mesh.position);
+        const d=dir.length();
+
+        p.mesh.position.add(dir.normalize().multiplyScalar(p.speed));
+
+        if(d<1){
+
+            scene.remove(p.mesh);
+            projectiles.splice(i,1);
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////
+// SIMPLE ANIMATION LOOP
+////////////////////////////////////////////////////////////
+
+function animateUnits(){
+
+    for(const u of units){
+
+        if(u.state===AnimationState.MOVE){
+
+            u.mesh.position.y = 1.5 + Math.sin(Date.now()*0.01)*0.05;
+        }
+
+        if(u.state===AnimationState.FIRE){
+
+            u.mesh.rotation.y += 0.05;
+        }
+
+        if(u.state===AnimationState.IDLE){
+
+            u.mesh.rotation.y += 0.01;
+        }
+
+    }
+}
+
+////////////////////////////////////////////////////////////
+// ANIMATION PREVIEW SYSTEM
+////////////////////////////////////////////////////////////
+
+const preview = document.getElementById("animPreview");
+let previewIndex = 0;
+
+function cyclePreview(){
+
+    previewIndex = (previewIndex+1)%units.length;
+
+    const u = units[previewIndex];
+
+    preview.innerHTML = `
+        <b>Animation Test</b><br>
+        Type: ${u.type}<br>
+        State: ${u.state}<br>
+        HP: ${u.hp}
+    `;
+}
+
+setInterval(cyclePreview,1000);
+
+////////////////////////////////////////////////////////////
+// LOOP
+////////////////////////////////////////////////////////////
+
+function animate(){
+
+    requestAnimationFrame(animate);
+
+    for(const u of units) updateUnit(u);
+
+    updateProjectiles();
+    animateUnits();
+
+    renderer.render(scene,camera);
+}
+
+animate();
+
+////////////////////////////////////////////////////////////
+// RESIZE
+////////////////////////////////////////////////////////////
+
+addEventListener("resize",()=>{
+    camera.aspect=innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+
+</body>
+</html>
