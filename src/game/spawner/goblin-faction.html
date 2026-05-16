@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RTS Create Game + Goblin Race</title>
+<style>
+body { margin:0; overflow:hidden; background:#000; font-family:sans-serif; }
+
+/* CREATE GAME WINDOW */
+/* TODO add goblin taskmaster (whip) goblin gnoll rider. */
+#menu {
+    position:absolute;
+    top:0;
+    left:0;
+    width:300px;
+    height:100%;
+    background:#111;
+    color:white;
+    overflow:auto;
+    border-right:2px solid #333;
+}
+
+.section {
+    padding:10px;
+    border-bottom:1px solid #222;
+}
+
+button {
+    width:100%;
+    padding:8px;
+    margin:4px 0;
+    background:#222;
+    color:white;
+    border:1px solid #444;
+    cursor:pointer;
+}
+
+button:hover { background:#333; }
+
+#ui {
+    position:absolute;
+    bottom:0;
+    left:300px;
+    right:0;
+    height:120px;
+    background:#000;
+    color:white;
+    padding:10px;
+    font-size:12px;
+    border-top:2px solid #333;
+}
+</style>
+</head>
+<body>
+
+<div id="menu"></div>
+<div id="ui"></div>
+
+<script type="module">
+
+import * as THREE from "https://esm.sh/three@0.165.0";
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(60, (innerWidth-300)/innerHeight, 0.1, 2000);
+camera.position.set(80,80,80);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth-300, innerHeight);
+renderer.domElement.style.marginLeft="300px";
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+
+////////////////////////////////////////////////////////////
+// FACTION SYSTEM
+////////////////////////////////////////////////////////////
+
+const Factions = {
+
+human:{
+    name:"Human",
+    buildings:["Keep","Barracks","Workshop","Altar"],
+    units:["Peon","Knight","Rifleman"]
+},
+
+goblin:{
+    name:"Goblin",
+    buildings:[
+        "Chieftains Den","House","Barracks","Workshop",
+        "Altar","Shaman Hut","Tower","Barricade"
+    ],
+    units:{
+        "Chieftains Den":["Peon"],
+        "Barracks":["Goblin Warrior","Berserker"],
+        "Workshop":["Goblin Shredder","Troll Goblin"],
+        "Altar":["Goblin Commander","Goblin Bounty Hunter","Goblin Sniper"],
+        "Shaman Hut":["Goblin Shaman"]
+    }
+}
+
+};
+
+let selectedFaction = "human";
+
+////////////////////////////////////////////////////////////
+// CREATE GAME MENU UI
+////////////////////////////////////////////////////////////
+
+const menu = document.getElementById("menu");
+
+function renderMenu(){
+
+menu.innerHTML = `
+
+<div class="section">
+<h3>Create Game</h3>
+</div>
+
+<div class="section">
+<b>Faction</b>
+
+<button onclick="selectFaction('human')">Human</button>
+<button onclick="selectFaction('goblin')">Goblin</button>
+</div>
+
+<div class="section">
+<b>Preview</b>
+<div id="preview">${Factions[selectedFaction].name}</div>
+</div>
+
+<div class="section">
+<b>Buildings</b>
+${Factions[selectedFaction].buildings.map(b=>`<button>${b}</button>`).join("")}
+</div>
+
+`;
+
+}
+
+window.selectFaction = (f)=>{
+selectedFaction = f;
+renderMenu();
+};
+
+renderMenu();
+
+////////////////////////////////////////////////////////////
+// WORLD
+////////////////////////////////////////////////////////////
+
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(200,200),
+    new THREE.MeshStandardMaterial({color:0x2d5a2d})
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+////////////////////////////////////////////////////////////
+// UNITS (MIN TEST)
+// ////////////////////////////////////////////////////////////
+
+const units=[];
+
+function spawnUnit(x,z,color){
+
+    const m=new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.6,1.2),
+        new THREE.MeshStandardMaterial({color})
+    );
+
+    m.position.set(x,1,z);
+    scene.add(m);
+
+    units.push({mesh:m});
+}
+
+spawnUnit(0,0,0x66ccff);
+spawnUnit(5,0,0xff6666);
+
+////////////////////////////////////////////////////////////
+// LOOP
+////////////////////////////////////////////////////////////
+
+function animate(){
+
+    requestAnimationFrame(animate);
+    renderer.render(scene,camera);
+}
+
+animate();
+
+////////////////////////////////////////////////////////////
+// RESIZE
+////////////////////////////////////////////////////////////
+
+addEventListener("resize",()=>{
+
+camera.aspect=(innerWidth-300)/innerHeight;
+camera.updateProjectionMatrix();
+
+renderer.setSize(innerWidth-300,innerHeight);
+renderer.domElement.style.marginLeft="300px";
+
+});
+
+</script>
+
+</body>
+</html>
