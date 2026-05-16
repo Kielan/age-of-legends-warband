@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RTS Economy + Pathfinding + Formations</title>
+<style>
+body { margin:0; overflow:hidden; background:#000; font-family:sans-serif; }
+
+#ui {
+    position:absolute;
+    bottom:0;
+    width:100%;
+    height:140px;
+    background:#000;
+    color:white;
+    padding:10px;
+    font-size:12px;
+    border-top:2px solid #333;
+}
+
+.ghost {
+    position:absolute;
+    border:2px dashed #0f0;
+    opacity:0.5;
+    pointer-events:none;
+}
+</style>
+</head>
+<body>
+
+<div id="ui"></div>
+
+<script type="module">
+
+import * as THREE from "https://esm.sh/three@0.165.0";
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(90,90,90);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+
+////////////////////////////////////////////////////////////
+// WORLD GRID
+////////////////////////////////////////////////////////////
+
+const GRID = 40;
+const CELL = 4;
+
+function toGrid(v){
+    return Math.floor(v / CELL);
+}
+
+function toWorld(i){
+    return i * CELL;
+}
+
+////////////////////////////////////////////////////////////
+// RESOURCES
+////////////////////////////////////////////////////////////
+
+const resources = [];
+
+function createGold(x,z){
+
+    const m = new THREE.Mesh(
+        new THREE.CylinderGeometry(2,2,2),
+        new THREE.MeshStandardMaterial({color:0xffd700})
+    );
+
+    m.position.set(x,1,z);
+    scene.add(m);
+
+    resources.push({
+        type:"gold",
+        mesh:m,
+        amount:500
+    });
+}
+
+function createTree(x,z){
+
+    const m = new THREE.Mesh(
+        new THREE.ConeGeometry(2,6),
+        new THREE.MeshStandardMaterial({color:0x228822})
+    );
+
+    m.position.set(x,3,z);
+    scene.add(m);
+
+    resources.push({
+        type:"wood",
+        mesh:m,
+        amount:999
+    });
+}
+
+for(let i=0;i<3;i++) createGold(i*10,0);
+for(let i=0;i<6;i++) createTree(i*6,15);
+
+////////////////////////////////////////////////////////////
+// BUILDINGS
+////////////////////////////////////////////////////////////
+
+const buildings=[];
+
+function createBuilding(x,z){
+
+    const m = new THREE.Mesh(
+        new THREE.BoxGeometry(6,6,6),
+        new THREE.MeshStandardMaterial({color:0x777777})
+    );
+
+    m.position.set(x,3,z);
+    scene.add(m);
+
+    return {
+        mesh:m,
+        gold:0,
+        wood:0
+    };
+}
+
+const townHall = createBuilding(0,0);
+
+////////////////////////////////////////////////////////////
+// UNITS
+////////////////////////////////////////////////////////////
+
+const units=[];
+
+function createWorker(x,z){
+
+    const m = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.6,1),
+        new THREE.MeshStandardMaterial({color:0x66ccff})
+    );
+
+    m.position.set(x,1,z);
+    scene.add(m);
+
+    return {
+        mesh:m,
+        state:"idle",
+        carry:null,
+        target:null,
+        path:[]
+    };
+}
+
+for(let i=0;i<5;i++) units.push(createWorker(0,0));
+
+////////////////////////////////////////////////////////////
+// PATHFINDING (GRID A* SIMPLIFIED)
+// ////////////////////////////////////////////////////////////
+
+function heuristic(a,b){
+    return Math.abs(a.x-b.x)+Math.abs(a.z-b.z);
+}
+
+function neighbors(n){
+    return [
+        {x:n.x+1,z:n.z},
+        {x:n.x-1,z:n.z},
+        {x:n.x,z:n.z+1},
+        {x:n.x,z:n.z-1}
+    ];
+}
+
+function findPath(start,end){
+
+    const open=[start];
+    const came=new Map();
+
+    const g = new Map();
+    g.set(JSON.stringify(start),0);
+
+    while(open.length){
+
+        open.sort((a,b)=>
+            heuristic(a,end)-heuristic(b,end)
+        );
+
+        const current=open.shift();
+
+        if(current.x===end.x && current.z===end.z){
+            const path=[];
+            let c=current;
+            while(c){
+                path.push(c);
+                c=came.get(JSON.stringify(c));
+            }
+            return path.reverse();
+        }
+
+        for(const n of neighbors(current)){
+
+            const key=JSON.stringify(n);
+            const cost=(g.get(JSON.stringify(current))||0)+1;
+
+            if(!g.has(key) || cost<g.get(key)){
+
+                g.set(key,cost);
+                came.set(key,current);
+                open.push(n);
+            }
+        }
+    }
+
+    return [];
+}
+
+////////////////////////////////////////////////////////////
+// WORKER AI (ECONOMY LOOP)
+// ////////////////////////////////////////////////////////////
+
+function nearestResource(type,pos){
+
+    let best=null;
+    let d=999;
+
+    for(const r of resources){
+        if(r.type!==type) continue;
+
+        const dist=r.mesh.position.distanceTo(pos);
+
+        if(dist<d){
+            d=dist;
+            best=r;
+        }
+    }
+
+    return best;
+}
+
+function updateWorker(u){
+
+    const pos=u.mesh.position;
+
+    if(!u.carry){
+
+        const res = nearestResource("gold",pos) || nearestResource("wood",pos);
+
+        if(res){
+
+            u.target=res;
+
+            const gx=toGrid(res.mesh.position.x);
+            const gz=toGrid(res.mesh.position.z);
+
+            u.path=findPath(
+                {x:toGrid(pos.x),z:toGrid(pos.z)},
+                {x:gx,z:gz}
+            );
+
+            u.state="moving";
+        }
+    }
+
+    if(u.path.length){
+
+        const next=u.path[0];
+
+        const target=new THREE.Vector3(toWorld(next.x),1,toWorld(next.z));
+
+        u.mesh.position.lerp(target,0.2);
+
+        if(u.mesh.position.distanceTo(target)<0.5){
+
+            u.path.shift();
+        }
+
+        return;
+    }
+
+    if(u.target && u.mesh.position.distanceTo(u.target.mesh.position)<2){
+
+        u.carry=u.target.type;
+        u.target.amount-=10;
+
+        u.state="returning";
+
+        const home=new THREE.Vector3(0,1,0);
+
+        u.path=findPath(
+            {x:toGrid(pos.x),z:toGrid(pos.z)},
+            {x:0,z:0}
+        );
+    }
+
+    if(u.carry && u.mesh.position.distanceTo(new THREE.Vector3(0,1,0))<2){
+
+        if(u.carry==="gold") townHall.gold+=10;
+        if(u.carry==="wood") townHall.wood+=10;
+
+        u.carry=null;
+    }
+}
+
+////////////////////////////////////////////////////////////
+// FORMATIONS
+////////////////////////////////////////////////////////////
+
+function formationOffsets(type,count){
+
+    const offsets=[];
+
+    for(let i=0;i<count;i++){
+
+        if(type==="line"){
+            offsets.push(new THREE.Vector3(i*2,0,0));
+        }
+        if(type==="box"){
+            offsets.push(new THREE.Vector3(
+                (i%3)*2,
+                0,
+                Math.floor(i/3)*2
+            ));
+        }
+    }
+
+    return offsets;
+}
+
+////////////////////////////////////////////////////////////
+// GHOST BUILDING SYSTEM
+////////////////////////////////////////////////////////////
+
+const ghost = document.createElement("div");
+ghost.className="ghost";
+ghost.style.display="none";
+document.body.appendChild(ghost);
+
+let placing=false;
+
+window.addEventListener("mousemove",(e)=>{
+
+    if(!placing) return;
+
+    ghost.style.display="block";
+    ghost.style.left=e.clientX+"px";
+    ghost.style.top=e.clientY+"px";
+});
+
+window.addEventListener("click",(e)=>{
+
+    placing=!placing;
+});
+
+////////////////////////////////////////////////////////////
+// LOOP
+////////////////////////////////////////////////////////////
+
+function animate(){
+
+    requestAnimationFrame(animate);
+
+    for(const u of units){
+        updateWorker(u);
+    }
+
+    renderer.render(scene,camera);
+}
+
+animate();
+
+////////////////////////////////////////////////////////////
+// RESIZE
+////////////////////////////////////////////////////////////
+
+addEventListener("resize",()=>{
+
+camera.aspect=innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+
+renderer.setSize(innerWidth,innerHeight);
+
+});
+
+</script>
+
+</body>
+</html>
