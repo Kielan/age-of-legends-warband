@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RTS Full System Slice</title>
+<style>
+body { margin:0; overflow:hidden; background:#111; font-family:sans-serif; }
+
+#ui {
+    position:absolute;
+    bottom:0;
+    width:100%;
+    height:140px;
+    background:#000;
+    color:#fff;
+    display:flex;
+    border-top:2px solid #333;
+}
+
+button { margin:5px; padding:6px; background:#222; color:white; border:1px solid #555; }
+</style>
+</head>
+<body>
+
+<div id="ui"></div>
+
+<script type="module">
+
+import * as THREE from 'https://esm.sh/three@0.165.0';
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1e2b1e);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(70,70,70);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+const sun = new THREE.DirectionalLight(0xffffff,1);
+sun.position.set(50,80,30);
+scene.add(sun);
+
+////////////////////////////////////////////////////////////
+// GROUND
+////////////////////////////////////////////////////////////
+
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(200,200),
+    new THREE.MeshStandardMaterial({ color:0x2d5a2d })
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+////////////////////////////////////////////////////////////
+// ECONOMY + TECH
+////////////////////////////////////////////////////////////
+
+let gold = 0;
+let wood = 0;
+
+const Tech = {
+    KEEP:1,
+    CASTLE:2,
+    FORTRESS:3
+};
+
+let tech = Tech.KEEP;
+
+function supplyCap() {
+    return tech === Tech.KEEP ? 10 :
+           tech === Tech.CASTLE ? 20 : 35;
+}
+
+let supply = 0;
+
+////////////////////////////////////////////////////////////
+// CORE LISTS
+////////////////////////////////////////////////////////////
+
+const units = [];
+const projectiles = [];
+
+////////////////////////////////////////////////////////////
+// ARMOR / DAMAGE
+////////////////////////////////////////////////////////////
+
+const Armor = {
+    LIGHT:"light",
+    HEAVY:"heavy",
+    SIEGE:"siege"
+};
+
+const Damage = {
+    SLASH:"slash",
+    PIERCE:"pierce",
+    EXPLOSIVE:"explosive"
+};
+
+function calcDamage(base,type,armor){
+
+    if(type===Damage.PIERCE && armor===Armor.HEAVY) return base*0.6;
+    if(type===Damage.EXPLOSIVE && armor===Armor.SIEGE) return base*0.7;
+
+    return base;
+}
+
+////////////////////////////////////////////////////////////
+// UNIT SPAWNER
+////////////////////////////////////////////////////////////
+
+function spawnUnit(type,pos){
+
+    let mesh, atk=10, armor=Armor.LIGHT, range=0, speed=10;
+
+    if(type==="rifle"){
+        mesh = new THREE.Mesh(
+            new THREE.CapsuleGeometry(0.5,1.2),
+            new THREE.MeshStandardMaterial({color:0x333333})
+        );
+        range = 20;
+        atk = 12;
+    }
+
+    if(type==="horse"){
+        mesh = new THREE.Mesh(
+            new THREE.CapsuleGeometry(0.6,1.2),
+            new THREE.MeshStandardMaterial({color:0xaa8844})
+        );
+        speed = 14;
+        atk = 14;
+    }
+
+    if(type==="griffin"){
+        mesh = new THREE.Mesh(
+            new THREE.SphereGeometry(0.8),
+            new THREE.MeshStandardMaterial({color:0xffdd55})
+        );
+        speed = 16;
+        atk = 16;
+    }
+
+    if(type==="mech"){
+        mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1.5,1.5,1.5),
+            new THREE.MeshStandardMaterial({color:0x888888})
+        );
+        armor = Armor.SIEGE;
+        atk = 20;
+        speed = 6;
+    }
+
+    if(type==="cannon"){
+        mesh = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.6,0.6,2),
+            new THREE.MeshStandardMaterial({color:0x444444})
+        );
+        atk = 30;
+        range = 25;
+        speed = 5;
+    }
+
+    mesh.position.copy(pos);
+    scene.add(mesh);
+
+    units.push({
+        type, mesh,
+        hp:100,
+        atk,
+        armor,
+        range,
+        speed,
+        cooldown:0,
+        target:null
+    });
+
+    supply++;
+}
+
+////////////////////////////////////////////////////////////
+// PROJECTILES
+////////////////////////////////////////////////////////////
+
+function shoot(from,to,dmg,type){
+
+    const m = new THREE.Mesh(
+        new THREE.SphereGeometry(0.2),
+        new THREE.MeshStandardMaterial({color:0xffff00})
+    );
+
+    m.position.copy(from);
+    scene.add(m);
+
+    projectiles.push({
+        mesh:m,
+        to:to.clone(),
+        dmg,type
+    });
+}
+
+function updateProjectiles(dt){
+
+    for(const p of projectiles){
+
+        const dir = p.to.clone().sub(p.mesh.position).normalize();
+        p.mesh.position.add(dir.multiplyScalar(40*dt));
+
+        if(p.mesh.position.distanceTo(p.to)<1){
+
+            for(const u of units){
+                if(u.mesh.position.distanceTo(p.to)<2){
+                    u.hp -= calcDamage(p.dmg,p.type,u.armor);
+
+                    if(u.hp<=0){
+                        scene.remove(u.mesh);
+                        units.splice(units.indexOf(u),1);
+                    }
+                }
+            }
+
+            scene.remove(p.mesh);
+            projectiles.splice(projectiles.indexOf(p),1);
+            break;
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////
+// AI
+////////////////////////////////////////////////////////////
+
+function updateUnits(dt){
+
+    for(const u of units){
+
+        u.cooldown -= dt;
+
+        const enemy = units.find(e=>e!==u);
+
+        if(!enemy) continue;
+
+        const dist = u.mesh.position.distanceTo(enemy.mesh.position);
+
+        const dir = enemy.mesh.position.clone()
+            .sub(u.mesh.position)
+            .normalize();
+
+        u.mesh.position.add(dir.multiplyScalar(u.speed*dt));
+
+        if(u.range>0 && dist<u.range && u.cooldown<=0){
+
+            shoot(u.mesh.position,enemy.mesh.position,u.atk,Damage.PIERCE);
+            u.cooldown = 1.2;
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////
+// BUILDING MENU (SIMPLIFIED)
+////////////////////////////////////////////////////////////
+
+function ui(){
+
+    const div = document.getElementById("ui");
+
+    const b1 = document.createElement("button");
+    b1.innerText="Barracks Units";
+    b1.onclick=()=>{
+
+        spawnUnit("griffin",new THREE.Vector3(-20,0,-20));
+    };
+
+    const b2 = document.createElement("button");
+    b2.innerText="Workshop Units";
+    b2.onclick=()=>{
+
+        spawnUnit("mech",new THREE.Vector3(0,0,-20));
+        spawnUnit("cannon",new THREE.Vector3(20,0,-20));
+    };
+
+    div.appendChild(b1);
+    div.appendChild(b2);
+}
+
+ui();
+
+////////////////////////////////////////////////////////////
+// START STATE
+////////////////////////////////////////////////////////////
+
+spawnUnit("griffin",new THREE.Vector3(-10,0,-10));
+spawnUnit("rifle",new THREE.Vector3(10,0,10));
+spawnUnit("horse",new THREE.Vector3(15,0,10));
+
+////////////////////////////////////////////////////////////
+// LOOP
+////////////////////////////////////////////////////////////
+
+let last=performance.now();
+
+function animate(){
+
+    requestAnimationFrame(animate);
+
+    const now=performance.now();
+    const dt=(now-last)/1000;
+    last=now;
+
+    updateUnits(dt);
+    updateProjectiles(dt);
+
+    renderer.render(scene,camera);
+}
+
+animate();
+
+////////////////////////////////////////////////////////////
+// RESIZE
+////////////////////////////////////////////////////////////
+
+addEventListener("resize",()=>{
+    camera.aspect=innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+
+</body>
+</html>
