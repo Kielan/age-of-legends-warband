@@ -1,0 +1,381 @@
+<!--
+QUICK FIX PATCH
+Replace ONLY the lane generation + base placement sections
+from the previous file with this updated rotated version.
+
+Main changes:
+[x] Entire lane system rotated 45°
+[x] Bases moved to top-left and bottom-right corners
+[x] Center lane now diagonal corner-to-corner
+[x] Side lanes rotated parallel to center lane
+[x] Minor lanes rotated correctly
+-->
+
+<script type="module">
+
+////////////////////////////////////////////////////////////
+// ROTATED LANE DEFINITIONS
+////////////////////////////////////////////////////////////
+
+const MAP_SIZE = 1536;
+const HALF_MAP = MAP_SIZE / 2;
+
+const LANE_WIDTH = 42;
+const MINOR_LANE_WIDTH = 18;
+
+////////////////////////////////////////////////////////////
+// DISTANCE TO LINE
+////////////////////////////////////////////////////////////
+
+function distanceToLine(px,pz,x1,z1,x2,z2){
+
+    const A = px - x1;
+    const B = pz - z1;
+
+    const C = x2 - x1;
+    const D = z2 - z1;
+
+    const dot = A*C + B*D;
+    const len = C*C + D*D;
+
+    let param = -1;
+
+    if(len !== 0){
+        param = dot / len;
+    }
+
+    let xx, zz;
+
+    if(param < 0){
+
+        xx = x1;
+        zz = z1;
+
+    } else if(param > 1){
+
+        xx = x2;
+        zz = z2;
+
+    } else {
+
+        xx = x1 + param * C;
+        zz = z1 + param * D;
+    }
+
+    const dx = px - xx;
+    const dz = pz - zz;
+
+    return Math.sqrt(dx*dx + dz*dz);
+}
+
+////////////////////////////////////////////////////////////
+// 45 DEGREE ROTATED MAJOR LANES
+////////////////////////////////////////////////////////////
+
+function isInMajorLane(x,z){
+
+    ////////////////////////////////////////////////////////
+    // MAIN CENTER LANE
+    // TOP LEFT → BOTTOM RIGHT
+    ////////////////////////////////////////////////////////
+
+    const centerLane =
+        distanceToLine(
+            x,z,
+            -HALF_MAP+120,-HALF_MAP+120,
+            HALF_MAP-120,HALF_MAP-120
+        ) < LANE_WIDTH;
+
+    ////////////////////////////////////////////////////////
+    // UPPER PARALLEL LANE
+    ////////////////////////////////////////////////////////
+
+    const upperLane =
+        distanceToLine(
+            x,z,
+            -HALF_MAP+120,-HALF_MAP+320,
+            HALF_MAP-320,HALF_MAP-120
+        ) < LANE_WIDTH;
+
+    ////////////////////////////////////////////////////////
+    // LOWER PARALLEL LANE
+    ////////////////////////////////////////////////////////
+
+    const lowerLane =
+        distanceToLine(
+            x,z,
+            -HALF_MAP+320,-HALF_MAP+120,
+            HALF_MAP-120,HALF_MAP-320
+        ) < LANE_WIDTH;
+
+    return (
+        centerLane ||
+        upperLane ||
+        lowerLane
+    );
+}
+
+////////////////////////////////////////////////////////////
+// ROTATED MINOR LANES
+////////////////////////////////////////////////////////////
+
+function isInMinorLane(x,z){
+
+    ////////////////////////////////////////////////////////
+    // UPPER MINOR SET
+    ////////////////////////////////////////////////////////
+
+    const upperMinor1 =
+        distanceToLine(
+            x,z,
+            -HALF_MAP+180,-HALF_MAP+420,
+            HALF_MAP-420,HALF_MAP-180
+        ) < MINOR_LANE_WIDTH;
+
+    const upperMinor2 =
+        distanceToLine(
+            x,z,
+            -HALF_MAP+240,-HALF_MAP+520,
+            HALF_MAP-520,HALF_MAP-240
+        ) < MINOR_LANE_WIDTH;
+
+    ////////////////////////////////////////////////////////
+    // LOWER MINOR SET
+    ////////////////////////////////////////////////////////
+
+    const lowerMinor1 =
+        distanceToLine(
+            x,z,
+            -HALF_MAP+420,-HALF_MAP+180,
+            HALF_MAP-180,HALF_MAP-420
+        ) < MINOR_LANE_WIDTH;
+
+    const lowerMinor2 =
+        distanceToLine(
+            x,z,
+            -HALF_MAP+520,-HALF_MAP+240,
+            HALF_MAP-240,HALF_MAP-520
+        ) < MINOR_LANE_WIDTH;
+
+    return (
+        upperMinor1 ||
+        upperMinor2 ||
+        lowerMinor1 ||
+        lowerMinor2
+    );
+}
+
+////////////////////////////////////////////////////////////
+// FOREST ZONES
+////////////////////////////////////////////////////////////
+
+function isForestZone(x,z){
+
+    const edgePadding = 130;
+
+    const borderForest =
+        Math.abs(x) > HALF_MAP-edgePadding ||
+        Math.abs(z) > HALF_MAP-edgePadding;
+
+    const lane =
+        isInMajorLane(x,z) ||
+        isInMinorLane(x,z);
+
+    return !lane || borderForest;
+}
+
+////////////////////////////////////////////////////////////
+// BASE PLACEMENT
+////////////////////////////////////////////////////////////
+
+function createBase(x,z,color){
+
+    const group = new THREE.Group();
+
+    ////////////////////////////////////////////////////////
+    // MAIN CASTLE
+    ////////////////////////////////////////////////////////
+
+    const castle = new THREE.Mesh(
+        new THREE.BoxGeometry(
+            42,
+            28,
+            42
+        ),
+        new THREE.MeshStandardMaterial({
+            color
+        })
+    );
+
+    castle.position.y = 14;
+
+    group.add(castle);
+
+    ////////////////////////////////////////////////////////
+    // TOWERS
+    ////////////////////////////////////////////////////////
+
+    for(let i=0;i<4;i++){
+
+        const tower = new THREE.Mesh(
+            new THREE.CylinderGeometry(
+                5,
+                5,
+                42,
+                8
+            ),
+            new THREE.MeshStandardMaterial({
+                color:0x888888
+            })
+        );
+
+        tower.position.set(
+            i<2 ? -18 : 18,
+            21,
+            i%2===0 ? -18 : 18
+        );
+
+        group.add(tower);
+    }
+
+    group.position.set(
+        x,
+        getTerrainHeight(x,z),
+        z
+    );
+
+    scene.add(group);
+}
+
+////////////////////////////////////////////////////////////
+// NEW ROTATED CASTLE POSITIONS
+////////////////////////////////////////////////////////////
+
+createBase(
+    -HALF_MAP + 120,
+    -HALF_MAP + 120,
+    0x3366cc
+);
+
+createBase(
+    HALF_MAP - 120,
+    HALF_MAP - 120,
+    0xaa3333
+);
+
+////////////////////////////////////////////////////////////
+// UPDATED MINIMAP
+////////////////////////////////////////////////////////////
+
+function updateMinimap(){
+
+    mini.fillStyle = "#1a1a1a";
+
+    mini.fillRect(0,0,260,260);
+
+    ////////////////////////////////////////////////////////
+    // MAJOR LANES
+    ////////////////////////////////////////////////////////
+
+    mini.strokeStyle = "#8b7355";
+    mini.lineWidth = 8;
+
+    ////////////////////////////////////////////////////////
+    // CENTER LANE
+    ////////////////////////////////////////////////////////
+
+    mini.beginPath();
+    mini.moveTo(20,20);
+    mini.lineTo(240,240);
+    mini.stroke();
+
+    ////////////////////////////////////////////////////////
+    // UPPER LANE
+    ////////////////////////////////////////////////////////
+
+    mini.beginPath();
+    mini.moveTo(20,60);
+    mini.lineTo(200,240);
+    mini.stroke();
+
+    ////////////////////////////////////////////////////////
+    // LOWER LANE
+    ////////////////////////////////////////////////////////
+
+    mini.beginPath();
+    mini.moveTo(60,20);
+    mini.lineTo(240,200);
+    mini.stroke();
+
+    ////////////////////////////////////////////////////////
+    // BASES
+    ////////////////////////////////////////////////////////
+
+    mini.fillStyle = "#3366ff";
+
+    mini.fillRect(
+        12,
+        12,
+        16,
+        16
+    );
+
+    mini.fillStyle = "#ff3333";
+
+    mini.fillRect(
+        232,
+        232,
+        16,
+        16
+    );
+
+    ////////////////////////////////////////////////////////
+    // CAMERA
+    ////////////////////////////////////////////////////////
+
+    mini.strokeStyle = "#ffffff";
+
+    const camX =
+        130 + (camera.position.x / HALF_MAP)*120;
+
+    const camY =
+        130 + (camera.position.z / HALF_MAP)*120;
+
+    mini.strokeRect(
+        camX-5,
+        camY-5,
+        10,
+        10
+    );
+}
+
+////////////////////////////////////////////////////////////
+// UPDATED MAP STRUCTURE
+////////////////////////////////////////////////////////////
+
+/*
+
+NEW ROTATED MAP LAYOUT
+
+ BASE 1
+ (TOP LEFT)
+
+ ┌───────────────────────────┐
+ │ B ===== upper lane ====   │
+ │   ===== center lane ====  │
+ │    ==== lower lane ==== R │
+ └───────────────────────────┘
+
+                    BASE 1
+                 (BOTTOM RIGHT)
+
+[x] 45° rotated map lanes
+[x] diagonal center lane
+[x] diagonal side lanes
+[x] rotated minor lanes
+[x] top-left blue base
+[x] bottom-right red base
+
+*/
+
+</script>
