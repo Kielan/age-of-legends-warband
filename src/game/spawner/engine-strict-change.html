@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RTS Core Engine</title>
+<style>
+body { margin:0; overflow:hidden; background:#000; font-family:sans-serif; }
+
+canvas { display:block; }
+
+/* UI */
+#ui {
+    position:absolute;
+    bottom:0;
+    width:100%;
+    height:120px;
+    background:#000;
+    color:white;
+    font-size:12px;
+    padding:6px;
+}
+
+#minimap {
+    position:absolute;
+    top:10px;
+    right:10px;
+    width:160px;
+    height:160px;
+    background:#111;
+    border:2px solid #444;
+}
+</style>
+</head>
+<body>
+
+<canvas id="minimap"></canvas>
+<div id="ui"></div>
+
+<script type="module">
+
+import * as THREE from "https://esm.sh/three@0.165.0";
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(80,80,80);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+
+////////////////////////////////////////////////////////////
+// WORLD
+////////////////////////////////////////////////////////////
+
+const WORLD = 200;
+
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(WORLD,WORLD),
+    new THREE.MeshStandardMaterial({color:0x2c5a2c})
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+////////////////////////////////////////////////////////////
+// UNITS
+////////////////////////////////////////////////////////////
+
+const units = [];
+
+function createUnit(x,z,color,isEnemy=false){
+
+    const m = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.5,1),
+        new THREE.MeshStandardMaterial({color})
+    );
+
+    m.position.set(x,0,z);
+    scene.add(m);
+
+    units.push({
+        mesh:m,
+        enemy:isEnemy,
+        hp:100,
+        target:null,
+        commandQueue:[],
+        speed:0.8
+    });
+}
+
+// friendly units
+for(let i=0;i<6;i++){
+    createUnit(-10+i*2,0,0x66ccff,false);
+}
+
+// enemy units
+for(let i=0;i<6;i++){
+    createUnit(20+i*2,20,0xff4444,true);
+}
+
+////////////////////////////////////////////////////////////
+// SELECTION SYSTEM (WC3 STYLE)
+// ////////////////////////////////////////////////////////////
+
+let selected = [];
+
+function selectUnit(u){
+    selected = [u];
+}
+
+function multiSelect(u){
+    if(!selected.includes(u)) selected.push(u);
+}
+
+////////////////////////////////////////////////////////////
+// DRAG BOX SELECTION
+////////////////////////////////////////////////////////////
+
+let dragStart = null;
+let dragEnd = null;
+
+window.addEventListener("mousedown",(e)=>{
+    dragStart = {x:e.clientX,y:e.clientY};
+});
+
+window.addEventListener("mouseup",(e)=>{
+
+    dragEnd = {x:e.clientX,y:e.clientY};
+
+    if(!dragStart) return;
+
+    const minX = Math.min(dragStart.x, dragEnd.x);
+    const maxX = Math.max(dragStart.x, dragEnd.x);
+    const minY = Math.min(dragStart.y, dragEnd.y);
+    const maxY = Math.max(dragStart.y, dragEnd.y);
+
+    selected = [];
+
+    for(const u of units){
+
+        const pos = u.mesh.position.clone();
+        pos.project(camera);
+
+        const sx = (pos.x*0.5+0.5)*innerWidth;
+        const sy = (-pos.y*0.5+0.5)*innerHeight;
+
+        if(sx>minX && sx<maxX && sy>minY && sy<maxY){
+            selected.push(u);
+        }
+    }
+
+    dragStart = null;
+});
+
+////////////////////////////////////////////////////////////
+// COMMAND SYSTEM
+////////////////////////////////////////////////////////////
+
+window.addEventListener("contextmenu",(e)=>{
+
+    e.preventDefault();
+
+    const ray = new THREE.Raycaster();
+    const mouse = {
+        x:(e.clientX/innerWidth)*2-1,
+        y:-(e.clientY/innerHeight)*2+1
+    };
+
+    ray.setFromCamera(mouse,camera);
+
+    const hit = ray.intersectObject(ground)[0];
+
+    if(!hit) return;
+
+    const target = hit.point.clone();
+
+    for(const u of selected){
+
+        u.commandQueue.push({
+            type:"move",
+            pos:target.clone()
+        });
+    }
+});
+
+////////////////////////////////////////////////////////////
+// ATTACK-MOVE AI
+////////////////////////////////////////////////////////////
+
+function findEnemy(unit){
+
+    let closest = null;
+    let dist = 999;
+
+    for(const u of units){
+
+        if(!u.enemy) continue;
+
+        const d = unit.mesh.position.distanceTo(u.mesh.position);
+
+        if(d < dist && d < 20){
+            dist = d;
+            closest = u;
+        }
+    }
+
+    return closest;
+}
+
+function updateUnit(u){
+
+    // enemy detection
+    const enemy = findEnemy(u);
+
+    if(enemy){
+
+        u.target = enemy;
+
+        const dir = enemy.mesh.position.clone().sub(u.mesh.position);
+        u.mesh.position.add(dir.normalize().multiplyScalar(0.3));
+
+        enemy.hp -= 0.2;
+
+        if(enemy.hp <= 0){
+            scene.remove(enemy.mesh);
+            units.splice(units.indexOf(enemy),1);
+        }
+
+        return;
+    }
+
+    // command queue
+    if(u.commandQueue.length){
+
+        const cmd = u.commandQueue[0];
+
+        if(cmd.type === "move"){
+
+            const dir = cmd.pos.clone().sub(u.mesh.position);
+            const d = dir.length();
+
+            if(d < 1){
+                u.commandQueue.shift();
+            } else {
+                u.mesh.position.add(dir.normalize().multiplyScalar(u.speed));
+            }
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////
+// MINIMAP
+////////////////////////////////////////////////////////////
+
+const mini = document.getElementById("minimap");
+const ctx = mini.getContext("2d");
+
+function drawMinimap(){
+
+    ctx.clearRect(0,0,160,160);
+
+    ctx.fillStyle="#222";
+    ctx.fillRect(0,0,160,160);
+
+    for(const u of units){
+
+        ctx.fillStyle = u.enemy ? "#ff4444" : "#66ccff";
+
+        const x = (u.mesh.position.x/WORLD)*80+80;
+        const y = (u.mesh.position.z/WORLD)*80+80;
+
+        ctx.fillRect(x,y,3,3);
+    }
+
+    // selected highlight
+    for(const u of selected){
+
+        const x = (u.mesh.position.x/WORLD)*80+80;
+        const y = (u.mesh.position.z/WORLD)*80+80;
+
+        ctx.strokeStyle="#fff";
+        ctx.strokeRect(x-2,y-2,6,6);
+    }
+}
+
+////////////////////////////////////////////////////////////
+// UI
+////////////////////////////////////////////////////////////
+
+const ui = document.getElementById("ui");
+
+function renderUI(){
+    ui.innerHTML = `
+        Selected Units: ${selected.length}<br>
+        Right click: move / attack-move<br>
+        Drag box: select units<br>
+    `;
+}
+
+////////////////////////////////////////////////////////////
+// LOOP
+////////////////////////////////////////////////////////////
+
+function animate(){
+
+    requestAnimationFrame(animate);
+
+    for(const u of units){
+        updateUnit(u);
+    }
+
+    drawMinimap();
+    renderUI();
+
+    renderer.render(scene,camera);
+}
+
+animate();
+
+</script>
+
+</body>
+</html>
