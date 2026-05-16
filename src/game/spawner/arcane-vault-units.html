@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Arcane Vault Units RTS</title>
+<style>
+body { margin:0; overflow:hidden; background:#000; font-family:sans-serif; }
+#ui {
+    position:absolute;
+    bottom:0;
+    width:100%;
+    height:140px;
+    background:#000;
+    color:white;
+    padding:10px;
+    font-size:12px;
+    border-top:2px solid #333;
+}
+</style>
+</head>
+<body>
+
+<div id="ui"></div>
+
+<script type="module">
+
+import * as THREE from "https://esm.sh/three@0.165.0";
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(80,80,80);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+
+////////////////////////////////////////////////////////////
+// ARCANE UNITS
+////////////////////////////////////////////////////////////
+
+const units = [];
+
+function createWhisp(x,z){
+
+    const m = new THREE.Mesh(
+        new THREE.SphereGeometry(0.6),
+        new THREE.MeshStandardMaterial({
+            color:0x88aaff,
+            transparent:true,
+            opacity:0.8
+        })
+    );
+
+    m.position.set(x,1,z);
+    scene.add(m);
+
+    return {
+        type:"whisp",
+        mesh:m,
+        hp:60,
+        mana:100,
+        cooldown:0
+    };
+}
+
+function createPriest(x,z){
+
+    const body = new THREE.Group();
+
+    const robe = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.6,1.2),
+        new THREE.MeshStandardMaterial({color:0xddddff})
+    );
+
+    const staff = new THREE.Mesh(
+        new THREE.BoxGeometry(0.2,2,0.2),
+        new THREE.MeshStandardMaterial({color:0x553311})
+    );
+
+    staff.position.set(0.8,0,0);
+
+    body.add(robe,staff);
+
+    body.position.set(x,1.5,z);
+    scene.add(body);
+
+    return {
+        type:"priest",
+        mesh:body,
+        hp:120,
+        cooldowns:{
+            heal:0,
+            fireball:0
+        },
+        commandQueue:[]
+    };
+}
+
+////////////////////////////////////////////////////////////
+// PROJECTILES
+////////////////////////////////////////////////////////////
+
+const projectiles = [];
+
+function spawnProjectile(from,to,color="orange",dmg=20){
+
+    const m = new THREE.Mesh(
+        new THREE.SphereGeometry(0.25),
+        new THREE.MeshBasicMaterial({color})
+    );
+
+    m.position.copy(from);
+    scene.add(m);
+
+    projectiles.push({
+        mesh:m,
+        to,
+        dmg,
+        speed:0.8
+    });
+}
+
+////////////////////////////////////////////////////////////
+// ABILITIES
+////////////////////////////////////////////////////////////
+
+function aoe(pos,radius,callback){
+
+    for(const u of units){
+
+        const d = u.mesh.position.distanceTo(pos);
+        if(d<radius) callback(u);
+    }
+}
+
+////////////////////////////////////////////////////////////
+// WHISP SELF DESTRUCT
+////////////////////////////////////////////////////////////
+
+function whispExplode(w){
+
+    const pos = w.mesh.position.clone();
+
+    aoe(pos,6,(u)=>{
+
+        const manaBurn = 30;
+        const dmg = manaBurn/2;
+
+        u.hp -= dmg;
+    });
+
+    scene.remove(w.mesh);
+    units.splice(units.indexOf(w),1);
+}
+
+////////////////////////////////////////////////////////////
+// PRIEST SPELLS
+////////////////////////////////////////////////////////////
+
+function priestHeal(p){
+
+    aoe(p.mesh.position,6,(u)=>{
+
+        if(u.type==="priest" || u.type==="whisp") return;
+
+        u.hp += 10;
+    });
+}
+
+function fireball(from,to){
+
+    spawnProjectile(from,to,"orange",25);
+}
+
+////////////////////////////////////////////////////////////
+// UPDATE LOGIC
+////////////////////////////////////////////////////////////
+
+function updateUnit(u){
+
+    if(u.type==="whisp"){
+
+        if(u.hp < 20){
+            whispExplode(u);
+        }
+    }
+
+    if(u.type==="priest"){
+
+        // AUTO HEAL (3 sec)
+        if(u.cooldowns.heal<=0){
+            priestHeal(u);
+            u.cooldowns.heal = 180;
+        }
+
+        // FIREBALL QUEUE (7 sec)
+        if(u.commandQueue?.length && u.cooldowns.fireball<=0){
+
+            const cmd = u.commandQueue.shift();
+
+            if(cmd.type==="fireball"){
+
+                fireball(u.mesh.position.clone(),cmd.target);
+                u.cooldowns.fireball = 420;
+            }
+        }
+
+        if(u.cooldowns.heal>0) u.cooldowns.heal--;
+        if(u.cooldowns.fireball>0) u.cooldowns.fireball--;
+    }
+}
+
+////////////////////////////////////////////////////////////
+// PROJECTILE LOOP
+////////////////////////////////////////////////////////////
+
+function updateProjectiles(){
+
+    for(let i=projectiles.length-1;i>=0;i--){
+
+        const p = projectiles[i];
+
+        const dir = p.to.clone().sub(p.mesh.position);
+        const d = dir.length();
+
+        p.mesh.position.add(dir.normalize().multiplyScalar(p.speed));
+
+        if(d<1){
+
+            aoe(p.mesh.position,3,(u)=>{
+                u.hp -= p.dmg;
+            });
+
+            scene.remove(p.mesh);
+            projectiles.splice(i,1);
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////
+// SPAWN TEST ARMY
+////////////////////////////////////////////////////////////
+
+for(let i=0;i<3;i++) units.push(createWhisp(-10+i*2,0));
+for(let i=0;i<3;i++) units.push(createPriest(-10+i*2,-6));
+
+for(let i=0;i<6;i++){
+
+    const enemy = createPriest(20+i*2,10);
+    enemy.enemy = true;
+    units.push(enemy);
+}
+
+////////////////////////////////////////////////////////////
+// SIM LOOP
+////////////////////////////////////////////////////////////
+
+function animate(){
+
+    requestAnimationFrame(animate);
+
+    for(const u of units){
+        updateUnit(u);
+    }
+
+    updateProjectiles();
+
+    renderer.render(scene,camera);
+}
+
+animate();
+
+////////////////////////////////////////////////////////////
+// RESIZE
+////////////////////////////////////////////////////////////
+
+addEventListener("resize",()=>{
+    camera.aspect=innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+
+</body>
+</html>
