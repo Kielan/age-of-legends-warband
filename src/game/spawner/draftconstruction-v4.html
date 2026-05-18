@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>RTS Clone Prototype - ThreeJS</title>
+
+<style>
+    html, body {
+        margin: 0;
+        overflow: hidden;
+        background: #111;
+        font-family: Arial, sans-serif;
+    }
+
+    canvas {
+        display: block;
+    }
+
+    #hud {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 160px;
+        background: linear-gradient(#111, #000);
+        border-top: 3px solid #444;
+        display: flex;
+        z-index: 10;
+    }
+
+    #portraitPanel {
+        width: 220px;
+        border-right: 2px solid #333;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #050505;
+    }
+
+    #buildingPreview {
+        width: 120px;
+        height: 120px;
+        border: 2px solid #777;
+        background: #1f1f1f;
+        position: relative;
+    }
+
+    #buildingPreview:before {
+        content: "";
+        position: absolute;
+        left: 25px;
+        bottom: 20px;
+        width: 70px;
+        height: 55px;
+        background: #9d6b3f;
+    }
+
+    #buildingPreview:after {
+        content: "";
+        position: absolute;
+        left: 15px;
+        bottom: 70px;
+        width: 90px;
+        height: 50px;
+        background: #7a2525;
+        clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+    }
+
+    #commandPanel {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        padding: 16px;
+        gap: 16px;
+    }
+
+    .commandBtn {
+        width: 90px;
+        height: 90px;
+        background: #222;
+        border: 2px solid #666;
+        color: white;
+        cursor: pointer;
+        position: relative;
+        transition: 0.15s;
+    }
+
+    .commandBtn:hover {
+        background: #444;
+    }
+
+    .commandBtn span {
+        position: absolute;
+        bottom: 4px;
+        left: 4px;
+        font-size: 12px;
+    }
+
+    #modePanel {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 11;
+        display: flex;
+        gap: 8px;
+    }
+
+    .modeBtn {
+        padding: 8px 12px;
+        background: rgba(0,0,0,0.8);
+        border: 1px solid #777;
+        color: white;
+        cursor: pointer;
+    }
+
+    #info {
+        position: absolute;
+        top: 50px;
+        left: 10px;
+        z-index: 11;
+        color: white;
+        background: rgba(0,0,0,0.7);
+        padding: 8px;
+        border: 1px solid #444;
+        width: 300px;
+    }
+</style>
+</head>
+
+<body>
+
+<div id="modePanel">
+    <button class="modeBtn" id="squareBtn">Square Grid</button>
+    <button class="modeBtn" id="hexBtn">Hex Grid</button>
+</div>
+
+<div id="info">
+    Left Click = Place House<br>
+    Right Click = Cancel Draft<br>
+    Green = Valid Placement<br>
+    Red = Obstructed<br>
+    Trees + Rocks are spawned via ObjectSpawner
+</div>
+
+<div id="hud">
+    <div id="portraitPanel">
+        <div id="buildingPreview"></div>
+    </div>
+
+    <div id="commandPanel">
+        <button class="commandBtn" id="buildHouseBtn">
+            🏠
+            <span>Build House</span>
+        </button>
+    </div>
+</div>
+
+<script type="module">
+
+import * as THREE from 'https://esm.sh/three@0.165.0';
+import { OrbitControls } from 'https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js';
+
+//////////////////////////////////////////////////////////
+// BASIC ENGINE SETUP
+//////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+
+const WORLD_SIZE = 64;
+const WORLD_HALF = WORLD_SIZE / 2;
+
+const camera = new THREE.PerspectiveCamera(
+    60,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    1000
+);
+
+camera.position.set(25, 30, 25);
+
+const renderer = new THREE.WebGLRenderer({
+    antialias: true
+});
+
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+
+controls.target.set(0, 0, 0);
+controls.update();
+
+//////////////////////////////////////////////////////////
+// LIGHTING
+//////////////////////////////////////////////////////////
+
+const sun = new THREE.DirectionalLight(0xffffff, 2);
+
+sun.position.set(20, 40, 20);
+sun.castShadow = true;
+
+scene.add(sun);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.45));
+
+//////////////////////////////////////////////////////////
+// BIOMES
+//////////////////////////////////////////////////////////
+
+class ChunkBiomes {
+
+    constructor(size = 32) {
+
+        this.size = size;
+        this.heightMap = [];
+
+        for (let z = 0; z < size; z++) {
+
+            this.heightMap[z] = [];
+
+            for (let x = 0; x < size; x++) {
+
+                const height =
+                    Math.sin(x * 0.18) * 1.5 +
+                    Math.cos(z * 0.21) * 1.5 +
+                    Math.random() * 0.3;
+
+                this.heightMap[z][x] = height;
+            }
+        }
+    }
+
+    getHeight(x, z) {
+
+        const gx = Math.floor(x + this.size / 2);
+        const gz = Math.floor(z + this.size / 2);
+
+        if (
+            gx < 0 ||
+            gz < 0 ||
+            gx >= this.size ||
+            gz >= this.size
+        ) {
+            return 0;
+        }
+
+        return this.heightMap[gz][gx];
+    }
+}
+
+//////////////////////////////////////////////////////////
+// WORLD GEN
+//////////////////////////////////////////////////////////
+
+class WorldGenerator {
+
+    constructor(biomes) {
+        this.biomes = biomes;
+    }
+
+    getGroundHeight(x, z) {
+        return this.biomes.getHeight(x, z);
+    }
+}
+
+//////////////////////////////////////////////////////////
+// GRID SYSTEM
+//////////////////////////////////////////////////////////
+
+class GridManager {
+
+    constructor() {
+
+        this.mode = 'square';
+
+        // unified spacing
+        this.tileSize = 2;
+        this.hexRadius = 1.15;
+    }
+
+    setMode(mode) {
+
+        this.mode = mode;
+
+        regenerateGround();
+    }
+
+    //////////////////////////////////////////////////////
+    // SNAP TO CELL CENTER
+    //////////////////////////////////////////////////////
+
+    snapPosition(pos) {
+
+        //////////////////////////////////////////////////
+        // SQUARE
+        //////////////////////////////////////////////////
+
+        if (this.mode === 'square') {
+
+            const snappedX =
+                Math.floor(pos.x / this.tileSize)
+                * this.tileSize
+                + this.tileSize * 0.5;
+
+            const snappedZ =
+                Math.floor(pos.z / this.tileSize)
+                * this.tileSize
+                + this.tileSize * 0.5;
+
+            return new THREE.Vector3(
+                snappedX,
+                pos.y,
+                snappedZ
+            );
+        }
+
+        //////////////////////////////////////////////////
+        // HEX
+        //////////////////////////////////////////////////
+
+        const size = this.hexRadius;
+
+        const q =
+            (Math.sqrt(3)/3 * pos.x - 1/3 * pos.z)
+            / size;
+
+        const r =
+            (2/3 * pos.z)
+            / size;
+
+        const rq = Math.round(q);
+        const rr = Math.round(r);
+
+        const x =
+            size * Math.sqrt(3) * (rq + rr/2);
+
+        const z =
+            size * 1.5 * rr;
+
+        return new THREE.Vector3(
+            x,
+            pos.y,
+            z
+        );
+    }
+}
+
+//////////////////////////////////////////////////////////
+// OBJECT SPAWNER
+//////////////////////////////////////////////////////////
+
+class ObjectSpawner {
+
+    constructor(scene, occupancyGrid) {
+
+        this.scene = scene;
+        this.occupancyGrid = occupancyGrid;
+    }
+
+    occupyTile(x, z, radius = 1) {
+
+        for (let dz = -radius; dz <= radius; dz++) {
+            for (let dx = -radius; dx <= radius; dx++) {
+
+                const key = `${x+dx},${z+dz}`;
+
+                this.occupancyGrid.add(key);
+            }
+        }
+    }
+
+    isOccupied(x, z, radius = 1) {
+
+        for (let dz = -radius; dz <= radius; dz++) {
+            for (let dx = -radius; dx <= radius; dx++) {
+
+                const key = `${x+dx},${z+dz}`;
+
+                if (this.occupancyGrid.has(key)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    spawnTree(position) {
+
+        const group = new THREE.Group();
+
+        const trunk = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.3,0.4,2),
+            new THREE.MeshStandardMaterial({
+                color: 0x6b4423
+            })
+        );
+
+        trunk.position.y = 1;
+
+        const leaves = new THREE.Mesh(
+            new THREE.ConeGeometry(1.5, 3, 8),
+            new THREE.MeshStandardMaterial({
+                color: 0x228833
+            })
+        );
+
+        leaves.position.y = 3;
+
+        group.add(trunk);
+        group.add(leaves);
+
+        group.position.copy(position);
+
+        this.scene.add(group);
+
+        this.occupyTile(
+            Math.round(position.x),
+            Math.round(position.z),
+            1
+        );
+    }
+
+    spawnRock(position) {
+
+        const rock = new THREE.Mesh(
+            new THREE.DodecahedronGeometry(0.9),
+            new THREE.MeshStandardMaterial({
+                color: 0x777777
+            })
+        );
+
+        rock.position.copy(position);
+
+        this.scene.add(rock);
+
+        this.occupyTile(
+            Math.round(position.x),
+            Math.round(position.z),
+            1
+        );
+    }
+
+    spawnHouse(position) {
+
+        const group = new THREE.Group();
+
+        const body = new THREE.Mesh(
+            new THREE.BoxGeometry(1.6,2,1.6),
+            new THREE.MeshStandardMaterial({
+                color: 0xb07b4f
+            })
+        );
+
+        body.position.y = 1;
+
+        const roof = new THREE.Mesh(
+            new THREE.ConeGeometry(1.5,1.7,4),
+            new THREE.MeshStandardMaterial({
+                color: 0x7d1e1e
+            })
+        );
+
+        roof.rotation.y = Math.PI / 4;
+        roof.position.y = 3;
+
+        group.add(body);
+        group.add(roof);
+
+        group.position.copy(position);
+
+        this.scene.add(group);
+
+        this.occupyTile(
+            Math.round(position.x),
+            Math.round(position.z),
+            1
+        );
+    }
+}
+
+//////////////////////////////////////////////////////////
+// DRAFT PLACEMENT
+//////////////////////////////////////////////////////////
+
+class DraftConstructionPlacement {
+
+    constructor(scene, spawner) {
+
+        this.scene = scene;
+        this.spawner = spawner;
+
+        this.active = false;
+
+        this.preview = this.createPreview();
+
+        this.scene.add(this.preview);
+    }
+
+    createPreview() {
+
+        const group = new THREE.Group();
+
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0x00ff00,
+            transparent: true,
+            opacity: 0.55
+        });
+
+        const body = new THREE.Mesh(
+            new THREE.BoxGeometry(1.6,2,1.6),
+            mat
+        );
+
+        body.position.y = 1;
+
+        const roof = new THREE.Mesh(
+            new THREE.ConeGeometry(1.5,1.7,4),
+            mat
+        );
+
+        roof.rotation.y = Math.PI / 4;
+        roof.position.y = 3;
+
+        group.add(body);
+        group.add(roof);
+
+        group.visible = false;
+
+        return group;
+    }
+
+    start() {
+
+        this.active = true;
+        this.preview.visible = true;
+    }
+
+    cancel() {
+
+        this.active = false;
+        this.preview.visible = false;
+    }
+
+    update(position) {
+
+        if (!this.active) return;
+
+        this.preview.position.copy(position);
+
+        const occupied =
+            this.spawner.isOccupied(
+                Math.round(position.x),
+                Math.round(position.z),
+                1
+            );
+
+        const color =
+            occupied
+                ? 0xff3333
+                : 0x33ff66;
+
+        this.preview.traverse(child => {
+
+            if (child.material) {
+                child.material.color.setHex(color);
+            }
+        });
+
+        this.allowed = !occupied;
+    }
+
+    confirm() {
+
+        if (!this.active) return;
+
+        if (this.allowed) {
+
+            this.spawner.spawnHouse(
+                this.preview.position.clone()
+            );
+        }
+    }
+}
+
+//////////////////////////////////////////////////////////
+// WORLD
+//////////////////////////////////////////////////////////
+
+const occupancyGrid = new Set();
+
+const biomes = new ChunkBiomes(64);
+
+const worldGen = new WorldGenerator(biomes);
+
+const gridManager = new GridManager();
+
+const spawner = new ObjectSpawner(scene, occupancyGrid);
+
+const draftPlacement =
+    new DraftConstructionPlacement(scene, spawner);
+
+//////////////////////////////////////////////////////////
+// GROUND
+//////////////////////////////////////////////////////////
+
+let groundMesh = null;
+
+function regenerateGround() {
+
+    if (groundMesh) {
+        scene.remove(groundMesh);
+    }
+
+    const segments = 63;
+
+    const geo = new THREE.PlaneGeometry(
+        WORLD_SIZE,
+        WORLD_SIZE,
+        segments,
+        segments
+    );
+
+    geo.rotateX(-Math.PI / 2);
+
+    const pos = geo.attributes.position;
+
+    for (let i = 0; i < pos.count; i++) {
+
+        const x = pos.getX(i);
+        const z = pos.getZ(i);
+
+        const y =
+            worldGen.getGroundHeight(x, z);
+
+        pos.setY(i, y);
+    }
+
+    geo.computeVertexNormals();
+
+    const mat = new THREE.MeshStandardMaterial({
+        color:
+            gridManager.mode === 'square'
+                ? 0x467a46
+                : 0x587048
+    });
+
+    groundMesh = new THREE.Mesh(geo, mat);
+
+    groundMesh.receiveShadow = true;
+
+    scene.add(groundMesh);
+
+    generateGridOverlay();
+}
+
+//////////////////////////////////////////////////////////
+// TERRAIN GRID
+//////////////////////////////////////////////////////////
+
+let gridHelper = null;
+
+const GRID_HEIGHT_OFFSET = 0.08;
+
+function terrainHeight(x, z) {
+
+    return (
+        worldGen.getGroundHeight(x, z)
+        + GRID_HEIGHT_OFFSET
+    );
+}
+
+function createTerrainLine(points, color) {
+
+    const geometry =
+        new THREE.BufferGeometry()
+        .setFromPoints(points);
+
+    const material =
+        new THREE.LineBasicMaterial({
+            color,
+            transparent: true,
+            opacity: 0.9,
+            depthWrite: false
+        });
+
+    const line =
+        new THREE.Line(geometry, material);
+
+    line.renderOrder = 999;
+
+    return line;
+}
+
+//////////////////////////////////////////////////////////
+// GRID GENERATION
+//////////////////////////////////////////////////////////
+
+function generateGridOverlay() {
+
+    if (gridHelper) {
+        scene.remove(gridHelper);
+    }
+
+    const group = new THREE.Group();
+
+    //////////////////////////////////////////////////////
+    // SQUARE GRID
+    //////////////////////////////////////////////////////
+
+    if (gridManager.mode === 'square') {
+
+        const step = gridManager.tileSize;
+
+        for (
+            let x = -WORLD_HALF;
+            x <= WORLD_HALF;
+            x += step
+        ) {
+
+            const points = [];
+
+            for (
+                let z = -WORLD_HALF;
+                z <= WORLD_HALF;
+                z += 0.5
+            ) {
+
+                points.push(
+                    new THREE.Vector3(
+                        x,
+                        terrainHeight(x, z),
+                        z
+                    )
+                );
+            }
+
+            group.add(
+                createTerrainLine(points, 0x444444)
+            );
+        }
+
+        for (
+            let z = -WORLD_HALF;
+            z <= WORLD_HALF;
+            z += step
+        ) {
+
+            const points = [];
+
+            for (
+                let x = -WORLD_HALF;
+                x <= WORLD_HALF;
+                x += 0.5
+            ) {
+
+                points.push(
+                    new THREE.Vector3(
+                        x,
+                        terrainHeight(x, z),
+                        z
+                    )
+                );
+            }
+
+            group.add(
+                createTerrainLine(points, 0x444444)
+            );
+        }
+
+    //////////////////////////////////////////////////////
+    // HEX GRID
+    //////////////////////////////////////////////////////
+
+    } else {
+
+        //////////////////////////////////////////////////
+        // MATCH SQUARE CELL DENSITY
+        //////////////////////////////////////////////////
+
+        const radius =
+            gridManager.hexRadius;
+
+        const horizontalSpacing =
+            Math.sqrt(3) * radius;
+
+        const verticalSpacing =
+            1.5 * radius;
+
+        //////////////////////////////////////////////////
+        // STRETCH FULL MAP
+        //////////////////////////////////////////////////
+
+        const qMin =
+            Math.floor(
+                -WORLD_HALF / horizontalSpacing
+            ) - 8;
+
+        const qMax =
+            Math.ceil(
+                WORLD_HALF / horizontalSpacing
+            ) + 8;
+
+        const rMin =
+            Math.floor(
+                -WORLD_HALF / verticalSpacing
+            ) - 8;
+
+        const rMax =
+            Math.ceil(
+                WORLD_HALF / verticalSpacing
+            ) + 8;
+
+        for (let q = qMin; q <= qMax; q++) {
+            for (let r = rMin; r <= rMax; r++) {
+
+                const centerX =
+                    radius *
+                    Math.sqrt(3) *
+                    (q + r / 2);
+
+                const centerZ =
+                    radius *
+                    1.5 *
+                    r;
+
+                //////////////////////////////////////////////////
+                // CULL FAR OUTSIDE
+                //////////////////////////////////////////////////
+
+                if (
+                    centerX < -WORLD_HALF - 4 ||
+                    centerX > WORLD_HALF + 4 ||
+                    centerZ < -WORLD_HALF - 4 ||
+                    centerZ > WORLD_HALF + 4
+                ) {
+                    continue;
+                }
+
+                const points = [];
+
+                for (let i = 0; i <= 6; i++) {
+
+                    const angle =
+                        (Math.PI / 3) * i;
+
+                    const x =
+                        centerX +
+                        radius * Math.cos(angle);
+
+                    const z =
+                        centerZ +
+                        radius * Math.sin(angle);
+
+                    points.push(
+                        new THREE.Vector3(
+                            x,
+                            terrainHeight(x, z),
+                            z
+                        )
+                    );
+                }
+
+                group.add(
+                    createTerrainLine(points, 0x333333)
+                );
+            }
+        }
+    }
+
+    gridHelper = group;
+
+    scene.add(gridHelper);
+}
+
+//////////////////////////////////////////////////////////
+// ENVIRONMENT
+//////////////////////////////////////////////////////////
+
+function spawnEnvironment() {
+
+    for (let i = 0; i < 45; i++) {
+
+        const x =
+            Math.random() * 50 - 25;
+
+        const z =
+            Math.random() * 50 - 25;
+
+        const y =
+            worldGen.getGroundHeight(x, z);
+
+        spawner.spawnTree(
+            new THREE.Vector3(x, y, z)
+        );
+    }
+
+    for (let i = 0; i < 20; i++) {
+
+        const x =
+            Math.random() * 50 - 25;
+
+        const z =
+            Math.random() * 50 - 25;
+
+        const y =
+            worldGen.getGroundHeight(x, z);
+
+        spawner.spawnRock(
+            new THREE.Vector3(x, y + 0.4, z)
+        );
+    }
+}
+
+//////////////////////////////////////////////////////////
+// INPUT
+//////////////////////////////////////////////////////////
+
+const raycaster = new THREE.Raycaster();
+
+const mouse = new THREE.Vector2();
+
+window.addEventListener('mousemove', e => {
+
+    mouse.x =
+        (e.clientX / window.innerWidth) * 2 - 1;
+
+    mouse.y =
+        -(e.clientY / window.innerHeight) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+
+    const hits =
+        raycaster.intersectObject(groundMesh);
+
+    if (hits.length > 0) {
+
+        const hit = hits[0];
+
+        const snapped =
+            gridManager.snapPosition(hit.point);
+
+        snapped.y =
+            worldGen.getGroundHeight(
+                snapped.x,
+                snapped.z
+            );
+
+        draftPlacement.update(snapped);
+    }
+});
+
+window.addEventListener('mousedown', e => {
+
+    if (e.button === 0) {
+
+        if (draftPlacement.active) {
+            draftPlacement.confirm();
+        }
+    }
+
+    if (e.button === 2) {
+
+        e.preventDefault();
+
+        draftPlacement.cancel();
+    }
+});
+
+window.addEventListener('contextmenu', e => {
+    e.preventDefault();
+});
+
+//////////////////////////////////////////////////////////
+// UI
+//////////////////////////////////////////////////////////
+
+document.getElementById('buildHouseBtn')
+.addEventListener('click', () => {
+
+    draftPlacement.start();
+});
+
+document.getElementById('squareBtn')
+.addEventListener('click', () => {
+
+    gridManager.setMode('square');
+});
+
+document.getElementById('hexBtn')
+.addEventListener('click', () => {
+
+    gridManager.setMode('hex');
+});
+
+//////////////////////////////////////////////////////////
+// INITIALIZE
+//////////////////////////////////////////////////////////
+
+regenerateGround();
+
+spawnEnvironment();
+
+//////////////////////////////////////////////////////////
+// RENDER LOOP
+//////////////////////////////////////////////////////////
+
+function animate() {
+
+    requestAnimationFrame(animate);
+
+    renderer.render(scene, camera);
+}
+
+animate();
+
+//////////////////////////////////////////////////////////
+// RESIZE
+//////////////////////////////////////////////////////////
+
+window.addEventListener('resize', () => {
+
+    camera.aspect =
+        window.innerWidth /
+        window.innerHeight;
+
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(
+        window.innerWidth,
+        window.innerHeight
+    );
+});
+
+</script>
+</body>
+</html>
