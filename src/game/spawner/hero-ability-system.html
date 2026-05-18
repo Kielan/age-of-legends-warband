@@ -1,1 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hero Ability System</title>
+<style>
+body { margin:0; overflow:hidden; background:#111; font-family:sans-serif; }
 
+#ui {
+    position:absolute;
+    bottom:0;
+    width:100%;
+    height:160px;
+    background:#000;
+    color:#fff;
+    padding:8px;
+    font-size:12px;
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+}
+
+button {
+    background:#222;
+    color:#fff;
+    border:1px solid #555;
+    padding:6px;
+    cursor:pointer;
+}
+</style>
+</head>
+<body>
+
+<div id="ui"></div>
+
+<script type="module">
+
+import * as THREE from "https://esm.sh/three@0.165.0";
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a2b1a);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(100,120,100);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+
+const light = new THREE.DirectionalLight(0xffffff,1);
+light.position.set(100,150,100);
+scene.add(light);
+
+////////////////////////////////////////////////////////////
+// GROUND
+////////////////////////////////////////////////////////////
+
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(200,200),
+    new THREE.MeshStandardMaterial({ color:0x2d5a2d })
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+////////////////////////////////////////////////////////////
+// HEROES
+////////////////////////////////////////////////////////////
+
+const heroes = [];
+
+function createHero(type,pos,color){
+
+    const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(1),
+        new THREE.MeshStandardMaterial({color})
+    );
+
+    mesh.position.copy(pos);
+    scene.add(mesh);
+
+    return {
+        type,
+        mesh,
+        hp:100,
+        mana:100,
+        manaMax:100,
+        cooldowns:{}
+    };
+}
+
+const paladin = createHero("paladin", new THREE.Vector3(-10,0,0), 0x66ccff);
+const bloodmage = createHero("bloodmage", new THREE.Vector3(10,0,0), 0xff55ff);
+
+heroes.push(paladin,bloodmage);
+
+////////////////////////////////////////////////////////////
+// ENEMIES
+////////////////////////////////////////////////////////////
+
+const creeps = [];
+
+function spawnCreep(pos){
+
+    const mesh = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.5,1),
+        new THREE.MeshStandardMaterial({color:0x33aa33})
+    );
+
+    mesh.position.copy(pos);
+    scene.add(mesh);
+
+    creeps.push({ mesh, hp:40 });
+}
+
+for(let i=0;i<15;i++){
+    spawnCreep(new THREE.Vector3(
+        (Math.random()-0.5)*150,
+        0,
+        (Math.random()-0.5)*150
+    ));
+}
+
+////////////////////////////////////////////////////////////
+// ABILITIES
+////////////////////////////////////////////////////////////
+
+const Ability = {
+    FIRE:"circle_fire",
+    STEAL:"mana_steal",
+    PROTECT:"circle_protect"
+};
+
+const abilities = {
+
+    circle_fire:{
+        cd:6,
+        mana:30,
+        cast(hero, pos){
+
+            const ring = new THREE.Mesh(
+                new THREE.RingGeometry(0.5,5,32),
+                new THREE.MeshBasicMaterial({color:0xff4400,transparent:true,opacity:0.6})
+            );
+
+            ring.rotation.x = -Math.PI/2;
+            ring.position.copy(pos);
+            scene.add(ring);
+
+            setTimeout(()=>scene.remove(ring),500);
+
+            for(const c of creeps){
+
+                if(c.mesh.position.distanceTo(pos)<5){
+                    c.hp -= 40;
+
+                    if(c.hp<=0){
+                        scene.remove(c.mesh);
+                        creeps.splice(creeps.indexOf(c),1);
+                    }
+                }
+            }
+        }
+    },
+
+    mana_steal:{
+        cd:4,
+        mana:20,
+        cast(hero,target){
+
+            const orb = new THREE.Mesh(
+                new THREE.SphereGeometry(0.3),
+                new THREE.MeshBasicMaterial({color:0x00ffff})
+            );
+
+            orb.position.copy(hero.mesh.position);
+            scene.add(orb);
+
+            const interval = setInterval(()=>{
+
+                orb.position.lerp(target.mesh.position,0.2);
+
+                if(orb.position.distanceTo(target.mesh.position)<1){
+
+                    hero.mana = Math.min(hero.mana+30, hero.manaMax);
+                    target.hp -= 25;
+
+                    scene.remove(orb);
+                    clearInterval(interval);
+                }
+
+            },16);
+        }
+    },
+
+    circle_protect:{
+        cd:10,
+        mana:40,
+        cast(hero,pos){
+
+            const shield = new THREE.Mesh(
+                new THREE.CircleGeometry(6),
+                new THREE.MeshBasicMaterial({color:0x66aaff,transparent:true,opacity:0.4})
+            );
+
+            shield.rotation.x = -Math.PI/2;
+            shield.position.copy(pos);
+            scene.add(shield);
+
+            hero.shield = true;
+
+            setTimeout(()=>{
+                hero.shield = false;
+                scene.remove(shield);
+            },5000);
+        }
+    }
+};
+
+////////////////////////////////////////////////////////////
+// TARGETING
+////////////////////////////////////////////////////////////
+
+let selectedAbility = null;
+
+window.addEventListener("click",(e)=>{
+
+    const x=(e.clientX/innerWidth)*2-1;
+    const y=-(e.clientY/innerHeight)*2+1;
+
+    const ray=new THREE.Raycaster();
+    ray.setFromCamera({x,y},camera);
+
+    const hit = ray.intersectObject(ground)[0];
+
+    if(!hit) return;
+
+    const pos = hit.point;
+
+    if(selectedAbility){
+
+        castAbility(selectedAbility, bloodmage, pos);
+
+        selectedAbility = null;
+        updateUI();
+        return;
+    }
+
+});
+
+function castAbility(name, hero, pos){
+
+    const a = abilities[name];
+
+    if(hero.mana < a.mana) return;
+
+    const now = performance.now()/1000;
+    hero.cooldowns[name] = now;
+
+    hero.mana -= a.mana;
+
+    if(name === Ability.FIRE){
+        a.cast(hero,pos);
+    }
+
+    if(name === Ability.PROTECT){
+        a.cast(hero,pos);
+    }
+}
+
+////////////////////////////////////////////////////////////
+// UI SYSTEM
+////////////////////////////////////////////////////////////
+
+const ui = document.getElementById("ui");
+
+function updateUI(){
+
+    const now = performance.now()/1000;
+
+    const cdFire = (now - (bloodmage.cooldowns.circle_fire||0));
+    const cdSteal = (now - (bloodmage.cooldowns.mana_steal||0));
+    const cdProt = (now - (bloodmage.cooldowns.circle_protect||0));
+
+    ui.innerHTML = `
+        <div>
+            <b>Bloodmage</b><br>
+            Mana: ${bloodmage.mana.toFixed(0)}/100<br>
+        </div>
+
+        <button onclick="select('circle_fire')">Circle of Fire</button>
+        <button onclick="select('mana_steal')">Mana Steal</button>
+        <button onclick="select('circle_protect')">Protection Circle</button>
+
+        <div>
+            CD Fire: ${cdFire.toFixed(1)}s<br>
+            CD Steal: ${cdSteal.toFixed(1)}s<br>
+            CD Protect: ${cdProt.toFixed(1)}s
+        </div>
+    `;
+}
+
+window.select = (a)=>{
+    selectedAbility = a;
+};
+
+updateUI();
+
+////////////////////////////////////////////////////////////
+// LOOP
+////////////////////////////////////////////////////////////
+
+function animate(){
+
+    requestAnimationFrame(animate);
+
+    bloodmage.mana = Math.min(100, bloodmage.mana + 0.1);
+
+    updateUI();
+
+    renderer.render(scene,camera);
+}
+
+animate();
+
+////////////////////////////////////////////////////////////
+// CAMERA
+////////////////////////////////////////////////////////////
+
+camera.position.set(100,120,100);
+camera.lookAt(0,0,0);
+
+</script>
+
+</body>
+</html>
