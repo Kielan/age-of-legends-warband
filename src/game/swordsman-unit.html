@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>RTS Knight Unit - Low Poly ThreeJS</title>
+
+<style>
+body{
+    margin:0;
+    overflow:hidden;
+    background:#202020;
+    font-family:monospace;
+}
+
+#ui{
+    position:absolute;
+    top:10px;
+    left:10px;
+    color:white;
+    background:#000b;
+    padding:10px;
+    line-height:1.6em;
+}
+
+canvas{
+    display:block;
+}
+</style>
+</head>
+<body>
+
+<div id="ui">
+1 = Idle<br>
+2 = Run<br>
+3 = Attack<br>
+4 = Die
+</div>
+
+<script type="module">
+
+import * as THREE from "https://esm.sh/three@0.165.0";
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x575757);
+
+const camera = new THREE.PerspectiveCamera(
+    60,
+    innerWidth / innerHeight,
+    0.1,
+    1000
+);
+
+camera.position.set(0,7,16);
+
+const renderer = new THREE.WebGLRenderer({
+    antialias:true
+});
+
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+////////////////////////////////////////////////////////////
+// LIGHTING
+////////////////////////////////////////////////////////////
+
+scene.add(
+    new THREE.AmbientLight(0xffffff,0.72)
+);
+
+const sun = new THREE.DirectionalLight(
+    0xffffff,
+    1.4
+);
+
+sun.position.set(8,12,6);
+
+scene.add(sun);
+
+////////////////////////////////////////////////////////////
+// FLOOR
+////////////////////////////////////////////////////////////
+
+const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(120,120),
+    new THREE.MeshStandardMaterial({
+        color:0x5f6b5b
+    })
+);
+
+floor.rotation.x = -Math.PI/2;
+scene.add(floor);
+
+////////////////////////////////////////////////////////////
+// MATERIALS
+////////////////////////////////////////////////////////////
+
+const MAT = {
+
+    steel: new THREE.MeshStandardMaterial({
+        color:0xd7d9dc,
+        flatShading:true,
+        metalness:0.7,
+        roughness:0.5
+    }),
+
+    darkSteel: new THREE.MeshStandardMaterial({
+        color:0x5f6369,
+        flatShading:true
+    }),
+
+    gold: new THREE.MeshStandardMaterial({
+        color:0xcfa94d,
+        flatShading:true
+    }),
+
+    leather: new THREE.MeshStandardMaterial({
+        color:0x5e4022,
+        flatShading:true
+    }),
+
+    red: new THREE.MeshStandardMaterial({
+        color:0xb22020,
+        flatShading:true
+    }),
+
+    cloth: new THREE.MeshStandardMaterial({
+        color:0xf0f0f0,
+        flatShading:true
+    }),
+
+    skin: new THREE.MeshStandardMaterial({
+        color:0xe5c6a4,
+        flatShading:true
+    }),
+
+    sword: new THREE.MeshStandardMaterial({
+        color:0xe4e7ea,
+        metalness:0.8,
+        roughness:0.3,
+        flatShading:true
+    }),
+
+    shield: new THREE.MeshStandardMaterial({
+        color:0x383838,
+        flatShading:true
+    }),
+
+    plume: new THREE.MeshStandardMaterial({
+        color:0xd6c28f,
+        flatShading:true
+    })
+
+};
+
+////////////////////////////////////////////////////////////
+// JSON MODEL
+////////////////////////////////////////////////////////////
+
+const knightJSON = {
+
+////////////////////////////////////////////////////////////
+// ROOT
+////////////////////////////////////////////////////////////
+
+root:{
+    pos:[0,0,0],
+    children:[
+        "body",
+        "cape"
+    ]
+},
+
+////////////////////////////////////////////////////////////
+// BODY
+////////////////////////////////////////////////////////////
+
+body:{
+    pos:[0,5,0],
+    geo:["box",3.0,3.8,2.2],
+    mat:"steel",
+    children:[
+        "torsoPlate",
+        "belt",
+        "head",
+        "leftShoulder",
+        "rightShoulder",
+        "leftArm",
+        "rightArm",
+        "leftLeg",
+        "rightLeg",
+        "tabard"
+    ]
+},
+
+////////////////////////////////////////////////////////////
+// CHEST DETAIL
+////////////////////////////////////////////////////////////
+
+torsoPlate:{
+    pos:[0,0,1.2],
+    geo:["box",2.4,2.6,0.25],
+    mat:"darkSteel"
+},
+
+////////////////////////////////////////////////////////////
+// BELT
+////////////////////////////////////////////////////////////
+
+belt:{
+    pos:[0,-1.5,1.18],
+    geo:["box",2.7,0.45,0.3],
+    mat:"gold",
+    children:["beltBuckle"]
+},
+
+beltBuckle:{
+    pos:[0,0,0.2],
+    geo:["box",0.55,0.55,0.22],
+    mat:"steel"
+},
+
+////////////////////////////////////////////////////////////
+// HEAD
+////////////////////////////////////////////////////////////
+
+head:{
+    pos:[0,2.45,0],
+    geo:["box",1.55,1.8,1.55],
+    mat:"steel",
+    children:[
+        "visor",
+        "helmetTrim",
+        "plume"
+    ]
+},
+
+visor:{
+    pos:[0,0,0.82],
+    geo:["box",0.45,1.2,0.2],
+    mat:"gold"
+},
+
+helmetTrim:{
+    pos:[0,0.95,0],
+    geo:["box",1.7,0.22,1.7],
+    mat:"gold"
+},
+
+plume:{
+    pos:[0,1.35,0],
+    geo:["cone",0.4,1.4,4],
+    mat:"plume"
+},
+
+////////////////////////////////////////////////////////////
+// SHOULDERS
+////////////////////////////////////////////////////////////
+
+leftShoulder:{
+    pos:[-2.0,1.2,0],
+    geo:["cone",1.1,1.8,4],
+    rot:[0,0,1.4],
+    mat:"steel",
+    children:["leftShoulderRed"]
+},
+
+rightShoulder:{
+    pos:[2.0,1.2,0],
+    geo:["cone",1.1,1.8,4],
+    rot:[0,0,-1.4],
+    mat:"steel",
+    children:["rightShoulderRed"]
+},
+
+leftShoulderRed:{
+    pos:[0,-0.1,0.6],
+    geo:["box",1.2,0.45,0.55],
+    mat:"red"
+},
+
+rightShoulderRed:{
+    pos:[0,-0.1,0.6],
+    geo:["box",1.2,0.45,0.55],
+    mat:"red"
+},
+
+////////////////////////////////////////////////////////////
+// LEFT ARM
+////////////////////////////////////////////////////////////
+
+leftArm:{
+    pos:[-2.8,0.1,0],
+    geo:["box",1.0,3.1,1.0],
+    mat:"steel",
+    children:[
+        "leftForearm",
+        "leftHand",
+        "shield"
+    ]
+},
+
+leftForearm:{
+    pos:[0,-1.2,0.3],
+    geo:["box",0.85,1.25,0.3],
+    mat:"gold"
+},
+
+leftHand:{
+    pos:[0,-1.9,0],
+    geo:["box",0.95,0.8,0.95],
+    mat:"steel"
+},
+
+////////////////////////////////////////////////////////////
+// SHIELD
+////////////////////////////////////////////////////////////
+
+shield:{
+    pos:[-1.2,-0.1,0],
+    geo:["box",2.4,3.1,0.55],
+    rot:[0,0.2,0.1],
+    mat:"shield",
+    children:[
+        "shieldTrim",
+        "shieldGem"
+    ]
+},
+
+shieldTrim:{
+    pos:[0,0,0.31],
+    geo:["box",2.0,2.7,0.12],
+    mat:"gold"
+},
+
+shieldGem:{
+    pos:[0,0,0.42],
+    geo:["box",0.65,0.65,0.15],
+    mat:"steel"
+},
+
+////////////////////////////////////////////////////////////
+// RIGHT ARM
+////////////////////////////////////////////////////////////
+
+rightArm:{
+    pos:[2.8,0.1,0],
+    geo:["box",1.0,3.1,1.0],
+    mat:"steel",
+    children:[
+        "rightForearm",
+        "rightHand",
+        "sword"
+    ]
+},
+
+rightForearm:{
+    pos:[0,-1.2,0.3],
+    geo:["box",0.85,1.25,0.3],
+    mat:"gold"
+},
+
+rightHand:{
+    pos:[0,-1.9,0],
+    geo:["box",0.95,0.8,0.95],
+    mat:"steel"
+},
+
+////////////////////////////////////////////////////////////
+// SWORD
+////////////////////////////////////////////////////////////
+
+sword:{
+    pos:[0,-2.6,0],
+    children:[
+        "swordBlade",
+        "swordGuard",
+        "swordPommel"
+    ]
+},
+
+swordBlade:{
+    pos:[0,-1.8,0],
+    geo:["box",0.42,3.8,0.3],
+    mat:"sword"
+},
+
+swordGuard:{
+    pos:[0,-0.1,0],
+    geo:["box",1.25,0.2,0.35],
+    mat:"gold"
+},
+
+swordPommel:{
+    pos:[0,0.45,0],
+    geo:["box",0.35,0.9,0.35],
+    mat:"leather"
+},
+
+////////////////////////////////////////////////////////////
+// LEGS
+////////////////////////////////////////////////////////////
+
+leftLeg:{
+    pos:[-0.85,-3.5,0],
+    geo:["box",1.2,3.3,1.2],
+    mat:"steel",
+    children:[
+        "leftKnee",
+        "leftBoot"
+    ]
+},
+
+rightLeg:{
+    pos:[0.85,-3.5,0],
+    geo:["box",1.2,3.3,1.2],
+    mat:"steel",
+    children:[
+        "rightKnee",
+        "rightBoot"
+    ]
+},
+
+////////////////////////////////////////////////////////////
+// KNEES
+////////////////////////////////////////////////////////////
+
+leftKnee:{
+    pos:[0,-1.0,0.6],
+    geo:["box",0.95,0.55,0.4],
+    mat:"red"
+},
+
+rightKnee:{
+    pos:[0,-1.0,0.6],
+    geo:["box",0.95,0.55,0.4],
+    mat:"red"
+},
+
+////////////////////////////////////////////////////////////
+// BOOTS
+////////////////////////////////////////////////////////////
+
+leftBoot:{
+    pos:[0,-2.2,0.25],
+    geo:["box",1.4,0.9,1.8],
+    mat:"darkSteel"
+},
+
+rightBoot:{
+    pos:[0,-2.2,0.25],
+    geo:["box",1.4,0.9,1.8],
+    mat:"darkSteel"
+},
+
+////////////////////////////////////////////////////////////
+// TABARD / SKIRT
+////////////////////////////////////////////////////////////
+
+tabard:{
+    pos:[0,-2.1,1.18],
+    geo:["box",1.8,2.5,0.15],
+    rot:[0.08,0,0],
+    mat:"cloth"
+},
+
+////////////////////////////////////////////////////////////
+// CAPE
+////////////////////////////////////////////////////////////
+
+cape:{
+    pos:[0,5.2,-1.35],
+    geo:["box",3.2,5.2,0.22],
+    mat:"red"
+}
+
+};
+
+////////////////////////////////////////////////////////////
+// MODEL BUILDER
+////////////////////////////////////////////////////////////
+
+const bones = {};
+
+function buildNode(name,data){
+
+    const group = new THREE.Group();
+
+    bones[name] = group;
+
+    if(data.pos)
+        group.position.set(...data.pos);
+
+    if(data.rot)
+        group.rotation.set(...data.rot);
+
+    if(data.geo){
+
+        const g = data.geo;
+
+        let geo;
+
+        if(g[0]==="box"){
+            geo = new THREE.BoxGeometry(
+                g[1],g[2],g[3]
+            );
+        }
+
+        if(g[0]==="cone"){
+            geo = new THREE.ConeGeometry(
+                g[1],g[2],g[3]
+            );
+        }
+
+        if(g[0]==="cyl"){
+            geo = new THREE.CylinderGeometry(
+                g[1],g[2],g[3],g[4]
+            );
+        }
+
+        const mesh = new THREE.Mesh(
+            geo,
+            MAT[data.mat]
+        );
+
+        mesh.castShadow = true;
+
+        group.add(mesh);
+
+        group.mesh = mesh;
+    }
+
+    if(data.children){
+
+        for(const childName of data.children){
+
+            const child = buildNode(
+                childName,
+                knightJSON[childName]
+            );
+
+            group.add(child);
+        }
+    }
+
+    return group;
+}
+
+const knight = buildNode("root", knightJSON);
+
+scene.add(knight);
+
+////////////////////////////////////////////////////////////
+// ANIMATION STATE
+////////////////////////////////////////////////////////////
+
+const anim = {
+    state:"idle",
+    time:0
+};
+
+////////////////////////////////////////////////////////////
+// ANIMATION
+////////////////////////////////////////////////////////////
+
+function updateAnimation(dt){
+
+    anim.time += dt;
+
+    const t = anim.time;
+
+    const BODY = bones.body;
+    const CAPE = bones.cape;
+
+    const LA = bones.leftArm;
+    const RA = bones.rightArm;
+
+    const LL = bones.leftLeg;
+    const RL = bones.rightLeg;
+
+    const HEAD = bones.head;
+
+    //////////////////////////////////////////////////////////
+    // RESET
+    //////////////////////////////////////////////////////////
+
+    BODY.rotation.z = 0;
+    BODY.rotation.x = 0;
+
+    //////////////////////////////////////////////////////////
+    // IDLE
+    //////////////////////////////////////////////////////////
+
+    if(anim.state==="idle"){
+
+        BODY.position.y = 5 + Math.sin(t*2)*0.08;
+
+        HEAD.rotation.y = Math.sin(t)*0.08;
+
+        CAPE.rotation.x = Math.sin(t*2)*0.05;
+
+        LA.rotation.x = Math.sin(t*1.5)*0.04;
+        RA.rotation.x = -Math.sin(t*1.5)*0.04;
+    }
+
+    //////////////////////////////////////////////////////////
+    // RUN
+    //////////////////////////////////////////////////////////
+
+    if(anim.state==="run"){
+
+        const swing = Math.sin(t*9);
+
+        LL.rotation.x = swing * 0.9;
+        RL.rotation.x = -swing * 0.9;
+
+        LA.rotation.x = -swing * 0.7;
+        RA.rotation.x = swing * 0.7;
+
+        BODY.position.y = 5 + Math.abs(swing)*0.25;
+
+        CAPE.rotation.x = 0.5 + Math.sin(t*10)*0.15;
+
+        knight.position.x += 0.04;
+
+        if(knight.position.x > 10)
+            knight.position.x = -10;
+    }
+
+    //////////////////////////////////////////////////////////
+    // ATTACK
+    //////////////////////////////////////////////////////////
+
+    if(anim.state==="attack"){
+
+        const atk = Math.sin(t*12);
+
+        RA.rotation.x = -2.0 + atk * 1.2;
+
+        BODY.rotation.z = -0.12;
+
+        LA.rotation.z = 0.3;
+
+        CAPE.rotation.x = 0.4;
+
+        if(atk > 0.7){
+
+            BODY.rotation.z = -0.28;
+        }
+    }
+
+    //////////////////////////////////////////////////////////
+    // DIE
+    //////////////////////////////////////////////////////////
+
+    if(anim.state==="die"){
+
+        knight.rotation.z = Math.min(
+            Math.PI/2,
+            knight.rotation.z + dt * 1.1
+        );
+
+        CAPE.rotation.x = 1.2;
+
+        RA.rotation.x = -1;
+        LA.rotation.x = 1;
+    }
+
+}
+
+////////////////////////////////////////////////////////////
+// KEY INPUT
+////////////////////////////////////////////////////////////
+
+window.addEventListener("keydown",e=>{
+
+    if(e.key==="1"){
+        anim.state="idle";
+        knight.rotation.z = 0;
+    }
+
+    if(e.key==="2"){
+        anim.state="run";
+        knight.rotation.z = 0;
+    }
+
+    if(e.key==="3"){
+        anim.state="attack";
+        knight.rotation.z = 0;
+    }
+
+    if(e.key==="4"){
+        anim.state="die";
+    }
+
+});
+
+////////////////////////////////////////////////////////////
+// CAMERA ORBIT
+////////////////////////////////////////////////////////////
+
+let camRot = 0;
+
+////////////////////////////////////////////////////////////
+// LOOP
+////////////////////////////////////////////////////////////
+
+const clock = new THREE.Clock();
+
+function loop(){
+
+    requestAnimationFrame(loop);
+
+    const dt = clock.getDelta();
+
+    camRot += dt * 0.32;
+
+    camera.position.x = Math.sin(camRot)*15;
+    camera.position.z = Math.cos(camRot)*15;
+
+    camera.lookAt(0,5,0);
+
+    updateAnimation(dt);
+
+    renderer.render(scene,camera);
+}
+
+loop();
+
+////////////////////////////////////////////////////////////
+// RESIZE
+////////////////////////////////////////////////////////////
+
+window.addEventListener("resize",()=>{
+
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(
+        innerWidth,
+        innerHeight
+    );
+
+});
+
+</script>
+</body>
+</html>
