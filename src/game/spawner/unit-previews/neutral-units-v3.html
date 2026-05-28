@@ -13,17 +13,23 @@ body{
     font-family:monospace;
 }
 
+/* PREVENT GLOBAL OVERFLOW BUGS */
+*{
+    box-sizing:border-box;
+}
+
 #menu{
     position:absolute;
     top:0;
     left:0;
     width:300px;
-    height:100%;
+    height:100vh;
     background:#111;
     color:white;
-    overflow:auto;
+    overflow-y:auto;
+    overflow-x:hidden;
     border-right:2px solid #333;
-    z-index:10;
+    z-index:20;
 }
 
 .section{
@@ -51,12 +57,13 @@ button:hover{
     top:0;
     right:0;
     width:280px;
-    height:100%;
+    height:100vh;
     background:#141414;
     color:white;
     border-left:2px solid #333;
-    overflow:auto;
-    z-index:10;
+    overflow-y:auto;
+    overflow-x:hidden;
+    z-index:20;
 }
 
 .selectionCard{
@@ -66,21 +73,25 @@ button:hover{
 
 #ui{
     position:absolute;
-    bottom:0;
     left:300px;
     right:280px;
+    bottom:0;
     height:90px;
     background:#000;
     color:white;
     padding:10px;
     border-top:2px solid #333;
-    z-index:10;
+    z-index:30;
 }
 
+/* IMPORTANT FIX */
 canvas{
     position:absolute;
     top:0;
     left:300px;
+    width:calc(100vw - 580px) !important;
+    height:100vh !important;
+    display:block;
 }
 
 </style>
@@ -141,10 +152,11 @@ scene.background = new THREE.Color(0x101014);
 scene.fog = new THREE.Fog(0x101014,40,180);
 
 const VIEW_W = window.innerWidth - LEFT_W - RIGHT_W;
+const VIEW_H = window.innerHeight;
 
 const camera = new THREE.PerspectiveCamera(
     60,
-    VIEW_W/window.innerHeight,
+    VIEW_W / VIEW_H,
     0.1,
     2000
 );
@@ -157,12 +169,16 @@ const renderer = new THREE.WebGLRenderer({
 
 renderer.shadowMap.enabled = true;
 
+renderer.setPixelRatio(window.devicePixelRatio);
+
 renderer.setSize(
     VIEW_W,
-    window.innerHeight
+    VIEW_H
 );
 
+renderer.domElement.style.position = "absolute";
 renderer.domElement.style.left = LEFT_W + "px";
+renderer.domElement.style.top = "0px";
 
 document.body.appendChild(renderer.domElement);
 
@@ -298,11 +314,17 @@ roof:new THREE.MeshStandardMaterial({
 
 };
 
-////////////////////////////////////////////////////////////
-// MENU
-////////////////////////////////////////////////////////////
 
+// MENU
 const menu = document.getElementById("menu");
+
+/*
+<button onclick="selectFaction('human')>[ ] Human</button>
+<button onclick="selectFaction('goblin')>[ ] Goblin</button>
+<button onclick="selectFaction('kobold')>[x] Neutral</button>
+*/
+
+function renderMenu(){
 
 menu.innerHTML = `
 
@@ -312,15 +334,18 @@ menu.innerHTML = `
 
 <div class="section">
 
-<button onclick="selectFaction('human')>[ ] Human</button>
-<button onclick="selectFaction('goblin')>[ ] Goblin</button>
-<button onclick="selectFaction('kobold')>[x] Neutral</button>
+<button onclick="selectFaction('human')">
+${selectedFaction==="human" ? "[x]" : "[ ]"} Human
+</button>
 
-</div>
+<button onclick="selectFaction('goblin')">
+${selectedFaction==="goblin" ? "[x]" : "[ ]"} Goblin
+</button>
 
-<div class="section">
-<b>Preview</b>
-<div id="preview">${Factions[selectedFaction].name}</div>
+<button onclick="selectFaction('kobold')">
+${selectedFaction==="kobold" ? "[x]" : "[ ]"} Neutral
+</button>
+
 </div>
 
 <div class="section">
@@ -364,10 +389,16 @@ Goblin Wolf Rider
 </div>
 
 `;
+}
 
-////////////////////////////////////////////////////////////
+
+window.selectFaction = (f)=>{
+selectedFaction = f;
+renderMenu();
+};
+renderMenu();
+
 // HELPERS
-////////////////////////////////////////////////////////////
 
 function box(w,h,d,mat){
 
@@ -491,7 +522,9 @@ function createGnoll(){
     return g;
 }
 
+////////////////////////////////////////////////////////////
 // GOBLIN TASKMASTER
+////////////////////////////////////////////////////////////
 
 function createGoblinWhip(){
 
@@ -552,13 +585,17 @@ function createGoblinWhip(){
     return g;
 }
 
+////////////////////////////////////////////////////////////
 // GOBLIN WOLF RIDER
+////////////////////////////////////////////////////////////
 
 function createWolfRider(){
 
     const g = new THREE.Group();
 
+    ////////////////////////////////////////////////////////
     // WOLF
+    ////////////////////////////////////////////////////////
 
     const wolfBody = box(3.8,1.8,1.4,MAT.wolf);
     wolfBody.position.y = 2;
@@ -588,7 +625,10 @@ function createWolfRider(){
     tail.rotation.z = -0.8;
     g.add(tail);
 
+    ////////////////////////////////////////////////////////
     // RIDER
+    ////////////////////////////////////////////////////////
+
     const riderBody = box(1.1,1.4,0.9,MAT.goblin);
     riderBody.position.set(0,4,0);
     g.add(riderBody);
@@ -613,6 +653,7 @@ function createWolfRider(){
 }
 
 // BUILDINGS
+
 function createGnollCamp(){
 
     const g = new THREE.Group();
@@ -798,18 +839,11 @@ animate();
 // RESIZE
 
 window.addEventListener("resize",()=>{
-
-    const W =
-        window.innerWidth - LEFT_W - RIGHT_W;
-
-    camera.aspect = W/window.innerHeight;
-
+    const W = window.innerWidth - LEFT_W - RIGHT_W;
+    const H = window.innerHeight;
+    camera.aspect = W / H;
     camera.updateProjectionMatrix();
-
-    renderer.setSize(
-        W,
-        window.innerHeight
-    );
+    renderer.setSize(W,H);
 });
 
 </script>
