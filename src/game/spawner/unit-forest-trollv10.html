@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Troll Editor - Fixed Selection + Gizmo</title>
+
+<style>
+body{
+    margin:0;
+    overflow:hidden;
+    background:#050505;
+    font-family:monospace;
+}
+
+canvas{
+    display:block;
+}
+
+#ui{
+    position:absolute;
+    top:10px;
+    left:10px;
+    color:white;
+    background:#000c;
+    padding:14px;
+    line-height:1.7em;
+    z-index:100;
+    width:360px;
+}
+
+.key{
+    color:#90ff90;
+}
+
+.orange{
+    color:#ffcc66;
+}
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+
+<b>Troll Mesh Editor</b><br><br>
+
+<span class="key">LMB</span> Select Mesh<br>
+<span class="key">G</span> Move Gizmo<br>
+<span class="key">R</span> Rotate Gizmo<br>
+<span class="key">S</span> Scale Gizmo<br>
+<span class="key">L</span> Local Space<br>
+<span class="key">W</span> World Space<br>
+<span class="key">CTRL+Z</span> Undo<br>
+<span class="key">ESC</span> Deselect<br><br>
+
+<span class="orange">
+Selection now works correctly.<br>
+Clicks on gizmo handles are ignored.
+</span><br><br>
+
+1 Idle<br>
+2 Run<br>
+3 Attack<br>
+4 Die
+
+</div>
+
+<script type="module">
+
+import * as THREE from
+"https://esm.sh/three@0.165.0";
+
+import { OrbitControls }
+from
+"https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js";
+
+import { TransformControls }
+from
+"https://esm.sh/three@0.165.0/examples/jsm/controls/TransformControls.js";
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+
+scene.background =
+    new THREE.Color(0x050505);
+
+scene.fog =
+    new THREE.Fog(
+        0x050505,
+        20,
+        80
+    );
+
+////////////////////////////////////////////////////////////
+// CAMERA
+////////////////////////////////////////////////////////////
+
+const camera =
+    new THREE.PerspectiveCamera(
+        60,
+        innerWidth / innerHeight,
+        0.1,
+        1000
+    );
+
+camera.position.set(14,10,18);
+
+////////////////////////////////////////////////////////////
+// RENDERER
+////////////////////////////////////////////////////////////
+
+const renderer =
+    new THREE.WebGLRenderer({
+        antialias:true
+    });
+
+renderer.setSize(
+    innerWidth,
+    innerHeight
+);
+
+renderer.shadowMap.enabled = true;
+
+document.body.appendChild(
+    renderer.domElement
+);
+
+////////////////////////////////////////////////////////////
+// ORBIT
+////////////////////////////////////////////////////////////
+
+const orbit =
+    new OrbitControls(
+        camera,
+        renderer.domElement
+    );
+
+orbit.enableDamping = true;
+
+orbit.target.set(0,6,0);
+
+////////////////////////////////////////////////////////////
+// TRANSFORM CONTROLS
+////////////////////////////////////////////////////////////
+
+const transform =
+    new TransformControls(
+        camera,
+        renderer.domElement
+    );
+
+scene.add(transform);
+
+transform.setMode("translate");
+
+transform.setSpace("local");
+
+transform.size = 1.2;
+
+transform.addEventListener(
+    "dragging-changed",
+    e=>{
+        orbit.enabled = !e.value;
+    }
+);
+
+////////////////////////////////////////////////////////////
+// LIGHTS
+////////////////////////////////////////////////////////////
+
+scene.add(
+    new THREE.AmbientLight(
+        0xffffff,
+        0.45
+    )
+);
+
+const moon =
+    new THREE.DirectionalLight(
+        0xaaccff,
+        1.5
+    );
+
+moon.position.set(12,20,10);
+
+moon.castShadow = true;
+
+scene.add(moon);
+
+////////////////////////////////////////////////////////////
+// FLOOR
+////////////////////////////////////////////////////////////
+
+const floor =
+    new THREE.Mesh(
+
+        new THREE.PlaneGeometry(
+            200,
+            200
+        ),
+
+        new THREE.MeshStandardMaterial({
+            color:0x141414,
+            roughness:1
+        })
+    );
+
+floor.rotation.x =
+    -Math.PI/2;
+
+floor.receiveShadow = true;
+
+scene.add(floor);
+
+////////////////////////////////////////////////////////////
+// GRID
+////////////////////////////////////////////////////////////
+
+scene.add(
+
+    new THREE.GridHelper(
+        100,
+        100,
+        0x444444,
+        0x222222
+    )
+);
+
+////////////////////////////////////////////////////////////
+// MATERIALS
+////////////////////////////////////////////////////////////
+
+const MAT = {
+
+skin:new THREE.MeshStandardMaterial({
+    color:0x82b84f,
+    flatShading:true
+}),
+
+darkSkin:new THREE.MeshStandardMaterial({
+    color:0x27341b,
+    flatShading:true
+}),
+
+orangeHair:new THREE.MeshStandardMaterial({
+    color:0xc96a20,
+    flatShading:true
+}),
+
+armor:new THREE.MeshStandardMaterial({
+    color:0x767c58,
+    flatShading:true
+}),
+
+steel:new THREE.MeshStandardMaterial({
+    color:0xB7BEC7,
+    flatShading:true
+}),
+
+wood:new THREE.MeshStandardMaterial({
+    color:0x6B4827,
+    flatShading:true
+}),
+
+cloth:new THREE.MeshStandardMaterial({
+    color:0xD8C66B,
+    flatShading:true
+}),
+
+bone:new THREE.MeshStandardMaterial({
+    color:0xE9E0C9,
+    flatShading:true
+}),
+
+armguard:new THREE.MeshStandardMaterial({
+    color:0x5B5B5B,
+    flatShading:true
+}),
+
+eye:new THREE.MeshStandardMaterial({
+    color:0xff2222,
+    emissive:0xaa0000,
+    emissiveIntensity:1.5,
+    flatShading:true
+}),
+
+selected:new THREE.MeshStandardMaterial({
+    color:0xffff66,
+    emissive:0x666600,
+    flatShading:true
+})
+
+};
+
+////////////////////////////////////////////////////////////
+// MODEL DATA
+////////////////////////////////////////////////////////////
+
+const trollJSON = {
+
+root:{
+    pos:[0,0,0],
+    children:["pelvis"]
+},
+
+pelvis:{
+    pos:[0,5.2,0],
+    rot:[0.15,0,0],
+    geo:["box",2.5,1.8,2],
+    mat:"armor",
+    children:[
+        "torso",
+        "legL",
+        "legR",
+        "clothFront"
+
+    ]
+},
+
+torso:{
+    pos:[0,2,-0.8],
+    rot:[0.95,0,0],
+    geo:["box",3.3,4.1,2.3],
+    mat:"skin",
+    children:[
+        "head",
+        "shoulderL",
+        "shoulderR"
+    ]
+},
+
+head:{
+    pos:[0,2.7,1.35],
+    rot:[-0.95,0,0],
+    geo:["box",2,2.2,2],
+    mat:"darkSkin",
+    children:[
+        "nose",
+        "jaw",
+        "hair",
+        "tuskL",
+        "tuskR",
+        "eyeL",
+        "eyeR"
+    ]
+},
+
+nose:{
+    pos:[0,-0.1,1],
+    geo:["box",0.45,0.6,0.5],
+    mat:"darkSkin"
+},
+
+jaw:{
+    pos:[0,-1,0.3],
+    geo:["box",1.8,0.8,1.4],
+    mat:"darkSkin"
+},
+
+hair:{
+    pos:[0,2.15,-0.15],
+    geo:["cone",1.2,4.5,5],
+    rot:[0,0,Math.PI],
+    mat:"orangeHair"
+},
+
+tuskL:{
+    pos:[-0.45,-0.7,1],
+    geo:["cone",0.12,0.8,4],
+    rot:[1.5,0,-0.3],
+    mat:"bone"
+},
+
+tuskR:{
+    pos:[0.45,-0.7,1],
+    geo:["cone",0.12,0.8,4],
+    rot:[1.5,0,0.3],
+    mat:"bone"
+},
+
+eyeL:{
+    pos:[-0.35,0.3,1],
+    geo:["box",0.12,0.12,0.08],
+    mat:"eye"
+},
+
+eyeR:{
+    pos:[0.35,0.3,1],
+    geo:["box",0.12,0.12,0.08],
+    mat:"eye"
+},
+
+shoulderL:{
+    pos:[-2.35,1.2,0.5],
+    rot:[0.1,0,0.55],
+    geo:["box",1.1,1.1,1.1],
+    mat:"armor",
+    children:["upperArmL"]
+},
+
+upperArmL:{
+    pos:[0,-1.5,0],
+    rot:[0.4,0,0.5],
+    geo:["box",0.95,2.2,0.95],
+    mat:"skin",
+    children:["lowerArmL"]
+},
+
+lowerArmL:{
+    pos:[0,-1.8,0],
+    rot:[-0.3,0,0],
+    geo:["box",0.9,2.2,0.9],
+    mat:"skin",
+    children:[
+        "vambraceL",
+        "handL",
+        "axeL"
+    ]
+},
+
+vambraceL:{
+    pos:[0,-0.3,0],
+    geo:["box",1.05,1.2,1.05],
+    mat:"armguard"
+},
+
+handL:{
+    pos:[0,-1.4,0],
+    geo:["box",0.75,0.75,0.75],
+    mat:"skin"
+},
+
+axeL:{
+    pos:[0,-1.6,0.3],
+    rot:[0.2,0,1.3],
+    children:[
+        "axeLHandle",
+        "axeLBlade"
+    ]
+},
+
+axeLHandle:{
+    geo:["box",0.25,3.2,0.25],
+    mat:"wood"
+},
+
+axeLBlade:{
+    pos:[0.65,1.1,0],
+    rot:[0,0,0.4],
+    geo:["box",1.2,1.1,0.22],
+    mat:"steel"
+},
+
+shoulderR:{
+    pos:[2.2,1.3,0.2],
+    geo:["box",1.2,1.2,1.2],
+    mat:"armor",
+    children:["upperArmR"]
+},
+
+upperArmR:{
+    pos:[0,-1.5,0],
+    rot:[0.4,0,-0.5],
+    geo:["box",0.95,2.2,0.95],
+    mat:"skin",
+    children:["lowerArmR"]
+},
+
+lowerArmR:{
+    pos:[0,-1.8,0],
+    rot:[-0.3,0,0],
+    geo:["box",0.9,2.2,0.9],
+    mat:"skin",
+    children:[
+        "vambraceR",
+        "handR",
+        "axeR"
+    ]
+},
+
+vambraceR:{
+    pos:[0,-0.3,0],
+    geo:["box",1.05,1.2,1.05],
+    mat:"armguard"
+},
+
+handR:{
+    pos:[0,-1.4,0],
+    geo:["box",0.75,0.75,0.75],
+    mat:"skin"
+},
+
+axeR:{
+    pos:[0,-1.6,0.3],
+    rot:[0.2,0,-1.3],
+    children:[
+        "axeRHandle",
+        "axeRBlade"
+    ]
+},
+
+axeRHandle:{
+    geo:["box",0.25,3.2,0.25],
+    mat:"wood"
+},
+
+axeRBlade:{
+    pos:[-0.65,1.1,0],
+    rot:[0,0,-0.4],
+    geo:["box",1.2,1.1,0.22],
+    mat:"steel"
+},
+
+legL:{
+    pos:[-0.9,-2.1,0],
+    rot:[-0.9,0,0],
+    geo:["box",1.1,2.7,1.1],
+    mat:"skin",
+    children:[
+        "shinL"
+    ]
+},
+
+shinL:{
+    pos:[0,-1.8,0.7],
+    rot:[1.1,0,0],
+    geo:["box",1,2.5,1],
+    mat:"skin",
+    children:["footL"]
+},
+
+footL:{
+    pos:[0,-1.5,0.5],
+    rot:[-0.3,0,0],
+    geo:["box",1.4,0.7,2.3],
+    mat:"skin"
+},
+
+legR:{
+    pos:[0.9,-2.1,0],
+    rot:[-0.9,0,0],
+    geo:["box",1.1,2.7,1.1],
+    mat:"skin",
+    children:[
+        "shinR"
+    ]
+},
+
+shinR:{
+    pos:[0,-1.8,0.7],
+    rot:[1.1,0,0],
+    geo:["box",1,2.5,1],
+    mat:"skin",
+    children:["footR"]
+},
+
+footR:{
+    pos:[0,-1.5,0.5],
+    rot:[-0.3,0,0],
+    geo:["box",1.4,0.7,2.3],
+    mat:"skin"
+},
+
+clothFront:{
+    pos:[0,-1.2,1],
+    rot:[0.3,0,0],
+    geo:["box",1.8,2,0.15],
+    mat:"cloth"
+}
+};
+
+////////////////////////////////////////////////////////////
+// BUILD MODEL
+////////////////////////////////////////////////////////////
+
+const bones = {};
+const selectableMeshes = [];
+
+function buildNode(name){
+
+    const data = trollJSON[name];
+
+    const bone =
+        new THREE.Group();
+
+    bone.userData.name = name;
+
+    bones[name] = bone;
+
+    if(data.pos)
+        bone.position.set(...data.pos);
+
+    if(data.rot)
+        bone.rotation.set(...data.rot);
+
+    if(data.geo){
+
+        let geometry;
+
+        const g = data.geo;
+
+        if(g[0] === "box"){
+
+            geometry =
+                new THREE.BoxGeometry(
+                    g[1],
+                    g[2],
+                    g[3]
+                );
+        }
+
+        if(g[0] === "cone"){
+
+            geometry =
+                new THREE.ConeGeometry(
+                    g[1],
+                    g[2],
+                    g[3]
+                );
+        }
+
+        const mesh =
+            new THREE.Mesh(
+                geometry,
+                MAT[data.mat]
+            );
+
+        mesh.castShadow = true;
+
+        mesh.userData.originalMaterial =
+            MAT[data.mat];
+
+        mesh.userData.bone = bone;
+
+        selectableMeshes.push(mesh);
+
+        bone.add(mesh);
+    }
+
+    if(data.children){
+
+        for(const child of data.children){
+
+            bone.add(
+                buildNode(child)
+            );
+        }
+    }
+
+    return bone;
+}
+
+const troll =
+    buildNode("root");
+
+scene.add(troll);
+
+////////////////////////////////////////////////////////////
+// RAYCAST
+////////////////////////////////////////////////////////////
+
+const raycaster =
+    new THREE.Raycaster();
+
+const mouse =
+    new THREE.Vector2();
+
+let selectedMesh = null;
+
+////////////////////////////////////////////////////////////
+// UNDO STACK
+////////////////////////////////////////////////////////////
+
+const undoStack = [];
+
+let dragStartState = null;
+
+transform.addEventListener(
+    "mouseDown",
+    ()=>{
+
+    if(!transform.object) return;
+
+    const o = transform.object;
+
+    dragStartState = {
+
+        object:o,
+
+        pos:o.position.clone(),
+
+        rot:o.rotation.clone(),
+
+        scale:o.scale.clone()
+    };
+});
+
+transform.addEventListener(
+    "mouseUp",
+    ()=>{
+
+    if(dragStartState){
+
+        undoStack.push(
+            dragStartState
+        );
+
+        dragStartState = null;
+    }
+});
+
+////////////////////////////////////////////////////////////
+// SELECTION
+////////////////////////////////////////////////////////////
+
+function selectMesh(mesh){
+
+    if(selectedMesh){
+
+        selectedMesh.material =
+            selectedMesh.userData.originalMaterial;
+    }
+
+    selectedMesh = mesh;
+
+    if(mesh){
+
+        mesh.material =
+            MAT.selected;
+
+        transform.attach(
+            mesh.userData.bone
+        );
+    }
+    else{
+
+        transform.detach();
+    }
+}
+
+////////////////////////////////////////////////////////////
+// FIXED GIZMO CHECK
+////////////////////////////////////////////////////////////
+
+function isClickingGizmo(event){
+
+    mouse.x = (event.clientX / innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / innerHeight) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+
+    const gizmo = transform._gizmo;
+
+    if(!gizmo) return false;
+
+    return raycaster.intersectObject(gizmo, true).length > 0;
+}
+
+////////////////////////////////////////////////////////////
+// POINTER SELECT
+////////////////////////////////////////////////////////////
+
+renderer.domElement.addEventListener(
+    "pointerdown",
+    e=>{
+
+    ////////////////////////////////////////////////////////
+    // ignore gizmo clicks
+    ////////////////////////////////////////////////////////
+
+    if(isClickingGizmo(e)){
+
+        return;
+    }
+
+    ////////////////////////////////////////////////////////
+    // normal mesh select
+    ////////////////////////////////////////////////////////
+
+    mouse.x =
+        (e.clientX / innerWidth) * 2 - 1;
+
+    mouse.y =
+        -(e.clientY / innerHeight) * 2 + 1;
+
+    raycaster.setFromCamera(
+        mouse,
+        camera
+    );
+
+    const hits =
+        raycaster.intersectObjects(
+            selectableMeshes,
+            true
+        );
+
+    if(hits.length){
+
+        selectMesh(
+            hits[0].object
+        );
+    }
+    else{
+
+        selectMesh(null);
+    }
+});
+
+////////////////////////////////////////////////////////////
+// HOTKEYS
+////////////////////////////////////////////////////////////
+
+let animState = "idle";
+
+window.addEventListener(
+    "keydown",
+    e=>{
+
+    const k =
+        e.key.toLowerCase();
+
+    ////////////////////////////////////////////////////////
+    // UNDO
+    ////////////////////////////////////////////////////////
+
+    if(e.ctrlKey && k === "z"){
+
+        const undo =
+            undoStack.pop();
+
+        if(undo){
+
+            undo.object.position.copy(
+                undo.pos
+            );
+
+            undo.object.rotation.copy(
+                undo.rot
+            );
+
+            undo.object.scale.copy(
+                undo.scale
+            );
+        }
+
+        return;
+    }
+
+    ////////////////////////////////////////////////////////
+    // MODES
+    ////////////////////////////////////////////////////////
+
+    if(k === "g")
+        transform.setMode("translate");
+
+    if(k === "r")
+        transform.setMode("rotate");
+
+    if(k === "s")
+        transform.setMode("scale");
+
+    ////////////////////////////////////////////////////////
+    // SPACES
+    ////////////////////////////////////////////////////////
+
+    if(k === "l")
+        transform.setSpace("local");
+
+    if(k === "w")
+        transform.setSpace("world");
+
+    ////////////////////////////////////////////////////////
+    // ANIMS
+    ////////////////////////////////////////////////////////
+
+    if(k === "1")
+        animState = "idle";
+
+    if(k === "2")
+        animState = "run";
+
+    if(k === "3")
+        animState = "attack";
+
+    if(k === "4")
+        animState = "die";
+
+    ////////////////////////////////////////////////////////
+    // ESC
+    ////////////////////////////////////////////////////////
+
+    if(k === "escape")
+        selectMesh(null);
+});
+
+////////////////////////////////////////////////////////////
+// ANIMATION
+////////////////////////////////////////////////////////////
+
+const clock =
+    new THREE.Clock();
+
+function updateAnimation(t){
+
+    if(transform.dragging)
+        return;
+
+    if(animState === "idle"){
+
+        troll.position.y =
+            Math.sin(t*2)*0.05;
+    }
+
+    if(animState === "run"){
+
+        const r =
+            Math.sin(t*10);
+
+        bones.legL.rotation.x =
+            -1.15 + r*0.4;
+
+        bones.legR.rotation.x =
+            -1.15 - r*0.4;
+    }
+
+    if(animState === "attack"){
+
+        bones.upperArmR.rotation.x =
+            -1.1 + Math.sin(t*12)*0.4;
+    }
+
+    if(animState === "die"){
+
+        troll.rotation.z = Math.min(
+            Math.PI/2,
+            troll.rotation.z + 0.01
+        );
+    }
+}
+
+////////////////////////////////////////////////////////////
+// LOOP
+////////////////////////////////////////////////////////////
+
+function loop(){
+
+    requestAnimationFrame(loop);
+
+    const t =
+        clock.getElapsedTime();
+
+    orbit.update();
+
+    updateAnimation(t);
+
+    renderer.render(
+        scene,
+        camera
+    );
+}
+
+loop();
+
+////////////////////////////////////////////////////////////
+// RESIZE
+////////////////////////////////////////////////////////////
+
+window.addEventListener(
+    "resize",
+    ()=>{
+
+    camera.aspect =
+        innerWidth / innerHeight;
+
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(
+        innerWidth,
+        innerHeight
+    );
+});
+
+</script>
+</body>
+</html>
