@@ -185,6 +185,46 @@ sun.castShadow = true;
 
 scene.add(sun);
 
+// FACTION SYSTEM
+////////////////////////////////////////////////////////////
+
+const Factions = {
+
+human:{
+    name:"Human",
+    buildings:["Keep","Barracks","Workshop","Altar"],
+    units:["Peon","Knight","Rifleman"]
+},
+
+goblin:{
+    name:"Goblin",
+    buildings:[
+        "Chieftains Den","House","Barracks","Workshop",
+        "Altar","Shaman Hut","Tower","Barricade"
+    ],
+    units:{
+        "Chieftains Den":["Peon"],
+        "Barracks":["Goblin Warrior","Berserker"],
+        "Workshop":["Goblin Shredder","Troll Goblin"],
+        "Altar":["Goblin Commander","Goblin Bounty Hunter","Goblin Sniper"],
+        "Shaman Hut":["Goblin Shaman"]
+    }
+},
+
+kobold:{
+    name:"Kobold",
+    buildings:[
+        "Gnoll", "Kobold Mine", "Watch Tower"
+    ],
+    units:{
+        "Gnoll Camp":["kobold Miner", "Gnoll Brute", "Goblin Taskmaster", "Goblin Wolf Rider"],
+    }
+}
+
+};
+
+let selectedFaction = "human";
+
 ////////////////////////////////////////////////////////////
 // GROUND
 ////////////////////////////////////////////////////////////
@@ -272,10 +312,15 @@ menu.innerHTML = `
 
 <div class="section">
 
-<button>[ ] Human</button>
-<button>[ ] Goblin</button>
-<button>[x] Neutral</button>
+<button onclick="selectFaction('human')>[ ] Human</button>
+<button onclick="selectFaction('goblin')>[ ] Goblin</button>
+<button onclick="selectFaction('kobold')>[x] Neutral</button>
 
+</div>
+
+<div class="section">
+<b>Preview</b>
+<div id="preview">${Factions[selectedFaction].name}</div>
 </div>
 
 <div class="section">
@@ -446,9 +491,7 @@ function createGnoll(){
     return g;
 }
 
-////////////////////////////////////////////////////////////
 // GOBLIN TASKMASTER
-////////////////////////////////////////////////////////////
 
 function createGoblinWhip(){
 
@@ -509,17 +552,13 @@ function createGoblinWhip(){
     return g;
 }
 
-////////////////////////////////////////////////////////////
 // GOBLIN WOLF RIDER
-////////////////////////////////////////////////////////////
 
 function createWolfRider(){
 
     const g = new THREE.Group();
 
-    ////////////////////////////////////////////////////////
     // WOLF
-    ////////////////////////////////////////////////////////
 
     const wolfBody = box(3.8,1.8,1.4,MAT.wolf);
     wolfBody.position.y = 2;
@@ -549,10 +588,7 @@ function createWolfRider(){
     tail.rotation.z = -0.8;
     g.add(tail);
 
-    ////////////////////////////////////////////////////////
     // RIDER
-    ////////////////////////////////////////////////////////
-
     const riderBody = box(1.1,1.4,0.9,MAT.goblin);
     riderBody.position.set(0,4,0);
     g.add(riderBody);
@@ -576,10 +612,7 @@ function createWolfRider(){
     return g;
 }
 
-////////////////////////////////////////////////////////////
 // BUILDINGS
-////////////////////////////////////////////////////////////
-
 function createGnollCamp(){
 
     const g = new THREE.Group();
@@ -645,9 +678,7 @@ function createWatchTower(){
     return g;
 }
 
-////////////////////////////////////////////////////////////
 // SPAWN UNIT
-////////////////////////////////////////////////////////////
 
 window.spawnRaceUnit = function(type){
 
@@ -669,9 +700,7 @@ window.spawnRaceUnit = function(type){
     units.push(unit);
 };
 
-////////////////////////////////////////////////////////////
 // SPAWN BUILDINGS
-////////////////////////////////////////////////////////////
 
 window.spawnFactionBuilding = function(type){
 
