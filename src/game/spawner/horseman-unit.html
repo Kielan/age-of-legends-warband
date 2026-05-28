@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>RTS Horseman Unit - ThreeJS Demo</title>
+
+<style>
+body{
+    margin:0;
+    overflow:hidden;
+    background:#0d1016;
+    font-family:monospace;
+}
+canvas{
+    display:block;
+}
+#ui{
+    position:absolute;
+    top:10px;
+    left:10px;
+    color:white;
+    background:#000a;
+    padding:12px;
+    line-height:1.7em;
+    border:1px solid #ffffff22;
+}
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+1 = Idle<br>
+2 = Gallop<br>
+3 = Lance Charge<br>
+4 = Sword Attack<br>
+5 = Death
+</div>
+
+<script type="module">
+
+import * as THREE from "https://esm.sh/three@0.165.0";
+
+////////////////////////////////////////////////////////////
+// SCENE
+////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d1016);
+scene.fog = new THREE.Fog(0x0d1016, 25, 85);
+
+const camera = new THREE.PerspectiveCamera(
+    60,
+    innerWidth / innerHeight,
+    0.1,
+    1000
+);
+
+camera.position.set(0,10,20);
+
+const renderer = new THREE.WebGLRenderer({
+    antialias:true
+});
+
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+
+document.body.appendChild(renderer.domElement);
+
+////////////////////////////////////////////////////////////
+// LIGHTS
+////////////////////////////////////////////////////////////
+
+scene.add(
+    new THREE.AmbientLight(0xffffff,0.55)
+);
+
+const sun = new THREE.DirectionalLight(0xffffff,1.7);
+
+sun.position.set(12,18,10);
+sun.castShadow = true;
+
+sun.shadow.mapSize.width = 2048;
+sun.shadow.mapSize.height = 2048;
+
+scene.add(sun);
+
+////////////////////////////////////////////////////////////
+// FLOOR
+////////////////////////////////////////////////////////////
+
+const floor = new THREE.Mesh(
+
+    new THREE.PlaneGeometry(160,160),
+
+    new THREE.MeshStandardMaterial({
+        color:0x253425,
+        roughness:1
+    })
+);
+
+floor.rotation.x = -Math.PI/2;
+floor.receiveShadow = true;
+
+scene.add(floor);
+
+////////////////////////////////////////////////////////////
+// MATERIALS
+////////////////////////////////////////////////////////////
+
+const MAT = {
+
+    steel:new THREE.MeshStandardMaterial({
+        color:0xbfc6d2,
+        metalness:0.8,
+        roughness:0.35,
+        flatShading:true
+    }),
+
+    gold:new THREE.MeshStandardMaterial({
+        color:0xd6a531,
+        metalness:0.9,
+        roughness:0.25,
+        flatShading:true
+    }),
+
+    blue:new THREE.MeshStandardMaterial({
+        color:0x2e5dff,
+        flatShading:true
+    }),
+
+    horse:new THREE.MeshStandardMaterial({
+        color:0x5a4334,
+        flatShading:true
+    }),
+
+    horseArmor:new THREE.MeshStandardMaterial({
+        color:0x5f6f88,
+        metalness:0.55,
+        roughness:0.5,
+        flatShading:true
+    }),
+
+    leather:new THREE.MeshStandardMaterial({
+        color:0x6e4b2d,
+        flatShading:true
+    }),
+
+    skin:new THREE.MeshStandardMaterial({
+        color:0xe1bf99,
+        flatShading:true
+    }),
+
+    hair:new THREE.MeshStandardMaterial({
+        color:0x181818,
+        flatShading:true
+    }),
+
+    lance:new THREE.MeshStandardMaterial({
+        color:0x8c633c,
+        flatShading:true
+    }),
+
+    sword:new THREE.MeshStandardMaterial({
+        color:0xd7dde8,
+        metalness:0.9,
+        roughness:0.2,
+        flatShading:true
+    }),
+
+    glow:new THREE.MeshStandardMaterial({
+        color:0x66aaff,
+        emissive:0x4488ff,
+        emissiveIntensity:2,
+        flatShading:true
+    })
+};
+
+////////////////////////////////////////////////////////////
+// HELPERS
+////////////////////////////////////////////////////////////
+
+const bones = {};
+
+function createGeo(g){
+
+    if(g[0] === "box")
+        return new THREE.BoxGeometry(g[1],g[2],g[3]);
+
+    if(g[0] === "cone")
+        return new THREE.ConeGeometry(g[1],g[2],g[3]);
+
+    if(g[0] === "cyl")
+        return new THREE.CylinderGeometry(g[1],g[2],g[3],g[4]);
+
+    if(g[0] === "sphere")
+        return new THREE.SphereGeometry(g[1],g[2],g[3]);
+
+    return null;
+}
+
+function node(name,data){
+
+    const group = new THREE.Group();
+
+    bones[name] = group;
+
+    if(data.pos)
+        group.position.set(...data.pos);
+
+    if(data.rot)
+        group.rotation.set(...data.rot);
+
+    if(data.geo){
+
+        const mesh = new THREE.Mesh(
+            createGeo(data.geo),
+            MAT[data.mat]
+        );
+
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        group.add(mesh);
+
+        group.mesh = mesh;
+    }
+
+    if(data.children){
+
+        for(const child of data.children){
+
+            group.add(
+                node(child, horsemanJSON[child])
+            );
+        }
+    }
+
+    return group;
+}
+
+////////////////////////////////////////////////////////////
+// HORSEMAN JSON MODEL
+////////////////////////////////////////////////////////////
+
+const horsemanJSON = {
+
+root:{
+    pos:[0,0,0],
+    children:[
+        "horseBody",
+        "groundAura"
+    ]
+},
+
+////////////////////////////////////////////////////////////
+// GROUND FX
+////////////////////////////////////////////////////////////
+
+groundAura:{
+    pos:[0,0.06,0],
+    geo:["cyl",3.2,3.2,0.12,24],
+    mat:"glow"
+},
+
+////////////////////////////////////////////////////////////
+// HORSE
+////////////////////////////////////////////////////////////
+
+horseBody:{
+    pos:[0,4,0],
+    geo:["box",6.2,3.2,2.6],
+    mat:"horse",
+    children:[
+        "horseNeck",
+        "horseHead",
+        "horseRear",
+        "horseArmorBody",
+
+        "frontLeftLeg",
+        "frontRightLeg",
+        "backLeftLeg",
+        "backRightLeg",
+
+        "riderPelvis",
+        "tail"
+    ]
+},
+
+horseArmorBody:{
+    pos:[0,0.5,0],
+    geo:["box",6.5,1.8,2.9],
+    mat:"horseArmor"
+},
+
+horseRear:{
+    pos:[-3.1,-0.3,0],
+    geo:["box",1.8,2.2,2.3],
+    mat:"horse"
+},
+
+horseNeck:{
+    pos:[2.6,1.4,0],
+    geo:["box",1.6,2.8,1.6],
+    rot:[0,0,-0.35],
+    mat:"horse"
+},
+
+horseHead:{
+    pos:[3.8,2.4,0],
+    geo:["box",2.2,1.4,1.2],
+    rot:[0,0,-0.2],
+    mat:"horseArmor"
+},
+
+tail:{
+    pos:[-4,0.8,0],
+    geo:["cone",0.35,2.4,5],
+    rot:[0,0,1.7],
+    mat:"hair"
+},
+
+////////////////////////////////////////////////////////////
+// HORSE LEGS
+////////////////////////////////////////////////////////////
+
+frontLeftLeg:{
+    pos:[1.8,-2.8,0.9],
+    geo:["box",0.8,3.8,0.8],
+    mat:"horse"
+},
+
+frontRightLeg:{
+    pos:[1.8,-2.8,-0.9],
+    geo:["box",0.8,3.8,0.8],
+    mat:"horse"
+},
+
+backLeftLeg:{
+    pos:[-1.8,-2.8,0.9],
+    geo:["box",0.8,3.8,0.8],
+    mat:"horse"
+},
+
+backRightLeg:{
+    pos:[-1.8,-2.8,-0.9],
+    geo:["box",0.8,3.8,0.8],
+    mat:"horse"
+},
+
+////////////////////////////////////////////////////////////
+// RIDER
+////////////////////////////////////////////////////////////
+
+riderPelvis:{
+    pos:[0,2.4,0],
+    geo:["box",2.2,1.6,1.6],
+    mat:"blue",
+    children:[
+        "torso",
+        "leftLeg",
+        "rightLeg"
+    ]
+},
+
+torso:{
+    pos:[0,2.1,0],
+    geo:["box",2.8,3.2,1.8],
+    mat:"steel",
+    children:[
+        "head",
+        "leftShoulder",
+        "rightShoulder",
+        "leftArm",
+        "rightArm",
+        "cape"
+    ]
+},
+
+////////////////////////////////////////////////////////////
+// HEAD
+////////////////////////////////////////////////////////////
+
+head:{
+    pos:[0,2.5,0.2],
+    geo:["box",1.4,1.6,1.4],
+    mat:"skin",
+    children:[
+        "helmet",
+        "mustacheL",
+        "mustacheR",
+        "jaw"
+    ]
+},
+
+helmet:{
+    pos:[0,0.55,0],
+    geo:["box",1.7,0.8,1.7],
+    mat:"gold"
+},
+
+mustacheL:{
+    pos:[-0.55,-0.2,0.7],
+    geo:["box",0.9,0.18,0.18],
+    rot:[0,0,-0.55],
+    mat:"hair"
+},
+
+mustacheR:{
+    pos:[0.55,-0.2,0.7],
+    geo:["box",0.9,0.18,0.18],
+    rot:[0,0,0.55],
+    mat:"hair"
+},
+
+jaw:{
+    pos:[0,-0.9,0.45],
+    geo:["box",1.2,0.8,0.8],
+    mat:"hair"
+},
+
+////////////////////////////////////////////////////////////
+// MASSIVE INVERTED SHOULDERS
+////////////////////////////////////////////////////////////
+
+leftShoulder:{
+    pos:[-2.1,1.1,0],
+    geo:["cone",1.2,2.4,5],
+    rot:[0,0,2.2],
+    mat:"gold"
+},
+
+rightShoulder:{
+    pos:[2.1,1.1,0],
+    geo:["cone",1.2,2.4,5],
+    rot:[0,0,-2.2],
+    mat:"gold"
+},
+
+////////////////////////////////////////////////////////////
+// ARMS
+////////////////////////////////////////////////////////////
+
+leftArm:{
+    pos:[-2.4,0.3,0],
+    geo:["box",0.9,3.2,0.9],
+    mat:"steel",
+    children:[
+        "lancePole",
+        "lanceTip"
+    ]
+},
+
+rightArm:{
+    pos:[2.4,0.3,0],
+    geo:["box",0.9,3.2,0.9],
+    mat:"steel",
+    children:[
+        "swordHandle",
+        "swordBlade"
+    ]
+},
+
+////////////////////////////////////////////////////////////
+// LANCE
+////////////////////////////////////////////////////////////
+
+lancePole:{
+    pos:[0,-3.8,0],
+    geo:["box",0.2,7.5,0.2],
+    rot:[0.1,0,0.2],
+    mat:"lance"
+},
+
+lanceTip:{
+    pos:[0,-7.6,0],
+    geo:["cone",0.25,0.9,4],
+    rot:[0,0,Math.PI],
+    mat:"steel"
+},
+
+////////////////////////////////////////////////////////////
+// SWORD
+////////////////////////////////////////////////////////////
+
+swordHandle:{
+    pos:[0,-2.1,0],
+    geo:["box",0.25,1.1,0.25],
+    mat:"leather"
+},
+
+swordBlade:{
+    pos:[0,-3.5,0],
+    geo:["box",0.35,2.8,0.15],
+    mat:"sword"
+},
+
+////////////////////////////////////////////////////////////
+// RIDER LEGS
+////////////////////////////////////////////////////////////
+
+leftLeg:{
+    pos:[-0.7,-2.2,0.5],
+    geo:["box",0.9,2.5,0.9],
+    rot:[0,0,0.15],
+    mat:"steel"
+},
+
+rightLeg:{
+    pos:[0.7,-2.2,-0.5],
+    geo:["box",0.9,2.5,0.9],
+    rot:[0,0,-0.15],
+    mat:"steel"
+},
+
+////////////////////////////////////////////////////////////
+// CAPE
+////////////////////////////////////////////////////////////
+
+cape:{
+    pos:[0,-0.4,-1.2],
+    geo:["box",3.6,4.8,0.18],
+    rot:[0.3,0,0],
+    mat:"blue"
+}
+
+};
+
+////////////////////////////////////////////////////////////
+// BUILD MODEL
+////////////////////////////////////////////////////////////
+
+const horseman = node("root", horsemanJSON.root);
+
+scene.add(horseman);
+
+////////////////////////////////////////////////////////////
+// PARTICLES
+////////////////////////////////////////////////////////////
+
+const particles = [];
+
+for(let i=0;i<18;i++){
+
+    const p = new THREE.Mesh(
+
+        new THREE.SphereGeometry(0.07,5,5),
+
+        new THREE.MeshBasicMaterial({
+            color:0x66aaff
+        })
+    );
+
+    scene.add(p);
+
+    particles.push({
+        mesh:p,
+        angle:Math.random()*Math.PI*2,
+        radius:2.8 + Math.random()*1.5,
+        speed:0.5 + Math.random()
+    });
+}
+
+////////////////////////////////////////////////////////////
+// ANIMATION
+////////////////////////////////////////////////////////////
+
+const anim = {
+    state:"idle",
+    time:0
+};
+
+function updateAnimation(dt){
+
+    anim.time += dt;
+
+    const t = anim.time;
+
+    const FLL = bones.frontLeftLeg;
+    const FRL = bones.frontRightLeg;
+    const BLL = bones.backLeftLeg;
+    const BRL = bones.backRightLeg;
+
+    const LA = bones.leftArm;
+    const RA = bones.rightArm;
+
+    const BODY = bones.horseBody;
+    const RIDER = bones.riderPelvis;
+
+    const CAPE = bones.cape;
+
+    ////////////////////////////////////////////////////////
+    // PARTICLES
+    ////////////////////////////////////////////////////////
+
+    particles.forEach(p=>{
+
+        p.angle += dt * p.speed;
+
+        p.mesh.position.set(
+            Math.cos(p.angle)*p.radius,
+            0.3 + Math.sin(t*3+p.angle)*0.2,
+            Math.sin(p.angle)*p.radius
+        );
+    });
+
+    ////////////////////////////////////////////////////////
+    // RESET
+    ////////////////////////////////////////////////////////
+
+    // FLL.rotation.x = 0;
+    // FRL.rotation.x = 0;
+    // BLL.rotation.x = 0;
+    // BRL.rotation.x = 0;
+
+    // LA.rotation.z = 0;
+    // RA.rotation.z = 0;
+
+    ////////////////////////////////////////////////////////
+    // IDLE
+    ////////////////////////////////////////////////////////
+
+    if(anim.state === "idle"){
+
+        // BODY.position.y =
+        //     4 + Math.sin(t*2)*0.08;
+
+        // CAPE.rotation.x =
+        //     0.3 + Math.sin(t*2)*0.04;
+    }
+
+    ////////////////////////////////////////////////////////
+    // GALLOP
+    ////////////////////////////////////////////////////////
+
+    if(anim.state === "run"){
+
+        const gallop = Math.sin(t*12);
+
+        FLL.rotation.x = gallop * 0.8;
+        FRL.rotation.x = -gallop * 0.8;
+
+        BLL.rotation.x = -gallop * 0.8;
+        BRL.rotation.x = gallop * 0.8;
+
+        BODY.position.y =
+            4 + Math.abs(Math.sin(t*12))*0.35;
+
+        RIDER.rotation.z =
+            Math.sin(t*12)*0.04;
+
+        CAPE.rotation.x =
+            0.9 + Math.sin(t*14)*0.1;
+
+        horseman.position.x += 0.07;
+
+        if(horseman.position.x > 16)
+            horseman.position.x = -16;
+    }
+
+    ////////////////////////////////////////////////////////
+    // LANCE CHARGE
+    ////////////////////////////////////////////////////////
+
+    if(anim.state === "attack"){
+
+        LA.rotation.z = -1.2;
+        LA.rotation.x = -0.5;
+
+        BODY.rotation.y =
+            Math.sin(t*10)*0.08;
+
+        horseman.position.x += 0.12;
+
+        if(horseman.position.x > 16)
+            horseman.position.x = -16;
+    }
+
+    ////////////////////////////////////////////////////////
+    // SWORD ATTACK
+    ////////////////////////////////////////////////////////
+
+    if(anim.state === "cast"){
+
+        const slash = Math.sin(t*15);
+
+        RA.rotation.z =
+            -1.8 + slash * 1.1;
+
+        RA.rotation.x = -0.6;
+
+        BODY.rotation.y =
+            slash * 0.2;
+
+        CAPE.rotation.x = 1;
+    }
+
+    ////////////////////////////////////////////////////////
+    // DEATH
+    ////////////////////////////////////////////////////////
+
+    if(anim.state === "die"){
+
+        horseman.rotation.z = Math.min(
+            Math.PI / 2,
+            horseman.rotation.z + 0.012
+        );
+    }
+
+}
+
+// CONTROLS
+
+window.addEventListener("keydown",e=>{
+
+    if(e.key==="1")
+        anim.state="idle";
+
+    if(e.key==="2")
+        anim.state="run";
+
+    if(e.key==="3")
+        anim.state="attack";
+
+    if(e.key==="4")
+        anim.state="cast";
+
+    if(e.key==="5")
+        anim.state="die";
+
+});
+
+// LOOP
+
+const clock = new THREE.Clock();
+
+let camRot = 0;
+
+function loop(){
+
+    requestAnimationFrame(loop);
+
+    const dt = clock.getDelta();
+
+    camRot += dt * 0.16;
+
+    camera.position.x = Math.sin(camRot)*20;
+    camera.position.z = Math.cos(camRot)*20;
+
+    camera.lookAt(0,6,0);
+
+    updateAnimation(dt);
+
+    renderer.render(scene,camera);
+}
+
+loop();
+
+// RESIZE
+
+window.addEventListener("resize",()=>{
+
+    camera.aspect =
+        innerWidth / innerHeight;
+
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(
+        innerWidth,
+        innerHeight
+    );
+
+});
+
+</script>
+</body>
+</html>
