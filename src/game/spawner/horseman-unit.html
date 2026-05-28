@@ -608,13 +608,13 @@ function updateAnimation(dt){
     // RESET
     ////////////////////////////////////////////////////////
 
-    // FLL.rotation.x = 0;
-    // FRL.rotation.x = 0;
-    // BLL.rotation.x = 0;
-    // BRL.rotation.x = 0;
+    FLL.rotation.x = 0;
+    FRL.rotation.x = 0;
+    BLL.rotation.x = 0;
+    BRL.rotation.x = 0;
 
-    // LA.rotation.z = 0;
-    // RA.rotation.z = 0;
+    LA.rotation.z = 0;
+    RA.rotation.z = 0;
 
     ////////////////////////////////////////////////////////
     // IDLE
@@ -622,11 +622,11 @@ function updateAnimation(dt){
 
     if(anim.state === "idle"){
 
-        // BODY.position.y =
-        //     4 + Math.sin(t*2)*0.08;
+        BODY.position.y =
+            4 + Math.sin(t*2)*0.08;
 
-        // CAPE.rotation.x =
-        //     0.3 + Math.sin(t*2)*0.04;
+        CAPE.rotation.x =
+            0.3 + Math.sin(t*2)*0.04;
     }
 
     ////////////////////////////////////////////////////////
@@ -695,9 +695,7 @@ function updateAnimation(dt){
         CAPE.rotation.x = 1;
     }
 
-    ////////////////////////////////////////////////////////
     // DEATH
-    ////////////////////////////////////////////////////////
 
     if(anim.state === "die"){
 
