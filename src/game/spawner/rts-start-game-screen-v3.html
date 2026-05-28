@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+
+<title>RTS HUD Prototype - ThreeJS</title>
+
+<style>
+
+html, body{
+    margin:0;
+    overflow:hidden;
+    background:#111;
+    font-family:Arial, sans-serif;
+}
+
+canvas{
+    display:block;
+}
+
+/* ===================================================== */
+/* TOP UI */
+/* ===================================================== */
+
+#modePanel{
+    position:absolute;
+    top:10px;
+    left:10px;
+    z-index:50;
+    display:flex;
+    gap:8px;
+}
+
+.modeBtn{
+    padding:8px 12px;
+    background:#111;
+    color:white;
+    border:1px solid #555;
+    cursor:pointer;
+}
+
+#info{
+    position:absolute;
+    top:55px;
+    left:10px;
+    z-index:50;
+    background:rgba(0,0,0,.7);
+    color:white;
+    padding:10px;
+    border:1px solid #444;
+    width:320px;
+}
+
+/* ===================================================== */
+/* HUD */
+/* ===================================================== */
+
+#hud{
+    position:absolute;
+    bottom:0;
+    left:0;
+    width:100%;
+    height:220px;
+
+    display:flex;
+
+    background:
+        linear-gradient(
+            to bottom,
+            #1c1c1c,
+            #050505
+        );
+
+    border-top:4px solid #444;
+
+    z-index:20;
+}
+
+/* ===================================================== */
+/* LEFT PANEL */
+/* ===================================================== */
+
+#hudLeft{
+    width:240px;
+    padding:10px;
+
+    border-right:2px solid #333;
+
+    background:#0a0a0a;
+}
+
+#minimap{
+    width:200px;
+    height:200px;
+
+    border:4px solid #666;
+
+    background:#111;
+
+    image-rendering:pixelated;
+}
+
+/* ===================================================== */
+/* CENTER PANEL */
+/* ===================================================== */
+
+#hudCenter{
+    width:440px;
+
+    display:flex;
+
+    gap:14px;
+
+    padding:12px;
+
+    border-right:2px solid #333;
+
+    background:#101010;
+}
+
+#unitPortrait{
+    width:140px;
+    height:140px;
+
+    border:3px solid #666;
+
+    background:#222;
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+
+#portraitModel{
+    font-size:72px;
+}
+
+#unitStats{
+    flex:1;
+    color:white;
+}
+
+.unitName{
+    font-size:20px;
+    color:#ffdc73;
+    margin-bottom:10px;
+}
+
+.healthBar{
+    width:100%;
+    height:18px;
+
+    background:#330000;
+
+    border:2px solid #666;
+
+    margin-bottom:10px;
+}
+
+#healthFill{
+    width:100%;
+    height:100%;
+
+    background:
+        linear-gradient(
+            to right,
+            #00aa00,
+            #33ff33
+        );
+}
+
+.statLine{
+    margin-bottom:6px;
+    font-size:14px;
+}
+
+/* ===================================================== */
+/* INVENTORY */
+/* ===================================================== */
+
+#inventoryGrid{
+    width:120px;
+
+    display:grid;
+
+    grid-template-columns:repeat(2, 1fr);
+    grid-template-rows:repeat(3, 1fr);
+
+    gap:6px;
+}
+
+.inventorySlot{
+    width:52px;
+    height:52px;
+
+    background:#1a1a1a;
+
+    border:2px solid #555;
+}
+
+/* ===================================================== */
+/* RIGHT PANEL */
+/* ===================================================== */
+
+#hudRight{
+    flex:1;
+
+    padding:12px;
+
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+
+    background:#0c0c0c;
+}
+
+#commandGrid{
+    display:grid;
+
+    grid-template-columns:repeat(4,72px);
+    grid-template-rows:repeat(3,72px);
+
+    gap:8px;
+}
+
+.commandCard{
+    position:relative;
+
+    border:2px solid #666;
+
+    background:#222;
+
+    cursor:pointer;
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
+
+    font-size:30px;
+
+    transition:.15s;
+}
+
+.commandCard:hover{
+    background:#444;
+    transform:scale(1.04);
+}
+
+.hotkey{
+    position:absolute;
+    bottom:2px;
+    right:4px;
+
+    color:#ffdc73;
+
+    font-size:11px;
+}
+
+#tooltip{
+    height:48px;
+
+    border:2px solid #444;
+
+    background:#111;
+
+    color:#ddd;
+
+    padding:8px;
+
+    font-size:13px;
+}
+
+</style>
+</head>
+
+<body>
+
+<!-- ===================================================== -->
+<!-- TOP UI -->
+<!-- ===================================================== -->
+
+<div id="modePanel">
+
+    <button class="modeBtn" id="squareBtn">
+        Square Grid
+    </button>
+
+    <button class="modeBtn" id="hexBtn">
+        Hex Grid
+    </button>
+
+</div>
+
+<div id="info">
+
+    Left Click = Place House<br>
+    Right Click = Cancel Draft<br>
+    Green = Valid Placement<br>
+    Red = Obstructed
+
+</div>
+
+<!-- ===================================================== -->
+<!-- HUD -->
+<!-- ===================================================== -->
+
+<div id="hud">
+
+    <!-- LEFT -->
+    <div id="hudLeft">
+
+        <canvas id="minimap"></canvas>
+
+    </div>
+
+    <!-- CENTER -->
+    <div id="hudCenter">
+
+        <div id="unitPortrait">
+
+            <div id="portraitModel">
+                👨
+            </div>
+
+        </div>
+
+        <div id="unitStats">
+
+            <div class="unitName">
+                Peasant
+            </div>
+
+            <div class="healthBar">
+                <div id="healthFill"></div>
+            </div>
+
+            <div class="statLine">
+                HP:
+                <span id="hpText">
+                    230 / 230
+                </span>
+            </div>
+
+            <div class="statLine">
+                Damage: 5-8
+            </div>
+
+            <div class="statLine">
+                Armor: 1
+            </div>
+
+            <div class="statLine">
+                Move Speed: Fast
+            </div>
+
+            <div class="statLine">
+                Lumber: 0
+            </div>
+
+        </div>
+
+        <!-- INVENTORY -->
+        <div id="inventoryGrid"></div>
+
+    </div>
+
+    <!-- RIGHT -->
+    <div id="hudRight">
+
+        <div id="commandGrid"></div>
+
+        <div id="tooltip">
+            Hover commands...
+        </div>
+
+    </div>
+
+</div>
+
+<script type="module">
+
+import * as THREE from 'https://esm.sh/three@0.165.0';
+
+import {
+    OrbitControls
+}
+from 'https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js';
+
+/* ===================================================== */
+/* ENGINE */
+/* ===================================================== */
+
+const scene = new THREE.Scene();
+
+scene.background =
+    new THREE.Color(0x87ceeb);
+
+const camera =
+    new THREE.PerspectiveCamera(
+
+        60,
+
+        window.innerWidth /
+        window.innerHeight,
+
+        0.1,
+
+        1000
+    );
+
+camera.position.set(
+    25,
+    30,
+    25
+);
+
+const renderer =
+    new THREE.WebGLRenderer({
+
+        antialias:true
+    });
+
+renderer.setSize(
+    window.innerWidth,
+    window.innerHeight
+);
+
+renderer.shadowMap.enabled = true;
+
+document.body.appendChild(
+    renderer.domElement
+);
+
+const controls =
+    new OrbitControls(
+        camera,
+        renderer.domElement
+    );
+
+controls.target.set(0,0,0);
+
+controls.update();
+
+/* ===================================================== */
+/* LIGHTING */
+/* ===================================================== */
+
+const sun =
+    new THREE.DirectionalLight(
+        0xffffff,
+        2
+    );
+
+sun.position.set(
+    20,
+    40,
+    20
+);
+
+sun.castShadow = true;
+
+scene.add(sun);
+
+scene.add(
+    new THREE.AmbientLight(
+        0xffffff,
+        0.45
+    )
+);
+
+/* ===================================================== */
+/* WORLD */
+/* ===================================================== */
+
+const WORLD_SIZE = 64;
+
+const WORLD_HALF =
+    WORLD_SIZE / 2;
+
+const workers = [];
+
+const buildings = [];
+
+const occupancyGrid =
+    new Set();
+
+/* ===================================================== */
+/* TERRAIN */
+/* ===================================================== */
+
+const ground =
+    new THREE.Mesh(
+
+        new THREE.PlaneGeometry(
+            WORLD_SIZE,
+            WORLD_SIZE,
+            64,
+            64
+        ),
+
+        new THREE.MeshStandardMaterial({
+
+            color:0x467a46
+        })
+    );
+
+ground.rotation.x =
+    -Math.PI / 2;
+
+ground.receiveShadow = true;
+
+scene.add(ground);
+
+/* ===================================================== */
+/* GRID */
+/* ===================================================== */
+
+const grid =
+    new THREE.GridHelper(
+
+        WORLD_SIZE,
+
+        32,
+
+        0x333333,
+
+        0x333333
+    );
+
+scene.add(grid);
+
+/* ===================================================== */
+/* TREES */
+/* ===================================================== */
+
+function spawnTree(x,z){
+
+    const group =
+        new THREE.Group();
+
+    const trunk =
+        new THREE.Mesh(
+
+            new THREE.CylinderGeometry(
+                .3,
+                .4,
+                2
+            ),
+
+            new THREE.MeshStandardMaterial({
+                color:0x6b4423
+            })
+        );
+
+    trunk.position.y = 1;
+
+    const leaves =
+        new THREE.Mesh(
+
+            new THREE.ConeGeometry(
+                1.5,
+                3,
+                8
+            ),
+
+            new THREE.MeshStandardMaterial({
+                color:0x228833
+            })
+        );
+
+    leaves.position.y = 3;
+
+    group.add(trunk);
+    group.add(leaves);
+
+    group.position.set(x,0,z);
+
+    scene.add(group);
+
+    occupancyGrid.add(
+        `${Math.round(x)},${Math.round(z)}`
+    );
+}
+
+for(let i=0;i<35;i++){
+
+    spawnTree(
+
+        Math.random()*50-25,
+
+        Math.random()*50-25
+    );
+}
+
+/* ===================================================== */
+/* PEASANT */
+/* ===================================================== */
+
+function createPeasant(x,z){
+
+    const group =
+        new THREE.Group();
+
+    const body =
+        new THREE.Mesh(
+
+            new THREE.BoxGeometry(
+                1,
+                2,
+                1
+            ),
+
+            new THREE.MeshStandardMaterial({
+                color:0xc2a070
+            })
+        );
+
+    body.position.y = 1;
+
+    const head =
+        new THREE.Mesh(
+
+            new THREE.BoxGeometry(
+                .7,
+                .7,
+                .7
+            ),
+
+            new THREE.MeshStandardMaterial({
+                color:0xf0d0aa
+            })
+        );
+
+    head.position.y = 2.4;
+
+    group.add(body);
+    group.add(head);
+
+    group.position.set(
+        x,
+        0,
+        z
+    );
+
+    group.castShadow = true;
+
+    scene.add(group);
+
+    const peasant = {
+
+        mesh:group,
+
+        hp:230,
+
+        maxHp:230,
+
+        selected:true,
+
+        type:"Peasant"
+    };
+
+    workers.push(peasant);
+
+    return peasant;
+}
+
+createPeasant(0,0);
+
+/* ===================================================== */
+/* HOUSE */
+/* ===================================================== */
+
+function spawnHouse(x,z){
+
+    const group =
+        new THREE.Group();
+
+    const body =
+        new THREE.Mesh(
+
+            new THREE.BoxGeometry(
+                3,
+                3,
+                3
+            ),
+
+            new THREE.MeshStandardMaterial({
+                color:0xb07b4f
+            })
+        );
+
+    body.position.y = 1.5;
+
+    const roof =
+        new THREE.Mesh(
+
+            new THREE.ConeGeometry(
+                2.5,
+                2,
+                4
+            ),
+
+            new THREE.MeshStandardMaterial({
+                color:0x7d1e1e
+            })
+        );
+
+    roof.position.y = 4;
+
+    roof.rotation.y =
+        Math.PI / 4;
+
+    group.add(body);
+    group.add(roof);
+
+    group.position.set(
+        x,
+        0,
+        z
+    );
+
+    scene.add(group);
+
+    buildings.push({
+        mesh:group
+    });
+}
+
+/* ===================================================== */
+/* INVENTORY GRID */
+/* ===================================================== */
+
+const inventory =
+    document.getElementById(
+        "inventoryGrid"
+    );
+
+for(let i=0;i<6;i++){
+
+    const slot =
+        document.createElement("div");
+
+    slot.className =
+        "inventorySlot";
+
+    inventory.appendChild(slot);
+}
+
+/* ===================================================== */
+/* COMMAND GRID */
+/* ===================================================== */
+
+const commands = [
+
+    {
+        icon:"🏠",
+        name:"Build House",
+        hotkey:"Q"
+    },
+
+    {
+        icon:"🪓",
+        name:"Harvest",
+        hotkey:"W"
+    },
+
+    {
+        icon:"⚒️",
+        name:"Barracks",
+        hotkey:"E"
+    },
+
+    {
+        icon:"🏰",
+        name:"Town Hall",
+        hotkey:"R"
+    },
+
+    {
+        icon:"🌲",
+        name:"Gather Lumber",
+        hotkey:"A"
+    },
+
+    {
+        icon:"⛏️",
+        name:"Mine Gold",
+        hotkey:"S"
+    },
+
+    {
+        icon:"🛡️",
+        name:"Defend",
+        hotkey:"D"
+    },
+
+    {
+        icon:"🔥",
+        name:"Attack",
+        hotkey:"F"
+    },
+
+    {
+        icon:"🐎",
+        name:"Scout",
+        hotkey:"Z"
+    },
+
+    {
+        icon:"📦",
+        name:"Inventory",
+        hotkey:"X"
+    },
+
+    {
+        icon:"🔨",
+        name:"Repair",
+        hotkey:"C"
+    },
+
+    {
+        icon:"❌",
+        name:"Cancel",
+        hotkey:"V"
+    }
+
+];
+
+const commandGrid =
+    document.getElementById(
+        "commandGrid"
+    );
+
+commands.forEach(cmd=>{
+
+    const div =
+        document.createElement("div");
+
+    div.className =
+        "commandCard";
+
+    div.innerHTML = `
+
+        ${cmd.icon}
+
+        <div class="hotkey">
+            ${cmd.hotkey}
+        </div>
+    `;
+
+    div.addEventListener(
+        "mouseenter",
+        ()=>{
+
+            document.getElementById(
+                "tooltip"
+            ).innerHTML = `
+
+                <b>${cmd.name}</b>
+                <br>
+                Hotkey:
+                ${cmd.hotkey}
+            `;
+        }
+    );
+
+    /* BUILD HOUSE */
+
+    if(cmd.name === "Build House"){
+
+        div.addEventListener(
+            "click",
+            ()=>{
+
+                spawnHouse(
+
+                    Math.random()*20-10,
+
+                    Math.random()*20-10
+                );
+            }
+        );
+    }
+
+    commandGrid.appendChild(div);
+});
+
+/* ===================================================== */
+/* MINIMAP */
+/* ===================================================== */
+
+const minimap =
+    document.getElementById(
+        "minimap"
+    );
+
+const mini =
+    minimap.getContext("2d");
+
+minimap.width = 200;
+minimap.height = 200;
+
+function minimapPos(v){
+
+    return (
+        (v / WORLD_SIZE) * 200
+    ) + 100;
+}
+
+function updateMinimap(){
+
+    /* BACKGROUND */
+
+    mini.fillStyle = "#102010";
+
+    mini.fillRect(
+        0,
+        0,
+        200,
+        200
+    );
+
+    /* BORDER */
+
+    mini.strokeStyle = "#666";
+
+    mini.strokeRect(
+        0,
+        0,
+        200,
+        200
+    );
+
+    /* TREES */
+
+    mini.fillStyle = "#225522";
+
+    occupancyGrid.forEach(key=>{
+
+        const parts =
+            key.split(",");
+
+        const x =
+            Number(parts[0]);
+
+        const z =
+            Number(parts[1]);
+
+        mini.fillRect(
+
+            minimapPos(x),
+
+            minimapPos(z),
+
+            2,
+
+            2
+        );
+    });
+
+    /* BUILDINGS */
+
+    buildings.forEach(b=>{
+
+        mini.fillStyle = "#aaaaaa";
+
+        mini.fillRect(
+
+            minimapPos(
+                b.mesh.position.x
+            ),
+
+            minimapPos(
+                b.mesh.position.z
+            ),
+
+            6,
+
+            6
+        );
+    });
+
+    /* PEASANTS */
+
+    workers.forEach(w=>{
+
+        mini.fillStyle =
+            w.selected
+                ? "#00ffff"
+                : "#3366ff";
+
+        mini.beginPath();
+
+        mini.arc(
+
+            minimapPos(
+                w.mesh.position.x
+            ),
+
+            minimapPos(
+                w.mesh.position.z
+            ),
+
+            4,
+
+            0,
+
+            Math.PI * 2
+        );
+
+        mini.fill();
+    });
+
+    /* CAMERA */
+
+    mini.strokeStyle = "#ffffff";
+
+    mini.strokeRect(
+        90,
+        90,
+        20,
+        20
+    );
+}
+
+/* ===================================================== */
+/* INPUT */
+/* ===================================================== */
+
+window.addEventListener(
+    "keydown",
+    e=>{
+
+        const key =
+            e.key.toLowerCase();
+
+        if(key === "q"){
+
+            spawnHouse(
+
+                Math.random()*20-10,
+
+                Math.random()*20-10
+            );
+        }
+    }
+);
+
+/* ===================================================== */
+/* ANIMATION */
+/* ===================================================== */
+
+function animate(){
+
+    requestAnimationFrame(
+        animate
+    );
+
+    updateMinimap();
+
+    renderer.render(
+        scene,
+        camera
+    );
+}
+
+animate();
+
+/* ===================================================== */
+/* RESIZE */
+/* ===================================================== */
+
+window.addEventListener(
+    'resize',
+    ()=>{
+
+        camera.aspect =
+            window.innerWidth /
+            window.innerHeight;
+
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(
+
+            window.innerWidth,
+
+            window.innerHeight
+        );
+    }
+);
+
+</script>
+
+</body>
+</html>
