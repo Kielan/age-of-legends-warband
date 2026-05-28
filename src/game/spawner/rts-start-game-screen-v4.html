@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>RTS HUD Demo - ThreeJS</title>
+
+<style>
+html, body{
+    margin:0;
+    overflow:hidden;
+    background:#111;
+    font-family:Arial,sans-serif;
+}
+
+/* =========================================================
+   THREE CANVAS
+========================================================= */
+
+canvas{
+    display:block;
+}
+
+/* =========================================================
+   TOP UI
+========================================================= */
+
+#modePanel{
+    position:absolute;
+    top:10px;
+    left:10px;
+    z-index:100;
+    display:flex;
+    gap:8px;
+}
+
+.modeBtn{
+    background:#1a1a1a;
+    color:#ddd;
+    border:1px solid #555;
+    padding:8px 12px;
+    cursor:pointer;
+}
+
+.modeBtn:hover{
+    background:#333;
+}
+
+/* =========================================================
+   HUD
+========================================================= */
+
+#hud{
+    position:absolute;
+    bottom:0;
+    left:0;
+    width:100%;
+    height:230px;
+    background:
+        linear-gradient(
+            to bottom,
+            #1a1a1a 0%,
+            #090909 100%
+        );
+
+    border-top:3px solid #444;
+    display:flex;
+    z-index:50;
+    color:#ddd;
+}
+
+/* =========================================================
+   MINIMAP
+========================================================= */
+
+#leftHud{
+    width:250px;
+    padding:10px;
+    border-right:2px solid #333;
+    background:#080808;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+
+#minimapFrame{
+    width:200px;
+    height:200px;
+    border:4px solid #555;
+    background:#111;
+    position:relative;
+    box-shadow:
+        inset 0 0 10px #000;
+}
+
+#minimap{
+    width:100%;
+    height:100%;
+    display:block;
+}
+
+/* =========================================================
+   UNIT PANEL
+========================================================= */
+
+#middleHud{
+    width:360px;
+    border-right:2px solid #333;
+    display:flex;
+    gap:14px;
+    padding:12px;
+    background:#101010;
+}
+
+#portrait{
+    width:128px;
+    height:128px;
+    border:3px solid #666;
+    background:
+        radial-gradient(
+            circle at center,
+            #666,
+            #222
+        );
+    position:relative;
+    overflow:hidden;
+}
+
+#portrait:before{
+    content:"";
+    position:absolute;
+    width:50px;
+    height:70px;
+    background:#d0b48a;
+    left:39px;
+    top:28px;
+    border-radius:12px;
+}
+
+#portrait:after{
+    content:"";
+    position:absolute;
+    width:70px;
+    height:40px;
+    background:#4477cc;
+    left:29px;
+    top:10px;
+    border-radius:10px;
+}
+
+#unitInfo{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    justify-content:flex-start;
+    gap:6px;
+}
+
+.healthBar{
+    width:100%;
+    height:18px;
+    background:#330000;
+    border:1px solid #555;
+    position:relative;
+}
+
+.healthFill{
+    position:absolute;
+    left:0;
+    top:0;
+    bottom:0;
+    width:100%;
+    background:#1ed760;
+}
+
+.stat{
+    font-size:13px;
+    color:#ccc;
+}
+
+#cancelBtn{
+    margin-top:10px;
+    background:#331111;
+    border:1px solid #883333;
+    color:#fff;
+    padding:8px;
+    cursor:pointer;
+}
+
+#cancelBtn:hover{
+    background:#552222;
+}
+
+/* =========================================================
+   RIGHT SIDE
+========================================================= */
+
+#rightHud{
+    flex:1;
+    display:flex;
+    gap:18px;
+    padding:12px;
+}
+
+/* =========================================================
+   INVENTORY GRID
+========================================================= */
+
+.panelTitle{
+    font-size:13px;
+    margin-bottom:8px;
+    color:#aaa;
+    letter-spacing:1px;
+}
+
+.inventoryGrid{
+    display:grid;
+    grid-template-columns:repeat(2,64px);
+    grid-template-rows:repeat(3,64px);
+    gap:6px;
+}
+
+.inventorySlot{
+    width:64px;
+    height:64px;
+    background:#1a1a1a;
+    border:2px solid #444;
+    box-shadow:inset 0 0 8px #000;
+}
+
+/* =========================================================
+   COMMAND GRID
+========================================================= */
+
+.commandSection{
+    display:flex;
+    flex-direction:column;
+}
+
+.commandGrid{
+    display:grid;
+    grid-template-columns:repeat(4,64px);
+    grid-template-rows:repeat(3,64px);
+    gap:6px;
+}
+
+.commandBtn{
+    position:relative;
+    width:64px;
+    height:64px;
+    border:2px solid #555;
+    background:#202020;
+    color:#ddd;
+    cursor:pointer;
+    font-size:24px;
+    transition:0.15s;
+}
+
+.commandBtn:hover{
+    background:#3a3a3a;
+    border-color:#88aa55;
+}
+
+.commandBtn span{
+    position:absolute;
+    bottom:2px;
+    right:4px;
+    font-size:11px;
+    color:#aaa;
+}
+
+/* =========================================================
+   TOOLTIP
+========================================================= */
+
+#tooltip{
+    position:absolute;
+    pointer-events:none;
+    background:#000;
+    border:1px solid #777;
+    color:#fff;
+    padding:8px;
+    font-size:12px;
+    display:none;
+    z-index:200;
+    max-width:220px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="modePanel">
+    <button class="modeBtn" id="squareBtn">Square Grid</button>
+    <button class="modeBtn" id="hexBtn">Hex Grid</button>
+</div>
+
+<div id="tooltip"></div>
+
+<!-- =====================================================
+     HUD
+===================================================== -->
+
+<div id="hud">
+
+    <!-- MINIMAP -->
+    <div id="leftHud">
+        <div id="minimapFrame">
+            <canvas id="minimap" width="200" height="200"></canvas>
+        </div>
+    </div>
+
+    <!-- PORTRAIT -->
+    <div id="middleHud">
+
+        <div id="portrait"></div>
+
+        <div id="unitInfo">
+
+            <div style="font-size:20px;font-weight:bold;">
+                Peasant
+            </div>
+
+            <div class="healthBar">
+                <div class="healthFill"></div>
+            </div>
+
+            <div class="stat">HP: 240 / 240</div>
+            <div class="stat">Armor: 1</div>
+            <div class="stat">Damage: 5 - 8</div>
+            <div class="stat">Carry Gold: 0</div>
+            <div class="stat">Status: Idle</div>
+
+            <button id="cancelBtn">
+                X Cancel
+            </button>
+
+        </div>
+
+    </div>
+
+    <!-- RIGHT -->
+    <div id="rightHud">
+
+        <!-- INVENTORY -->
+        <div>
+            <div class="panelTitle">
+                INVENTORY
+            </div>
+
+            <div class="inventoryGrid">
+                <div class="inventorySlot"></div>
+                <div class="inventorySlot"></div>
+                <div class="inventorySlot"></div>
+                <div class="inventorySlot"></div>
+                <div class="inventorySlot"></div>
+                <div class="inventorySlot"></div>
+            </div>
+        </div>
+
+        <!-- COMMANDS -->
+        <div class="commandSection">
+
+            <div class="panelTitle">
+                BUILD MENU
+            </div>
+
+            <div class="commandGrid" id="commandGrid"></div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<script type="module">
+
+import * as THREE from 'https://esm.sh/three@0.165.0';
+import { OrbitControls } from 'https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js';
+
+/* =========================================================
+   ENGINE
+========================================================= */
+
+const scene = new THREE.Scene();
+
+scene.background =
+    new THREE.Color(0x87ceeb);
+
+const camera =
+    new THREE.PerspectiveCamera(
+        60,
+        window.innerWidth/window.innerHeight,
+        0.1,
+        1000
+    );
+
+camera.position.set(25,30,25);
+
+const renderer =
+    new THREE.WebGLRenderer({
+        antialias:true
+    });
+
+renderer.setSize(
+    window.innerWidth,
+    window.innerHeight
+);
+
+renderer.shadowMap.enabled = true;
+
+document.body.appendChild(
+    renderer.domElement
+);
+
+const controls =
+    new OrbitControls(
+        camera,
+        renderer.domElement
+    );
+
+controls.target.set(0,0,0);
+controls.update();
+
+/* =========================================================
+   LIGHTS
+========================================================= */
+
+const sun =
+    new THREE.DirectionalLight(
+        0xffffff,
+        2
+    );
+
+sun.position.set(20,40,20);
+
+sun.castShadow = true;
+
+scene.add(sun);
+
+scene.add(
+    new THREE.AmbientLight(
+        0xffffff,
+        0.5
+    )
+);
+
+/* =========================================================
+   WORLD
+========================================================= */
+
+const WORLD_SIZE = 64;
+const WORLD_HALF = WORLD_SIZE / 2;
+
+const occupancyGrid = new Set();
+
+const workers = [];
+const trees = [];
+
+/* =========================================================
+   GROUND
+========================================================= */
+
+const ground =
+    new THREE.Mesh(
+
+        new THREE.PlaneGeometry(
+            WORLD_SIZE,
+            WORLD_SIZE,
+            64,
+            64
+        ),
+
+        new THREE.MeshStandardMaterial({
+            color:0x4c8a3f
+        })
+    );
+
+ground.rotation.x = -Math.PI/2;
+
+ground.receiveShadow = true;
+
+scene.add(ground);
+
+/* =========================================================
+   GRID
+========================================================= */
+
+const grid =
+    new THREE.GridHelper(
+        WORLD_SIZE,
+        32,
+        0x333333,
+        0x333333
+    );
+
+scene.add(grid);
+
+/* =========================================================
+   TREE SPAWNING
+========================================================= */
+
+function spawnTree(x,z){
+
+    const group = new THREE.Group();
+
+    const trunk =
+        new THREE.Mesh(
+            new THREE.CylinderGeometry(
+                0.3,
+                0.4,
+                2
+            ),
+            new THREE.MeshStandardMaterial({
+                color:0x6b4423
+            })
+        );
+
+    trunk.position.y = 1;
+
+    const leaves =
+        new THREE.Mesh(
+            new THREE.ConeGeometry(
+                1.5,
+                3,
+                8
+            ),
+            new THREE.MeshStandardMaterial({
+                color:0x228833
+            })
+        );
+
+    leaves.position.y = 3;
+
+    group.add(trunk);
+    group.add(leaves);
+
+    group.position.set(x,0,z);
+
+    scene.add(group);
+
+    trees.push(group);
+}
+
+for(let i=0;i<45;i++){
+
+    spawnTree(
+        Math.random()*50-25,
+        Math.random()*50-25
+    );
+}
+
+/* =========================================================
+   CLEAR TREES
+========================================================= */
+
+function clearTreesAround(x,z,radius){
+
+    for(let i=trees.length-1;i>=0;i--){
+
+        const t = trees[i];
+
+        const dx =
+            t.position.x - x;
+
+        const dz =
+            t.position.z - z;
+
+        const dist =
+            Math.sqrt(dx*dx + dz*dz);
+
+        if(dist < radius){
+
+            scene.remove(t);
+
+            trees.splice(i,1);
+        }
+    }
+}
+
+/* =========================================================
+   GOLD MINE
+========================================================= */
+
+function createGoldMine(x,z){
+
+    clearTreesAround(x,z,8);
+
+    const group =
+        new THREE.Group();
+
+    const base =
+        new THREE.Mesh(
+            new THREE.CylinderGeometry(
+                5,
+                6,
+                4,
+                8
+            ),
+            new THREE.MeshStandardMaterial({
+                color:0x5a4632
+            })
+        );
+
+    base.position.y = 2;
+
+    const gold =
+        new THREE.Mesh(
+            new THREE.CylinderGeometry(
+                3,
+                3,
+                2,
+                8
+            ),
+            new THREE.MeshStandardMaterial({
+                color:0xffcc22,
+                emissive:0xaa7700
+            })
+        );
+
+    gold.position.y = 5;
+
+    group.add(base);
+    group.add(gold);
+
+    group.position.set(x,0,z);
+
+    scene.add(group);
+
+    return group;
+}
+
+/* =========================================================
+   PEASANT
+========================================================= */
+
+function createPeasant(){
+
+    const group =
+        new THREE.Group();
+
+    const body =
+        new THREE.Mesh(
+            new THREE.BoxGeometry(
+                1,
+                2,
+                1
+            ),
+            new THREE.MeshStandardMaterial({
+                color:0x4477cc
+            })
+        );
+
+    body.position.y = 2;
+
+    const head =
+        new THREE.Mesh(
+            new THREE.SphereGeometry(
+                0.45,
+                12,
+                12
+            ),
+            new THREE.MeshStandardMaterial({
+                color:0xffddbb
+            })
+        );
+
+    head.position.y = 3.4;
+
+    group.add(body);
+    group.add(head);
+
+    group.position.set(0,0,0);
+
+    group.userData.type = "peasant";
+
+    scene.add(group);
+
+    return group;
+}
+
+const peasant =
+    createPeasant();
+
+workers.push(peasant);
+
+/* =========================================================
+   GOLD MINE POSITION
+========================================================= */
+
+const goldMine =
+    createGoldMine(
+        -20,
+        -20
+    );
+
+/* =========================================================
+   SELECTION RING
+========================================================= */
+
+const selectionRing =
+    new THREE.Mesh(
+
+        new THREE.RingGeometry(
+            1.2,
+            1.45,
+            32
+        ),
+
+        new THREE.MeshBasicMaterial({
+            color:0x00ff66,
+            side:THREE.DoubleSide
+        })
+    );
+
+selectionRing.rotation.x =
+    -Math.PI/2;
+
+selectionRing.visible = false;
+
+scene.add(selectionRing);
+
+/* =========================================================
+   HUD
+========================================================= */
+
+const middleHud =
+    document.getElementById(
+        "middleHud"
+    );
+
+function showHud(){
+
+    middleHud.style.visibility =
+        "visible";
+}
+
+function hideHud(){
+
+    middleHud.style.visibility =
+        "hidden";
+}
+
+showHud();
+
+/* =========================================================
+   SELECTION
+========================================================= */
+
+let selectedUnit = peasant;
+
+function selectPeasant(){
+
+    selectedUnit = peasant;
+
+    selectionRing.visible = true;
+
+    selectionRing.position.set(
+        peasant.position.x,
+        0.05,
+        peasant.position.z
+    );
+
+    showHud();
+}
+
+function deselectPeasant(){
+
+    selectedUnit = null;
+
+    selectionRing.visible = false;
+
+    hideHud();
+}
+
+/* =========================================================
+   START SELECTED
+========================================================= */
+
+selectPeasant();
+
+/* =========================================================
+   ESCAPE + X BUTTON
+========================================================= */
+
+window.addEventListener(
+    "keydown",
+    e=>{
+
+        if(e.key === "Escape"){
+
+            deselectPeasant();
+        }
+    }
+);
+
+document.getElementById(
+    "cancelBtn"
+).addEventListener(
+    "click",
+    ()=>{
+
+        deselectPeasant();
+    }
+);
+
+/* =========================================================
+   CLICK SELECTION
+========================================================= */
+
+const raycaster =
+    new THREE.Raycaster();
+
+const mouse =
+    new THREE.Vector2();
+
+window.addEventListener(
+    "pointerdown",
+    e=>{
+
+        mouse.x =
+            (e.clientX /
+            window.innerWidth) * 2 - 1;
+
+        mouse.y =
+            -(e.clientY /
+            window.innerHeight) * 2 + 1;
+
+        raycaster.setFromCamera(
+            mouse,
+            camera
+        );
+
+        const hits =
+            raycaster.intersectObjects(
+                [peasant],
+                true
+            );
+
+        if(hits.length){
+
+            selectPeasant();
+
+        }else{
+
+            deselectPeasant();
+        }
+    }
+);
+
+/* =========================================================
+   BUILD GRID
+========================================================= */
+
+const buildCommands = [
+
+    {
+        icon:"🏠",
+        name:"Farm",
+        hotkey:"Q",
+        desc:"Produces food."
+    },
+
+    {
+        icon:"⚒️",
+        name:"Barracks",
+        hotkey:"W",
+        desc:"Trains soldiers."
+    },
+
+    {
+        icon:"🏰",
+        name:"Town Hall",
+        hotkey:"E",
+        desc:"Main base."
+    },
+
+    {
+        icon:"🪓",
+        name:"Lumber Mill",
+        hotkey:"R",
+        desc:"Wood upgrades."
+    },
+
+    {
+        icon:"⛪",
+        name:"Temple",
+        hotkey:"A",
+        desc:"Magic building."
+    },
+
+    {
+        icon:"🏹",
+        name:"Tower",
+        hotkey:"S",
+        desc:"Defense tower."
+    },
+
+    {
+        icon:"⚔️",
+        name:"Blacksmith",
+        hotkey:"D",
+        desc:"Weapon upgrades."
+    },
+
+    {
+        icon:"🐎",
+        name:"Stable",
+        hotkey:"F",
+        desc:"Mounted units."
+    },
+
+    {
+        icon:"🧱",
+        name:"Workshop",
+        hotkey:"Z",
+        desc:"Siege weapons."
+    },
+
+    {
+        icon:"🛡️",
+        name:"Guard Tower",
+        hotkey:"X",
+        desc:"Defensive tower."
+    },
+
+    {
+        icon:"🔥",
+        name:"Forge",
+        hotkey:"C",
+        desc:"Armor upgrades."
+    },
+
+    {
+        icon:"❌",
+        name:"Cancel",
+        hotkey:"V",
+        desc:"Cancel build."
+    }
+];
+
+const gridEl =
+    document.getElementById(
+        "commandGrid"
+    );
+
+const tooltip =
+    document.getElementById(
+        "tooltip"
+    );
+
+buildCommands.forEach(cmd=>{
+
+    const btn =
+        document.createElement(
+            "button"
+        );
+
+    btn.className =
+        "commandBtn";
+
+    btn.innerHTML = `
+        ${cmd.icon}
+        <span>${cmd.hotkey}</span>
+    `;
+
+    btn.addEventListener(
+        "mousemove",
+        e=>{
+
+            tooltip.style.display =
+                "block";
+
+            tooltip.style.left =
+                e.clientX + 14 + "px";
+
+            tooltip.style.top =
+                e.clientY + 14 + "px";
+
+            tooltip.innerHTML = `
+                <b>${cmd.name}</b><br>
+                ${cmd.desc}<br>
+                Hotkey: ${cmd.hotkey}
+            `;
+        }
+    );
+
+    btn.addEventListener(
+        "mouseleave",
+        ()=>{
+
+            tooltip.style.display =
+                "none";
+        }
+    );
+
+    gridEl.appendChild(btn);
+});
+
+/* =========================================================
+   MINIMAP
+========================================================= */
+
+const minimap =
+    document.getElementById(
+        "minimap"
+    );
+
+const mini =
+    minimap.getContext("2d");
+
+function worldToMini(x){
+
+    return (
+        ((x + WORLD_HALF) / WORLD_SIZE)
+        * 200
+    );
+}
+
+function updateMinimap(){
+
+    mini.fillStyle = "#102010";
+
+    mini.fillRect(
+        0,
+        0,
+        200,
+        200
+    );
+
+    /* TREES */
+
+    mini.fillStyle = "#228833";
+
+    trees.forEach(t=>{
+
+        mini.fillRect(
+            worldToMini(t.position.x),
+            worldToMini(t.position.z),
+            2,
+            2
+        );
+    });
+
+    /* GOLD MINE */
+
+    mini.fillStyle = "#ffcc22";
+
+    mini.beginPath();
+
+    mini.arc(
+        worldToMini(
+            goldMine.position.x
+        ),
+        worldToMini(
+            goldMine.position.z
+        ),
+        6,
+        0,
+        Math.PI*2
+    );
+
+    mini.fill();
+
+    /* PEASANT */
+
+    mini.fillStyle =
+        selectedUnit
+            ? "#00ff88"
+            : "#44aaff";
+
+    mini.beginPath();
+
+    mini.arc(
+        worldToMini(
+            peasant.position.x
+        ),
+        worldToMini(
+            peasant.position.z
+        ),
+        4,
+        0,
+        Math.PI*2
+    );
+
+    mini.fill();
+}
+
+/* =========================================================
+   ANIMATION
+========================================================= */
+
+function animate(){
+
+    requestAnimationFrame(
+        animate
+    );
+
+    updateMinimap();
+
+    renderer.render(
+        scene,
+        camera
+    );
+}
+
+animate();
+
+/*  RESIZE */
+window.addEventListener(
+    "resize",
+    ()=>{
+
+        camera.aspect =
+            window.innerWidth /
+            window.innerHeight;
+
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(
+            window.innerWidth,
+            window.innerHeight
+        );
+    }
+);
+
+</script>
+</body>
+</html>
