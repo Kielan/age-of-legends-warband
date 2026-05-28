@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RTS Neutral Faction Prototype - PS1/PS2 Style</title>
+
+<style>
+
+body{
+    margin:0;
+    overflow:hidden;
+    background:#000;
+    font-family:monospace;
+}
+
+#menu{
+    position:absolute;
+    top:0;
+    left:0;
+    width:300px;
+    height:100%;
+    background:#111;
+    color:white;
+    overflow:auto;
+    border-right:2px solid #333;
+    z-index:10;
+}
+
+.section{
+    padding:10px;
+    border-bottom:1px solid #222;
+}
+
+button{
+    width:100%;
+    padding:8px;
+    margin:4px 0;
+    background:#222;
+    color:white;
+    border:1px solid #444;
+    cursor:pointer;
+    text-align:left;
+}
+
+button:hover{
+    background:#333;
+}
+
+#selectionPanel{
+    position:absolute;
+    top:0;
+    right:0;
+    width:280px;
+    height:100%;
+    background:#141414;
+    color:white;
+    border-left:2px solid #333;
+    overflow:auto;
+    z-index:10;
+}
+
+.selectionCard{
+    padding:10px;
+    border-bottom:1px solid #222;
+}
+
+#ui{
+    position:absolute;
+    bottom:0;
+    left:300px;
+    right:280px;
+    height:90px;
+    background:#000;
+    color:white;
+    padding:10px;
+    border-top:2px solid #333;
+    z-index:10;
+}
+
+canvas{
+    position:absolute;
+    top:0;
+    left:300px;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="menu"></div>
+
+<div id="selectionPanel">
+
+<div class="selectionCard">
+<h3>Selection</h3>
+<div id="selectedInfo">None</div>
+</div>
+
+<div class="selectionCard">
+
+<button onclick="spawnRaceUnit('kobold')">
+Spawn Kobold
+</button>
+
+<button onclick="spawnRaceUnit('gnoll')">
+Spawn Gnoll
+</button>
+
+<button onclick="spawnRaceUnit('goblin-whip')">
+Spawn Goblin Taskmaster
+</button>
+
+<button onclick="spawnRaceUnit('wolf-rider')">
+Spawn Goblin Wolf Rider
+</button>
+
+</div>
+
+</div>
+
+<div id="ui">
+RTS Neutral Unit Prototype - PS1/PS2 Style
+</div>
+
+<!-- NON MODULE SAFE -->
+<script type="module">
+import * as THREE from "https://esm.sh/three@0.165.0";
+// SAFE CHECK
+
+if(typeof THREE === "undefined"){
+    alert("THREE failed to load. Internet connection or CDN blocked.");
+    throw new Error("THREE failed");
+}
+
+const LEFT_W = 300;
+const RIGHT_W = 280;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x101014);
+scene.fog = new THREE.Fog(0x101014,40,180);
+
+const VIEW_W = window.innerWidth - LEFT_W - RIGHT_W;
+
+const camera = new THREE.PerspectiveCamera(
+    60,
+    VIEW_W/window.innerHeight,
+    0.1,
+    2000
+);
+
+camera.position.set(45,35,45);
+
+const renderer = new THREE.WebGLRenderer({
+    antialias:true
+});
+
+renderer.shadowMap.enabled = true;
+
+renderer.setSize(
+    VIEW_W,
+    window.innerHeight
+);
+
+renderer.domElement.style.left = LEFT_W + "px";
+
+document.body.appendChild(renderer.domElement);
+
+////////////////////////////////////////////////////////////
+// LIGHTS
+////////////////////////////////////////////////////////////
+
+scene.add(
+    new THREE.AmbientLight(0xffffff,0.7)
+);
+
+const sun = new THREE.DirectionalLight(
+    0xffffff,
+    1.8
+);
+
+sun.position.set(50,80,40);
+
+sun.castShadow = true;
+
+scene.add(sun);
+
+////////////////////////////////////////////////////////////
+// GROUND
+////////////////////////////////////////////////////////////
+
+const ground = new THREE.Mesh(
+
+    new THREE.PlaneGeometry(240,240),
+
+    new THREE.MeshStandardMaterial({
+        color:0x355a2c
+    })
+);
+
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+
+scene.add(ground);
+
+////////////////////////////////////////////////////////////
+// MATERIALS
+////////////////////////////////////////////////////////////
+
+const MAT = {
+
+kobold:new THREE.MeshStandardMaterial({
+    color:0xd59c72,
+    flatShading:true
+}),
+
+gnoll:new THREE.MeshStandardMaterial({
+    color:0xc89b53,
+    flatShading:true
+}),
+
+goblin:new THREE.MeshStandardMaterial({
+    color:0x6fa04e,
+    flatShading:true
+}),
+
+wolf:new THREE.MeshStandardMaterial({
+    color:0x555555,
+    flatShading:true
+}),
+
+dark:new THREE.MeshStandardMaterial({
+    color:0x2a2118,
+    flatShading:true
+}),
+
+steel:new THREE.MeshStandardMaterial({
+    color:0xd0d8e0,
+    metalness:0.7,
+    roughness:0.4,
+    flatShading:true
+}),
+
+wood:new THREE.MeshStandardMaterial({
+    color:0x6f4c2d,
+    flatShading:true
+}),
+
+cloth:new THREE.MeshStandardMaterial({
+    color:0x6f1f1f,
+    flatShading:true
+}),
+
+roof:new THREE.MeshStandardMaterial({
+    color:0x4c2b18,
+    flatShading:true
+})
+
+};
+
+////////////////////////////////////////////////////////////
+// MENU
+////////////////////////////////////////////////////////////
+
+const menu = document.getElementById("menu");
+
+menu.innerHTML = `
+
+<div class="section">
+<h2>Faction Menu</h2>
+</div>
+
+<div class="section">
+
+<button>[ ] Human</button>
+<button>[ ] Goblin</button>
+<button>[x] Neutral</button>
+
+</div>
+
+<div class="section">
+
+<h3>Buildings</h3>
+
+<button onclick="spawnFactionBuilding('kobold-gnoll-camp')">
+Gnoll Camp
+</button>
+
+<button onclick="spawnFactionBuilding('kobold-mine')">
+Kobold Mine
+</button>
+
+<button onclick="spawnFactionBuilding('kobold-watch-tower')">
+Watch Tower
+</button>
+
+</div>
+
+<div class="section">
+
+<h3>Neutral Units</h3>
+
+<button onclick="spawnRaceUnit('kobold')">
+Kobold Miner
+</button>
+
+<button onclick="spawnRaceUnit('gnoll')">
+Gnoll Brute
+</button>
+
+<button onclick="spawnRaceUnit('goblin-whip')">
+Goblin Taskmaster
+</button>
+
+<button onclick="spawnRaceUnit('wolf-rider')">
+Goblin Wolf Rider
+</button>
+
+</div>
+
+`;
+
+////////////////////////////////////////////////////////////
+// HELPERS
+////////////////////////////////////////////////////////////
+
+function box(w,h,d,mat){
+
+    const m = new THREE.Mesh(
+        new THREE.BoxGeometry(w,h,d),
+        mat
+    );
+
+    m.castShadow = true;
+    m.receiveShadow = true;
+
+    return m;
+}
+
+function cone(r,h,s,mat){
+
+    const m = new THREE.Mesh(
+        new THREE.ConeGeometry(r,h,s),
+        mat
+    );
+
+    m.castShadow = true;
+
+    return m;
+}
+
+const units = [];
+
+////////////////////////////////////////////////////////////
+// KOBOLD
+////////////////////////////////////////////////////////////
+
+function createKobold(){
+
+    const g = new THREE.Group();
+
+    const body = box(1.2,1.8,1,MAT.kobold);
+    body.position.y = 2;
+    g.add(body);
+
+    const head = box(1.3,1.1,1.5,MAT.kobold);
+    head.position.set(0,3.3,0.3);
+    g.add(head);
+
+    const beard = cone(0.35,1,5,MAT.dark);
+    beard.position.set(0,2.7,0.8);
+    g.add(beard);
+
+    const pickHandle = box(0.12,2,0.12,MAT.wood);
+    pickHandle.position.set(1.1,1.7,0);
+    pickHandle.rotation.z = 1.1;
+    g.add(pickHandle);
+
+    const pickHead = box(1,0.15,0.15,MAT.steel);
+    pickHead.position.set(1.5,2.4,0);
+    g.add(pickHead);
+
+    for(let i=-1;i<=1;i+=2){
+
+        const leg = box(0.35,1.3,0.35,MAT.kobold);
+        leg.position.set(i*0.3,0.7,0);
+        g.add(leg);
+    }
+
+    g.userData.type = "Kobold Miner";
+
+    return g;
+}
+
+////////////////////////////////////////////////////////////
+// GNOLL
+////////////////////////////////////////////////////////////
+
+function createGnoll(){
+
+    const g = new THREE.Group();
+
+    const torso = box(2.2,3,1.6,MAT.gnoll);
+    torso.position.y = 3.5;
+    g.add(torso);
+
+    const hump = box(2,1.1,1.6,MAT.dark);
+    hump.position.set(0,5,-0.4);
+    hump.rotation.x = 0.4;
+    g.add(hump);
+
+    const head = box(1.5,1.2,1.8,MAT.gnoll);
+    head.position.set(0,4.6,1.1);
+    g.add(head);
+
+    const jaw = box(1.2,0.5,1.3,MAT.dark);
+    jaw.position.set(0,4,1.8);
+    g.add(jaw);
+
+    const shoulderL = box(0.6,0.6,0.6,MAT.steel);
+    shoulderL.position.set(-1.5,4.7,0);
+    g.add(shoulderL);
+
+    const shoulderR = shoulderL.clone();
+    shoulderR.position.x = 1.5;
+    g.add(shoulderR);
+
+    const hammerHandle = box(0.18,3.4,0.18,MAT.wood);
+    hammerHandle.position.set(1.8,2.8,0);
+    hammerHandle.rotation.z = 0.7;
+    g.add(hammerHandle);
+
+    const hammerHead = box(1,0.7,0.7,MAT.steel);
+    hammerHead.position.set(2.8,4.1,0);
+    g.add(hammerHead);
+
+    for(let i=-1;i<=1;i+=2){
+
+        const leg = box(0.6,2.2,0.6,MAT.gnoll);
+        leg.position.set(i*0.65,1.1,0);
+        g.add(leg);
+    }
+
+    g.userData.type = "Gnoll Brute";
+
+    return g;
+}
+
+////////////////////////////////////////////////////////////
+// GOBLIN TASKMASTER
+////////////////////////////////////////////////////////////
+
+function createGoblinWhip(){
+
+    const g = new THREE.Group();
+
+    const body = box(1.4,2.1,1,MAT.goblin);
+    body.position.y = 2.5;
+    g.add(body);
+
+    const head = box(1.2,1.1,1.1,MAT.goblin);
+    head.position.set(0,4,0.1);
+    g.add(head);
+
+    const nose = box(0.25,0.25,0.4,MAT.dark);
+    nose.position.set(0,3.8,0.7);
+    g.add(nose);
+
+    const earL = cone(0.2,0.8,4,MAT.goblin);
+    earL.position.set(-0.8,4.2,0);
+    earL.rotation.z = 1.2;
+    g.add(earL);
+
+    const earR = earL.clone();
+    earR.position.x = 0.8;
+    earR.rotation.z = -1.2;
+    g.add(earR);
+
+    const shoulder = box(1.8,0.5,1.4,MAT.steel);
+    shoulder.position.set(0,3.2,0);
+    g.add(shoulder);
+
+    const whipHandle = box(0.1,1.5,0.1,MAT.wood);
+    whipHandle.position.set(1.2,2.5,0);
+    whipHandle.rotation.z = 0.5;
+    g.add(whipHandle);
+
+    const chain = new THREE.Mesh(
+        new THREE.TorusGeometry(1.2,0.04,4,20,2),
+        MAT.steel
+    );
+
+    chain.position.set(2.1,1.6,0);
+    chain.rotation.y = 1.5;
+
+    g.add(chain);
+
+    for(let i=-1;i<=1;i+=2){
+
+        const leg = box(0.4,1.5,0.4,MAT.goblin);
+
+        leg.position.set(i*0.4,0.8,0);
+
+        g.add(leg);
+    }
+
+    g.userData.type = "Goblin Taskmaster";
+
+    return g;
+}
+
+////////////////////////////////////////////////////////////
+// GOBLIN WOLF RIDER
+////////////////////////////////////////////////////////////
+
+function createWolfRider(){
+
+    const g = new THREE.Group();
+
+    ////////////////////////////////////////////////////////
+    // WOLF
+    ////////////////////////////////////////////////////////
+
+    const wolfBody = box(3.8,1.8,1.4,MAT.wolf);
+    wolfBody.position.y = 2;
+    g.add(wolfBody);
+
+    const wolfHead = box(1.4,1.1,1.8,MAT.wolf);
+    wolfHead.position.set(2.1,2.5,0.2);
+    g.add(wolfHead);
+
+    const jaw = box(1.2,0.4,1,MAT.dark);
+    jaw.position.set(2.2,2,1);
+    g.add(jaw);
+
+    for(let x=-1;x<=1;x+=2){
+        for(let z=-1;z<=1;z+=2){
+
+            const leg = box(0.5,1.7,0.5,MAT.wolf);
+
+            leg.position.set(x*1.2,0.8,z*0.35);
+
+            g.add(leg);
+        }
+    }
+
+    const tail = box(0.3,1.8,0.3,MAT.wolf);
+    tail.position.set(-2,2,-0.1);
+    tail.rotation.z = -0.8;
+    g.add(tail);
+
+    ////////////////////////////////////////////////////////
+    // RIDER
+    ////////////////////////////////////////////////////////
+
+    const riderBody = box(1.1,1.4,0.9,MAT.goblin);
+    riderBody.position.set(0,4,0);
+    g.add(riderBody);
+
+    const riderHead = box(1,0.9,0.9,MAT.goblin);
+    riderHead.position.set(0,5,0.1);
+    g.add(riderHead);
+
+    const lance = box(0.12,6,0.12,MAT.wood);
+    lance.position.set(1.5,5,0);
+    lance.rotation.z = -1.2;
+    g.add(lance);
+
+    const spear = cone(0.15,0.6,4,MAT.steel);
+    spear.position.set(3.1,6.4,0);
+    spear.rotation.z = -0.7;
+    g.add(spear);
+
+    g.userData.type = "Goblin Wolf Rider";
+
+    return g;
+}
+
+////////////////////////////////////////////////////////////
+// BUILDINGS
+////////////////////////////////////////////////////////////
+
+function createGnollCamp(){
+
+    const g = new THREE.Group();
+
+    const base = box(8,4,8,MAT.wood);
+    base.position.y = 2;
+    g.add(base);
+
+    const roof = cone(6,4,4,MAT.roof);
+    roof.position.y = 6;
+    roof.rotation.y = 0.8;
+    g.add(roof);
+
+    g.userData.type = "Gnoll Camp";
+
+    return g;
+}
+
+function createKoboldMine(){
+
+    const g = new THREE.Group();
+
+    const cave = box(8,5,6,MAT.dark);
+    cave.position.y = 2.5;
+    g.add(cave);
+
+    const entrance = box(4,3,1,MAT.wood);
+    entrance.position.set(0,1.5,3.2);
+    g.add(entrance);
+
+    const torchL = cone(0.2,1,5,MAT.steel);
+    torchL.position.set(-2,2.5,4);
+    g.add(torchL);
+
+    const torchR = torchL.clone();
+    torchR.position.x = 2;
+    g.add(torchR);
+
+    g.userData.type = "Kobold Mine";
+
+    return g;
+}
+
+function createWatchTower(){
+
+    const g = new THREE.Group();
+
+    const tower = box(3,10,3,MAT.wood);
+    tower.position.y = 5;
+    g.add(tower);
+
+    const roof = cone(3,3,4,MAT.roof);
+    roof.position.y = 11.5;
+    roof.rotation.y = 0.7;
+    g.add(roof);
+
+    const platform = box(5,0.5,5,MAT.wood);
+    platform.position.y = 9;
+    g.add(platform);
+
+    g.userData.type = "Watch Tower";
+
+    return g;
+}
+
+////////////////////////////////////////////////////////////
+// SPAWN UNIT
+////////////////////////////////////////////////////////////
+
+window.spawnRaceUnit = function(type){
+
+    let unit;
+
+    if(type==="kobold") unit=createKobold();
+    if(type==="gnoll") unit=createGnoll();
+    if(type==="goblin-whip") unit=createGoblinWhip();
+    if(type==="wolf-rider") unit=createWolfRider();
+
+    unit.position.set(
+        (Math.random()-0.5)*50,
+        0,
+        (Math.random()-0.5)*50
+    );
+
+    scene.add(unit);
+
+    units.push(unit);
+};
+
+////////////////////////////////////////////////////////////
+// SPAWN BUILDINGS
+////////////////////////////////////////////////////////////
+
+window.spawnFactionBuilding = function(type){
+
+    let b;
+
+    if(type==="kobold-gnoll-camp")
+        b = createGnollCamp();
+
+    if(type==="kobold-mine")
+        b = createKoboldMine();
+
+    if(type==="kobold-watch-tower")
+        b = createWatchTower();
+
+    b.position.set(
+        (Math.random()-0.5)*60,
+        0,
+        (Math.random()-0.5)*60
+    );
+
+    scene.add(b);
+};
+
+// INITIAL SPAWNS
+
+spawnRaceUnit("kobold");
+spawnRaceUnit("gnoll");
+spawnRaceUnit("goblin-whip");
+spawnRaceUnit("wolf-rider");
+
+spawnFactionBuilding("kobold-gnoll-camp");
+spawnFactionBuilding("kobold-mine");
+spawnFactionBuilding("kobold-watch-tower");
+
+// SELECTION
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+window.addEventListener("pointerdown",(e)=>{
+
+    const rect = renderer.domElement.getBoundingClientRect();
+
+    mouse.x =
+        ((e.clientX - rect.left)/rect.width)*2-1;
+
+    mouse.y =
+        -((e.clientY - rect.top)/rect.height)*2+1;
+
+    raycaster.setFromCamera(mouse,camera);
+
+    const hits = raycaster.intersectObjects(
+        scene.children,
+        true
+    );
+
+    if(hits.length){
+
+        let obj = hits[0].object;
+
+        while(obj.parent && !obj.userData.type){
+
+            obj = obj.parent;
+        }
+
+        if(obj.userData.type){
+
+            document.getElementById(
+                "selectedInfo"
+            ).innerHTML = obj.userData.type;
+        }
+    }
+});
+
+// CAMERA
+
+let angle = 0;
+
+function animate(){
+
+    requestAnimationFrame(animate);
+
+    angle += 0.0015;
+
+    camera.position.x = Math.cos(angle)*55;
+    camera.position.z = Math.sin(angle)*55;
+
+    camera.lookAt(0,6,0);
+
+    renderer.render(scene,camera);
+}
+
+animate();
+
+// RESIZE
+
+window.addEventListener("resize",()=>{
+
+    const W =
+        window.innerWidth - LEFT_W - RIGHT_W;
+
+    camera.aspect = W/window.innerHeight;
+
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(
+        W,
+        window.innerHeight
+    );
+});
+
+</script>
+</body>
+</html>
