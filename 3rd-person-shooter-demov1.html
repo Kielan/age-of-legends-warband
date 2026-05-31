@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>TPS Engine - IK + Animation Tree + Grenades</title>
+
+<style>
+body{margin:0;overflow:hidden;background:#87c7ff;}
+canvas{display:block;}
+
+#hud{
+position:absolute;inset:0;pointer-events:none;
+}
+
+#crosshair{
+position:absolute;left:50%;top:50%;
+width:28px;height:28px;
+transform:translate(-50%,-50%);
+transition:transform .1s;
+}
+
+#crosshair.aim{transform:translate(-50%,-50%) scale(0.5);}
+
+.line{position:absolute;background:white;}
+.h{width:100%;height:2px;top:50%;}
+.v{width:2px;height:100%;left:50%;}
+
+#ammo{
+position:absolute;bottom:20px;left:20px;color:white;
+text-shadow:0 0 5px black;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="hud">
+<div id="crosshair">
+<div class="line h"></div>
+<div class="line v"></div>
+</div>
+<div id="ammo">M16</div>
+</div>
+
+<script type="module">
+
+import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+
+//////////////////////////////////////////////////////////////
+// CORE ENGINE
+//////////////////////////////////////////////////////////////
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x87c7ff);
+
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,1000);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0.5));
+
+const sun=new THREE.DirectionalLight(0xffffff,1.2);
+sun.position.set(10,20,10);
+scene.add(sun);
+
+//////////////////////////////////////////////////////////////
+// GROUND
+//////////////////////////////////////////////////////////////
+
+const ground=new THREE.Mesh(
+new THREE.PlaneGeometry(200,200),
+new THREE.MeshToonMaterial({color:0x3cb043})
+);
+ground.rotation.x=-Math.PI/2;
+scene.add(ground);
+
+//////////////////////////////////////////////////////////////
+// SIMPLE TIMED EVENT SYSTEM
+//////////////////////////////////////////////////////////////
+
+class EventQueue{
+constructor(){this.q=[];}
+add(delay,fn){
+this.q.push({t:performance.now()+delay,fn});
+}
+update(){
+const now=performance.now();
+this.q=this.q.filter(e=>{
+if(now>=e.t){e.fn();return false;}
+return true;
+});
+}
+}
+const events=new EventQueue();
+
+//////////////////////////////////////////////////////////////
+// PLAYER (fake rig + IK bones)
+//////////////////////////////////////////////////////////////
+
+const player=new THREE.Group();
+scene.add(player);
+
+// torso
+const body=new THREE.Mesh(
+new THREE.BoxGeometry(0.8,1.2,0.4),
+new THREE.MeshToonMaterial({color:0x3b82f6})
+);
+body.position.y=1.6;
+player.add(body);
+
+// head
+const head=new THREE.Mesh(
+new THREE.SphereGeometry(0.35),
+new THREE.MeshToonMaterial({color:0xffd1a8})
+);
+head.position.y=2.5;
+player.add(head);
+
+// arms (2-bone IK system)
+const upperL=new THREE.Object3D();
+const lowerL=new THREE.Object3D();
+const handL=new THREE.Object3D();
+
+upperL.position.set(-0.5,2,0);
+lowerL.position.set(0,-0.6,0);
+handL.position.set(0,-0.6,0);
+
+upperL.add(lowerL);
+lowerL.add(handL);
+player.add(upperL);
+
+const upperR=new THREE.Object3D();
+const lowerR=new THREE.Object3D();
+const handR=new THREE.Object3D();
+
+upperR.position.set(0.5,2,0);
+lowerR.position.set(0,-0.6,0);
+handR.position.set(0,-0.6,0);
+
+upperR.add(lowerR);
+lowerR.add(handR);
+player.add(upperR);
+
+//////////////////////////////////////////////////////////////
+// WEAPONS
+//////////////////////////////////////////////////////////////
+
+function gun(){
+const g=new THREE.Group();
+g.add(new THREE.Mesh(
+new THREE.BoxGeometry(1,0.1,0.1),
+new THREE.MeshToonMaterial({color:0x222222})
+));
+return g;
+}
+
+const m16=gun();
+const grenade=new THREE.Mesh(
+new THREE.SphereGeometry(0.15),
+new THREE.MeshToonMaterial({color:0x444444})
+);
+
+let weapon="m16";
+
+handR.add(m16);
+
+//////////////////////////////////////////////////////////////
+// STATE MACHINE (animation tree)
+//////////////////////////////////////////////////////////////
+
+let state="idle";
+let reload=false;
+let recoil=0;
+
+function setState(s){
+if(state===s)return;
+state=s;
+}
+
+//////////////////////////////////////////////////////////////
+// IK SYSTEM (FABRIK-like aim solver)
+//////////////////////////////////////////////////////////////
+
+function solveIK(upper,lower,hand,target){
+
+const shoulder=new THREE.Vector3();
+const elbow=new THREE.Vector3();
+const wrist=new THREE.Vector3();
+
+upper.getWorldPosition(shoulder);
+lower.getWorldPosition(elbow);
+hand.getWorldPosition(wrist);
+
+const dir=new THREE.Vector3().subVectors(target,shoulder).normalize();
+
+upper.rotation.z=-dir.y;
+upper.rotation.y=dir.x;
+
+lower.rotation.x=-0.6;
+
+hand.lookAt(target);
+
+}
+
+//////////////////////////////////////////////////////////////
+// INPUT
+//////////////////////////////////////////////////////////////
+
+let keys={};
+let mouseX=0,mouseY=0;
+let aiming=false;
+
+document.addEventListener("keydown",e=>{
+keys[e.key.toLowerCase()]=true;
+
+if(e.key==="r")reloadWeapon();
+
+if(e.key==="g")throwGrenade();
+
+if(e.key==="1"){
+weapon="m16";
+handR.add(m16);
+}
+});
+
+document.addEventListener("keyup",e=>{
+keys[e.key.toLowerCase()]=false;
+});
+
+document.addEventListener("mousedown",e=>{
+if(e.button===2)aiming=true;
+if(e.button===0)shoot();
+});
+
+document.addEventListener("mouseup",e=>{
+if(e.button===2)aiming=false;
+});
+
+document.addEventListener("mousemove",e=>{
+if(document.pointerLockElement){
+mouseX+=e.movementX*0.002;
+mouseY+=e.movementY*0.002;
+}
+});
+
+document.body.onclick=()=>document.body.requestPointerLock();
+
+//////////////////////////////////////////////////////////////
+// WEAPON SYSTEM
+//////////////////////////////////////////////////////////////
+
+function shoot(){
+
+if(reload)return;
+
+recoil=0.15;
+
+if(weapon==="m16"){
+// hitscan
+}
+}
+
+//////////////////////////////////////////////////////////////
+// RELOAD SYSTEM (timed events)
+//////////////////////////////////////////////////////////////
+
+function reloadWeapon(){
+
+if(reload)return;
+
+reload=true;
+setState("reload");
+
+events.add(1200,()=>{
+reload=false;
+setState("idle");
+});
+
+}
+
+//////////////////////////////////////////////////////////////
+// GRENADE PHYSICS
+//////////////////////////////////////////////////////////////
+
+const grenades=[];
+
+function throwGrenade(){
+
+const g=grenade.clone();
+
+g.position.copy(player.position).add(new THREE.Vector3(0,1.5,0));
+
+g.vel=new THREE.Vector3(
+Math.sin(mouseX)*0.2,
+0.3,
+Math.cos(mouseX)*-0.2
+);
+
+g.timer=2000;
+
+scene.add(g);
+grenades.push(g);
+
+events.add(2000,()=>{
+explosion(g.position);
+scene.remove(g);
+});
+
+}
+
+function explosion(pos){
+
+const boom=new THREE.Mesh(
+new THREE.SphereGeometry(1),
+new THREE.MeshBasicMaterial({color:0xff6600,transparent:true,opacity:0.7})
+);
+
+boom.position.copy(pos);
+scene.add(boom);
+
+setTimeout(()=>scene.remove(boom),200);
+}
+
+//////////////////////////////////////////////////////////////
+// ANIMATION TREE (blend simulation)
+//////////////////////////////////////////////////////////////
+
+function updateAnimation(){
+
+if(reload){
+setState("reload");
+}else if(aiming){
+setState("aim");
+}else if(keys["w"]||keys["a"]||keys["s"]||keys["d"]){
+setState("run");
+}else{
+setState("idle");
+}
+
+}
+
+//////////////////////////////////////////////////////////////
+// GAME LOOP
+//////////////////////////////////////////////////////////////
+
+function animate(){
+
+requestAnimationFrame(animate);
+
+events.update();
+
+updateAnimation();
+
+//////////////////////////////////////////////////////////////
+// MOVEMENT
+//////////////////////////////////////////////////////////////
+
+let speed=aiming?0.04:0.08;
+
+if(keys["w"])player.position.z-=speed;
+if(keys["s"])player.position.z+=speed;
+if(keys["a"])player.position.x-=speed;
+if(keys["d"])player.position.x+=speed;
+
+player.rotation.y=mouseX;
+
+//////////////////////////////////////////////////////////////
+// CAMERA
+//////////////////////////////////////////////////////////////
+
+camera.fov=THREE.MathUtils.lerp(camera.fov,aiming?45:70,0.1);
+camera.updateProjectionMatrix();
+
+const camOffset=new THREE.Vector3(0,2,aiming?4:6);
+
+camera.position.lerp(player.position.clone().add(camOffset),0.15);
+
+camera.lookAt(player.position.clone().add(new THREE.Vector3(0,2,0)));
+
+//////////////////////////////////////////////////////////////
+// IK AIM TARGET
+//////////////////////////////////////////////////////////////
+
+const aimTarget=new THREE.Vector3(
+Math.sin(mouseX)*5 + player.position.x,
+2,
+Math.cos(mouseX)*5 + player.position.z
+);
+
+solveIK(upperL,lowerL,handL,aimTarget);
+solveIK(upperR,lowerR,handR,aimTarget);
+
+//////////////////////////////////////////////////////////////
+// GRENADE UPDATE
+//////////////////////////////////////////////////////////////
+
+for(const g of grenades){
+g.position.add(g.vel);
+g.vel.y-=0.01;
+}
+
+//////////////////////////////////////////////////////////////
+// RECOIL
+//////////////////////////////////////////////////////////////
+
+recoil*=0.85;
+camera.position.y+=recoil;
+
+//////////////////////////////////////////////////////////////
+
+renderer.render(scene,camera);
+
+}
+
+animate();
+
+//////////////////////////////////////////////////////////////
+
+window.addEventListener("resize",()=>{
+camera.aspect=innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+
+</body>
+</html>
