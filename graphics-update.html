@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>PS2-Style Mech Character System</title>
+
+<style>
+body{margin:0;overflow:hidden;background:#0b0f1a;}
+canvas{display:block;}
+
+#hud{
+position:absolute;
+top:10px;
+left:10px;
+color:white;
+font-family:monospace;
+text-shadow:0 0 5px black;
+}
+
+#selector{
+position:absolute;
+bottom:10px;
+left:10px;
+display:flex;
+gap:10px;
+}
+
+.btn{
+padding:6px 10px;
+background:#222;
+color:white;
+border:1px solid #555;
+cursor:pointer;
+}
+.btn:hover{border-color:#fff;}
+
+#crosshair{
+position:absolute;
+left:50%;
+top:50%;
+width:20px;height:20px;
+transform:translate(-50%,-50%);
+}
+
+.line{position:absolute;background:white;}
+.h{width:100%;height:2px;top:50%;}
+.v{width:2px;height:100%;left:50%;}
+</style>
+</head>
+
+<body>
+
+<div id="hud">
+PS2-style Mech Rig Demo (Procedural Skeleton + Animation Blend)
+</div>
+
+<div id="selector">
+<div class="btn" onclick="switchMech(0)">Assault</div>
+<div class="btn" onclick="switchMech(1)">Heavy</div>
+<div class="btn" onclick="switchMech(2)">Scout</div>
+<div class="btn" onclick="switchMech(3)">Industrial</div>
+</div>
+
+<div id="crosshair">
+<div class="line h"></div>
+<div class="line v"></div>
+</div>
+
+<script type="module">
+
+import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+
+//////////////////////////////////////////////////////////////
+// CORE SCENE
+//////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0c1220);
+
+const camera = new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,1000);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0x8899ff,0x111122,0.8));
+
+const sun = new THREE.DirectionalLight(0xffffff,1.2);
+sun.position.set(10,20,10);
+scene.add(sun);
+
+//////////////////////////////////////////////////////////////
+// GROUND
+//////////////////////////////////////////////////////////////
+
+const ground = new THREE.Mesh(
+new THREE.PlaneGeometry(200,200),
+new THREE.MeshStandardMaterial({color:0x1c1f2a,roughness:1})
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+//////////////////////////////////////////////////////////////
+// MECH FACTORY
+//////////////////////////////////////////////////////////////
+
+function makePart(color,size){
+
+return new THREE.Mesh(
+new THREE.BoxGeometry(size.x,size.y,size.z),
+new THREE.MeshStandardMaterial({
+color,
+metalness:0.6,
+roughness:0.8
+})
+);
+
+}
+
+//////////////////////////////////////////////////////////////
+// MECH CLASS
+//////////////////////////////////////////////////////////////
+
+class Mech{
+
+constructor(type){
+
+this.group = new THREE.Group();
+
+this.type = type;
+
+// core torso
+this.torso = makePart(this.color(), new THREE.Vector3(1,1.4,0.6));
+this.group.add(this.torso);
+
+// head
+this.head = makePart(0xdddddd, new THREE.Vector3(0.6,0.6,0.6));
+this.head.position.y = 1.2;
+this.group.add(this.head);
+
+// arms
+this.leftArm = makePart(0x8888aa,new THREE.Vector3(0.3,1,0.3));
+this.rightArm = makePart(0x8888aa,new THREE.Vector3(0.3,1,0.3));
+
+this.leftArm.position.set(-0.8,0.6,0);
+this.rightArm.position.set(0.8,0.6,0);
+
+this.group.add(this.leftArm);
+this.group.add(this.rightArm);
+
+// legs
+this.leftLeg = makePart(0x555555,new THREE.Vector3(0.4,1.2,0.4));
+this.rightLeg = makePart(0x555555,new THREE.Vector3(0.4,1.2,0.4));
+
+this.leftLeg.position.set(-0.3,-1.2,0);
+this.rightLeg.position.set(0.3,-1.2,0);
+
+this.group.add(this.leftLeg);
+this.group.add(this.rightLeg);
+
+this.group.position.y = 1.5;
+
+}
+
+color(){
+
+switch(this.type){
+
+case 0: return 0x3a7bd5; // assault
+case 1: return 0x6b6b6b; // heavy
+case 2: return 0x3bd97f; // scout
+case 3: return 0xd9a13b; // industrial
+
+}
+
+}
+
+update(t,anim){
+
+// idle sway (PS2 feel)
+this.group.position.y = 1.5 + Math.sin(t*2)*0.05;
+
+// run animation
+const speed = anim.run;
+
+this.leftLeg.rotation.x = Math.sin(t*8)*speed;
+this.rightLeg.rotation.x = Math.cos(t*8)*speed;
+
+this.leftArm.rotation.x = -Math.cos(t*8)*speed*0.5;
+this.rightArm.rotation.x = Math.sin(t*8)*speed*0.5;
+
+// torso sway
+this.torso.rotation.y = Math.sin(t*2)*0.05;
+
+// head tracking
+this.head.lookAt(camera.position);
+
+}
+
+}
+
+//////////////////////////////////////////////////////////////
+// MECHS
+//////////////////////////////////////////////////////////////
+
+const mechs = [
+new Mech(0),
+new Mech(1),
+new Mech(2),
+new Mech(3)
+];
+
+let active = 0;
+scene.add(mechs[0].group);
+
+window.switchMech = function(i){
+
+scene.remove(mechs[active].group);
+active = i;
+scene.add(mechs[active].group);
+
+};
+
+//////////////////////////////////////////////////////////////
+// ANIMATION STATE
+//////////////////////////////////////////////////////////////
+
+const anim = {
+run:0
+};
+
+let keys = {};
+
+document.addEventListener("keydown",e=>keys[e.key.toLowerCase()] = true);
+document.addEventListener("keyup",e=>keys[e.key.toLowerCase()] = false);
+
+//////////////////////////////////////////////////////////////
+// CAMERA
+//////////////////////////////////////////////////////////////
+
+let camAngle = 0;
+
+//////////////////////////////////////////////////////////////
+// LOOP
+//////////////////////////////////////////////////////////////
+
+const clock = new THREE.Clock();
+
+function animate(){
+
+requestAnimationFrame(animate);
+
+const t = clock.getElapsedTime();
+
+anim.run = (keys.w||keys.a||keys.s||keys.d)?1:0;
+
+const mech = mechs[active];
+
+mech.update(t,anim);
+
+//////////////////////////////////////////////////////////////
+// MOVE MECH
+//////////////////////////////////////////////////////////////
+
+if(keys.w) mech.group.position.z -= 0.05;
+if(keys.s) mech.group.position.z += 0.05;
+if(keys.a) mech.group.position.x -= 0.05;
+if(keys.d) mech.group.position.x += 0.05;
+
+//////////////////////////////////////////////////////////////
+// CAMERA
+//////////////////////////////////////////////////////////////
+
+const offset = new THREE.Vector3(0,2,6);
+
+camera.position.lerp(
+mech.group.position.clone().add(offset),
+0.1
+);
+
+camera.lookAt(mech.group.position.clone().add(new THREE.Vector3(0,1,0)));
+
+//////////////////////////////////////////////////////////////
+
+renderer.render(scene,camera);
+
+}
+
+animate();
+
+window.addEventListener("resize",()=>{
+camera.aspect = innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+
+</body>
+</html>
