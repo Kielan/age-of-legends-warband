@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Engine Prototype: Graph + IK + Physics</title>
+
+<style>
+body{margin:0;overflow:hidden;background:#0b1020;}
+canvas{display:block;}
+
+#ui{
+position:absolute;inset:0;
+pointer-events:none;
+font-family:sans-serif;
+color:white;
+}
+
+#crosshair{
+position:absolute;left:50%;top:50%;
+width:20px;height:20px;
+transform:translate(-50%,-50%);
+}
+
+.line{position:absolute;background:white;}
+.h{width:100%;height:2px;top:50%;}
+.v{width:2px;height:100%;left:50%;}
+
+#graph{
+position:absolute;top:10px;right:10px;
+width:220px;height:160px;
+background:rgba(0,0,0,0.4);
+padding:6px;
+font-size:10px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+<div id="crosshair">
+<div class="line h"></div>
+<div class="line v"></div>
+</div>
+
+<div id="graph">
+ANIM GRAPH<br>
+idle → run<br>
+run → aim<br>
+aim → reload<br>
+blend weights evaluated runtime
+</div>
+
+</div>
+
+<script type="module">
+
+import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+
+//////////////////////////////////////////////////////////////
+// CORE
+//////////////////////////////////////////////////////////////
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0b1020);
+
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,1000);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0.4));
+
+const sun=new THREE.DirectionalLight(0x88ccff,1.2);
+sun.position.set(10,20,10);
+scene.add(sun);
+
+//////////////////////////////////////////////////////////////
+// GROUND
+//////////////////////////////////////////////////////////////
+
+const ground=new THREE.Mesh(
+new THREE.PlaneGeometry(200,200),
+new THREE.MeshStandardMaterial({color:0x1c2333})
+);
+ground.rotation.x=-Math.PI/2;
+scene.add(ground);
+
+//////////////////////////////////////////////////////////////
+// TARGETS
+//////////////////////////////////////////////////////////////
+
+const targets=[];
+
+function makeTarget(x,z){
+
+const m=new THREE.Mesh(
+new THREE.CylinderGeometry(0.5,0.5,2),
+new THREE.MeshStandardMaterial({color:0xff4444})
+);
+
+m.position.set(x,1,z);
+m.hp=100;
+
+scene.add(m);
+targets.push(m);
+
+}
+
+for(let i=0;i<5;i++){
+makeTarget((Math.random()-0.5)*20,-Math.random()*20);
+}
+
+//////////////////////////////////////////////////////////////
+// PLAYER
+//////////////////////////////////////////////////////////////
+
+const player=new THREE.Group();
+scene.add(player);
+
+const body=new THREE.Mesh(
+new THREE.BoxGeometry(0.8,1.2,0.4),
+new THREE.MeshStandardMaterial({color:0x4aa3ff})
+);
+body.position.y=1.5;
+player.add(body);
+
+//////////////////////////////////////////////////////////////
+// ANIMATION GRAPH ENGINE (REAL)
+//////////////////////////////////////////////////////////////
+
+class AnimNode{
+constructor(name){
+this.name=name;
+this.weight=0;
+this.targetWeight=0;
+this.speed=0.08;
+this.links=[];
+}
+}
+
+const graph={
+idle:new AnimNode("idle"),
+run:new AnimNode("run"),
+aim:new AnimNode("aim"),
+reload:new AnimNode("reload")
+};
+
+graph.idle.weight=1;
+
+function connect(a,b){
+graph[a].links.push(b);
+}
+
+connect("idle","run");
+connect("run","aim");
+connect("aim","reload");
+
+function updateGraph(){
+
+let moving=keys.w||keys.a||keys.s||keys.d;
+
+graph.run.targetWeight=moving?1:0;
+graph.idle.targetWeight=moving?0:1;
+graph.aim.targetWeight=aiming?1:0;
+
+graph.reload.targetWeight=reload?1:0;
+
+// smooth blending
+for(const k in graph){
+const n=graph[k];
+n.weight=THREE.MathUtils.lerp(n.weight,n.targetWeight,n.speed);
+}
+
+}
+
+//////////////////////////////////////////////////////////////
+// CCD IK + POLE VECTOR
+//////////////////////////////////////////////////////////////
+
+class Bone{
+constructor(len){
+this.len=len;
+this.pos=new THREE.Vector3();
+this.rot=new THREE.Quaternion();
+}
+}
+
+const bones=[
+new Bone(0.6),
+new Bone(0.6),
+new Bone(0.4)
+];
+
+const pole=new THREE.Vector3(1,0,0);
+
+function ccdIK(target){
+
+for(let iter=0;iter<6;iter++){
+
+for(let i=bones.length-1;i>=0;i--){
+
+const end=getEnd();
+
+const toEnd=end.clone().sub(bones[i].pos).normalize();
+const toTarget=target.clone().sub(bones[i].pos).normalize();
+
+const q=new THREE.Quaternion().setFromUnitVectors(toEnd,toTarget);
+
+bones[i].rot.multiply(q);
+
+// pole constraint stabilizer
+bones[i].rot.slerp(
+new THREE.Quaternion().setFromAxisAngle(pole,0.02),
+0.1
+);
+
+}
+
+}
+
+}
+
+function getEnd(){
+return player.position.clone().add(new THREE.Vector3(0,1.5,-2));
+}
+
+//////////////////////////////////////////////////////////////
+// PHYSICS ENGINE (RIGIDBODY PROJECTILES)
+//////////////////////////////////////////////////////////////
+
+const projectiles=[];
+
+class Projectile{
+constructor(pos,vel){
+this.pos=pos.clone();
+this.vel=vel.clone();
+this.radius=0.1;
+this.life=200;
+}
+}
+
+function spawnProjectile(){
+
+const dir=new THREE.Vector3(0,0,-1)
+.applyAxisAngle(new THREE.Vector3(0,1,0),mouseX);
+
+projectiles.push(
+new Projectile(
+player.position.clone().add(new THREE.Vector3(0,1.5,0)),
+dir.multiplyScalar(0.6)
+)
+);
+
+}
+
+function updatePhysics(){
+
+for(let i=projectiles.length-1;i>=0;i--){
+
+const p=projectiles[i];
+
+p.vel.y-=0.01;
+p.pos.add(p.vel);
+
+p.life--;
+
+// collisions
+for(const t of targets){
+
+if(p.pos.distanceTo(t.position)<1){
+t.hp-=10;
+scene.remove(t);
+targets.splice(targets.indexOf(t),1);
+projectiles.splice(i,1);
+break;
+}
+
+}
+
+if(p.life<=0)projectiles.splice(i,1);
+
+}
+
+}
+
+//////////////////////////////////////////////////////////////
+// INPUT
+//////////////////////////////////////////////////////////////
+
+let keys={};
+let mouseX=0;
+let aiming=false;
+let reload=false;
+
+document.addEventListener("keydown",e=>{
+
+keys[e.key.toLowerCase()]=true;
+
+if(e.key==="r"){
+reload=true;
+setTimeout(()=>reload=false,800);
+}
+
+});
+
+document.addEventListener("keyup",e=>{
+keys[e.key.toLowerCase()]=false;
+});
+
+document.addEventListener("mousedown",e=>{
+if(e.button===0)spawnProjectile();
+if(e.button===2)aiming=true;
+});
+
+document.addEventListener("mouseup",e=>{
+if(e.button===2)aiming=false;
+});
+
+document.addEventListener("mousemove",e=>{
+if(document.pointerLockElement){
+mouseX+=e.movementX*0.002;
+}
+});
+
+document.body.onclick=()=>document.body.requestPointerLock();
+
+//////////////////////////////////////////////////////////////
+// MOVEMENT
+//////////////////////////////////////////////////////////////
+
+const vel=new THREE.Vector3();
+
+function move(){
+
+const forward=new THREE.Vector3(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0),mouseX);
+
+if(keys.w)vel.add(forward.multiplyScalar(0.02));
+if(keys.s)vel.add(forward.multiplyScalar(-0.02));
+
+vel.multiplyScalar(0.9);
+
+player.position.add(vel);
+
+player.rotation.y=mouseX;
+
+}
+
+//////////////////////////////////////////////////////////////
+// CAMERA
+//////////////////////////////////////////////////////////////
+
+function cam(){
+
+const offset=new THREE.Vector3(0,2,6)
+.applyAxisAngle(new THREE.Vector3(0,1,0),mouseX);
+
+camera.position.lerp(player.position.clone().add(offset),0.15);
+
+camera.lookAt(player.position.clone().add(new THREE.Vector3(0,1.5,0)));
+
+}
+
+//////////////////////////////////////////////////////////////
+// LOOP
+//////////////////////////////////////////////////////////////
+
+const clock=new THREE.Clock();
+
+function animate(){
+
+requestAnimationFrame(animate);
+
+updateGraph();
+
+move();
+
+cam();
+
+updatePhysics();
+
+const aimTarget=player.position.clone().add(new THREE.Vector3(
+Math.sin(mouseX)*2,
+1.5,
+Math.cos(mouseX)*2
+));
+
+ccdIK(aimTarget);
+
+renderer.render(scene,camera);
+
+}
+
+animate();
+
+//////////////////////////////////////////////////////////////
+
+window.addEventListener("resize",()=>{
+camera.aspect=innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+
+</body>
+</html>
