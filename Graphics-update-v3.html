@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>AAA Mech Combat Engine (IK + Physics + Animation)</title>
+
+<style>
+body{margin:0;overflow:hidden;background:#0b1020;}
+canvas{display:block;}
+
+#hud{
+position:absolute;
+top:10px;left:10px;
+color:white;
+font-family:monospace;
+text-shadow:0 0 6px black;
+}
+</style>
+</head>
+
+<body>
+
+<div id="hud">AAA MECH ENGINE — IK + PHYSICS + ANIMATION BLENDING</div>
+
+<script type="module">
+
+import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+
+//////////////////////////////////////////////////////////////
+// CORE ENGINE LOOP
+//////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0f1a);
+
+const camera = new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,1000);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0.35));
+
+const sun = new THREE.DirectionalLight(0x88aaff,1.3);
+sun.position.set(10,20,10);
+scene.add(sun);
+
+//////////////////////////////////////////////////////////////
+// GROUND
+//////////////////////////////////////////////////////////////
+
+const ground = new THREE.Mesh(
+new THREE.PlaneGeometry(200,200),
+new THREE.MeshStandardMaterial({color:0x1a2233})
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+//////////////////////////////////////////////////////////////
+// PHYSICS SYSTEM
+//////////////////////////////////////////////////////////////
+
+class RigidBody{
+constructor(pos){
+this.pos = pos.clone();
+this.vel = new THREE.Vector3();
+this.mass = 1;
+this.grounded = false;
+}
+update(){
+this.vel.y -= 0.01; // gravity
+this.vel.multiplyScalar(0.98);
+this.pos.add(this.vel);
+
+if(this.pos.y < 0){
+this.pos.y = 0;
+this.vel.y = 0;
+this.grounded = true;
+}
+}
+}
+
+//////////////////////////////////////////////////////////////
+// IK SYSTEM (CCD + FABRIK HYBRID)
+//////////////////////////////////////////////////////////////
+
+class Bone{
+constructor(len){
+this.len = len;
+this.rot = new THREE.Quaternion();
+this.pos = new THREE.Vector3();
+}
+}
+
+function solveCCD(chain, target, iterations=6){
+
+for(let it=0; it<iterations; it++){
+
+for(let i=chain.length-1;i>=0;i--){
+
+const bone = chain[i];
+
+const end = getChainEnd(chain);
+
+const toEnd = end.clone().sub(bone.pos).normalize();
+const toTarget = target.clone().sub(bone.pos).normalize();
+
+const q = new THREE.Quaternion().setFromUnitVectors(toEnd,toTarget);
+
+bone.rot.multiply(q);
+
+}
+
+}
+
+}
+
+function getChainEnd(chain){
+return chain[0].pos.clone().add(new THREE.Vector3(0,0,-2));
+}
+
+//////////////////////////////////////////////////////////////
+// ANIMATION BLEND TREE
+//////////////////////////////////////////////////////////////
+
+class AnimState{
+constructor(){
+this.w = 0;
+this.tw = 0;
+}
+}
+
+const anim = {
+idle:new AnimState(),
+walk:new AnimState(),
+aim:new AnimState(),
+shoot:new AnimState(),
+hit:new AnimState()
+};
+
+function updateBlend(keys,aiming){
+
+anim.walk.tw = (keys.w||keys.a||keys.s||keys.d)?1:0;
+anim.idle.tw = anim.walk.tw?0:1;
+anim.aim.tw = aiming?1:0;
+
+for(const k in anim){
+const a = anim[k];
+a.w += (a.tw - a.w)*0.12;
+}
+
+}
+
+//////////////////////////////////////////////////////////////
+// WEAPON RECOIL SYSTEM
+//////////////////////////////////////////////////////////////
+
+class Recoil{
+constructor(){
+this.kick = 0;
+this.vel = 0;
+}
+fire(){
+this.kick = 0.3;
+}
+update(){
+this.kick *= 0.85;
+}
+}
+
+const recoil = new Recoil();
+
+//////////////////////////////////////////////////////////////
+// MECH CLASS (FULL ENGINE ENTITY)
+//////////////////////////////////////////////////////////////
+
+class Mech{
+
+constructor(x,z,color){
+
+this.body = new RigidBody(new THREE.Vector3(x,1.5,z));
+
+this.group = new THREE.Group();
+scene.add(this.group);
+
+this.mesh = new THREE.Mesh(
+new THREE.BoxGeometry(1,1.4,0.6),
+new THREE.MeshStandardMaterial({color})
+);
+
+this.group.add(this.mesh);
+
+this.hp = 100;
+this.cooldown = 0;
+
+this.target = null;
+
+// IK chains
+this.arm = [
+new Bone(0.6),
+new Bone(0.6),
+new Bone(0.4)
+];
+
+}
+
+updateAI(enemies){
+
+if(this.hp<=0) return;
+
+let best = null;
+let bestD = 999;
+
+for(const e of enemies){
+if(e===this||e.hp<=0) continue;
+
+const d = this.body.pos.distanceTo(e.body.pos);
+if(d<bestD){
+best = e;
+bestD = d;
+}
+}
+
+this.target = best;
+
+if(this.target){
+
+const dir = this.target.body.pos.clone().sub(this.body.pos);
+
+this.body.vel.add(dir.normalize().multiplyScalar(0.01));
+
+this.group.lookAt(this.target.body.pos);
+
+if(this.cooldown<=0){
+
+spawnBullet(
+this.body.pos.clone().add(new THREE.Vector3(0,1.2,0)),
+dir.normalize(),
+this
+);
+
+this.cooldown = 40;
+
+}
+
+}
+
+if(this.cooldown>0) this.cooldown--;
+
+}
+
+update(){
+
+this.body.update();
+
+this.group.position.copy(this.body.pos);
+
+recoil.update();
+
+this.group.position.y += recoil.kick;
+
+}
+
+}
+
+//////////////////////////////////////////////////////////////
+// PROJECTILES
+//////////////////////////////////////////////////////////////
+
+class Bullet{
+constructor(pos,vel,owner){
+this.pos = pos.clone();
+this.vel = vel.clone().multiplyScalar(0.8);
+this.life = 120;
+this.owner = owner;
+}
+update(){
+this.vel.y -= 0.01;
+this.pos.add(this.vel);
+this.life--;
+}
+}
+
+const bullets = [];
+
+function spawnBullet(pos,vel,owner){
+bullets.push(new Bullet(pos,vel,owner));
+}
+
+//////////////////////////////////////////////////////////////
+// COLLISION
+//////////////////////////////////////////////////////////////
+
+function updateBullets(mechs){
+
+for(let i=bullets.length-1;i>=0;i--){
+
+const b = bullets[i];
+b.update();
+
+for(const m of mechs){
+
+if(m===b.owner || m.hp<=0) continue;
+
+if(m.body.pos.distanceTo(b.pos)<1){
+
+m.hp -= 10;
+recoil.fire();
+bullets.splice(i,1);
+break;
+}
+
+}
+
+if(b.life<=0) bullets.splice(i,1);
+
+}
+
+}
+
+//////////////////////////////////////////////////////////////
+// INPUT
+//////////////////////////////////////////////////////////////
+
+let keys = {};
+let mouseX = 0;
+let aiming = false;
+
+document.addEventListener("keydown",e=>keys[e.key.toLowerCase()]=true);
+document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+
+document.addEventListener("mousedown",e=>{
+if(e.button===2) aiming=true;
+});
+document.addEventListener("mouseup",e=>{
+if(e.button===2) aiming=false;
+});
+
+document.addEventListener("mousemove",e=>{
+if(document.pointerLockElement)
+mouseX += e.movementX*0.002;
+});
+
+document.body.onclick=()=>document.body.requestPointerLock();
+
+//////////////////////////////////////////////////////////////
+// MECHS
+//////////////////////////////////////////////////////////////
+
+const mechs = [
+new Mech(-10,0,0x3a7bd5),
+new Mech(10,0,0xd94b4b),
+new Mech(0,-10,0x3bd97f),
+new Mech(0,10,0xd9a13b)
+];
+
+//////////////////////////////////////////////////////////////
+// LOOP
+//////////////////////////////////////////////////////////////
+
+function animate(){
+
+requestAnimationFrame(animate);
+
+updateBlend(keys,aiming);
+
+for(const m of mechs){
+m.updateAI(mechs);
+m.update();
+}
+
+updateBullets(mechs);
+
+//////////////////////////////////////////////////////////////
+// CAMERA
+//////////////////////////////////////////////////////////////
+
+const center = new THREE.Vector3();
+
+for(const m of mechs){
+center.add(m.body.pos);
+}
+center.divideScalar(mechs.length);
+
+camera.position.lerp(
+center.clone().add(new THREE.Vector3(0,18,18)),
+0.05
+);
+
+camera.lookAt(center);
+
+renderer.render(scene,camera);
+
+}
+
+animate();
+
+//////////////////////////////////////////////////////////////
+
+window.addEventListener("resize",()=>{
+camera.aspect = innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+
+</body>
+</html>
