@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>ECS + IK + Motion Matching Engine Prototype</title>
+
+<style>
+body{margin:0;overflow:hidden;background:#0b1020;}
+canvas{display:block;}
+
+#ui{
+position:absolute;inset:0;
+pointer-events:none;
+font-family:monospace;
+color:white;
+}
+
+#graphEditor{
+position:absolute;top:10px;right:10px;
+width:260px;height:180px;
+background:rgba(0,0,0,0.5);
+pointer-events:auto;
+font-size:11px;
+padding:6px;
+}
+
+.node{
+padding:4px;margin:4px;
+background:#222;
+border:1px solid #555;
+cursor:grab;
+}
+.node.active{border:1px solid yellow;}
+
+#crosshair{
+position:absolute;left:50%;top:50%;
+width:20px;height:20px;
+transform:translate(-50%,-50%);
+}
+.line{position:absolute;background:white;}
+.h{width:100%;height:2px;top:50%;}
+.v{width:2px;height:100%;left:50%;}
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+
+<div id="crosshair">
+<div class="line h"></div>
+<div class="line v"></div>
+</div>
+
+<div id="graphEditor">
+<b>ANIM GRAPH (LIVE)</b><br>
+<div class="node" draggable="true">Idle</div>
+<div class="node" draggable="true">Run</div>
+<div class="node" draggable="true">Aim</div>
+<div class="node" draggable="true">Reload</div>
+<div class="node" draggable="true">Jump</div>
+</div>
+
+</div>
+
+<script type="module">
+
+import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+
+//////////////////////////////////////////////////////////////
+// ECS CORE
+//////////////////////////////////////////////////////////////
+
+class ECS{
+constructor(){
+this.entities=new Set();
+this.components=new Map();
+this.systems=[];
+}
+
+createEntity(){
+const id={id:Math.random()};
+this.entities.add(id);
+return id;
+}
+
+addComponent(e,c,v){
+if(!this.components.has(c))this.components.set(c,new Map());
+this.components.get(c).set(e,v);
+}
+
+get(e,c){
+return this.components.get(c)?.get(e);
+}
+
+query(...components){
+return [...this.entities].filter(e=>
+components.every(c=>this.get(e,c))
+);
+}
+
+addSystem(fn){
+this.systems.push(fn);
+}
+
+update(dt){
+for(const s of this.systems)s(this,dt);
+}
+}
+
+const ecs=new ECS();
+
+//////////////////////////////////////////////////////////////
+// COMPONENTS
+//////////////////////////////////////////////////////////////
+
+const Position="pos";
+const Velocity="vel";
+const Render="render";
+const Physics="phys";
+const Animation="anim";
+
+//////////////////////////////////////////////////////////////
+// THREE CORE
+//////////////////////////////////////////////////////////////
+
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,1000);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0.5));
+
+//////////////////////////////////////////////////////////////
+// WORLD
+//////////////////////////////////////////////////////////////
+
+const ground=new THREE.Mesh(
+new THREE.PlaneGeometry(200,200),
+new THREE.MeshStandardMaterial({color:0x1c2230})
+);
+ground.rotation.x=-Math.PI/2;
+scene.add(ground);
+
+//////////////////////////////////////////////////////////////
+// ENTITY CREATION
+//////////////////////////////////////////////////////////////
+
+const player=ecs.createEntity();
+
+ecs.addComponent(player,Position,new THREE.Vector3());
+ecs.addComponent(player,Velocity,new THREE.Vector3());
+ecs.addComponent(player,Animation,{state:"idle",blend:{}});
+ecs.addComponent(player,Physics,{mass:1});
+
+const mesh=new THREE.Mesh(
+new THREE.BoxGeometry(0.8,1.2,0.4),
+new THREE.MeshStandardMaterial({color:0x4aa3ff})
+);
+
+scene.add(mesh);
+ecs.addComponent(player,Render,mesh);
+
+//////////////////////////////////////////////////////////////
+// TARGET ENTITY
+//////////////////////////////////////////////////////////////
+
+const target=ecs.createEntity();
+
+ecs.addComponent(target,Position,new THREE.Vector3(0,0,-10));
+ecs.addComponent(target,Physics,{mass:999});
+
+const targetMesh=new THREE.Mesh(
+new THREE.CylinderGeometry(0.5,0.5,2),
+new THREE.MeshStandardMaterial({color:0xff4444})
+);
+
+scene.add(targetMesh);
+ecs.addComponent(target,Render,targetMesh);
+
+//////////////////////////////////////////////////////////////
+// INPUT
+//////////////////////////////////////////////////////////////
+
+let keys={};
+let mouseX=0;
+let aiming=false;
+
+document.addEventListener("keydown",e=>keys[e.key.toLowerCase()]=true);
+document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+
+document.addEventListener("mousedown",e=>{
+if(e.button===2)aiming=true;
+});
+document.addEventListener("mouseup",e=>{
+if(e.button===2)aiming=false;
+});
+
+document.addEventListener("mousemove",e=>{
+if(document.pointerLockElement)
+mouseX+=e.movementX*0.002;
+});
+
+document.body.onclick=()=>document.body.requestPointerLock();
+
+//////////////////////////////////////////////////////////////
+// SYSTEMS
+//////////////////////////////////////////////////////////////
+
+//////////////////////////////////////////////////////////////
+// MOVEMENT SYSTEM (ECS)
+//////////////////////////////////////////////////////////////
+
+ecs.addSystem((ecs,dt)=>{
+
+for(const e of ecs.query(Position,Velocity,Physics)){
+
+const pos=ecs.get(e,Position);
+const vel=ecs.get(e,Velocity);
+
+const forward=new THREE.Vector3(0,0,-1)
+.applyAxisAngle(new THREE.Vector3(0,1,0),mouseX);
+
+if(keys.w)vel.add(forward.multiplyScalar(0.01));
+if(keys.s)vel.add(forward.multiplyScalar(-0.01));
+
+vel.multiplyScalar(0.92);
+
+pos.add(vel);
+
+}
+
+});
+
+//////////////////////////////////////////////////////////////
+// PHYSICS SYSTEM (rigidbody-lite)
+//////////////////////////////////////////////////////////////
+
+ecs.addSystem((ecs,dt)=>{
+
+for(const e of ecs.query(Position,Physics)){
+
+const p=ecs.get(e,Position);
+const v=ecs.get(e,Velocity);
+
+if(v)v.y-=0.01;
+
+// ground collision
+if(p.y<0)p.y=0;
+
+}
+
+});
+
+//////////////////////////////////////////////////////////////
+// RENDER SYSTEM
+//////////////////////////////////////////////////////////////
+
+ecs.addSystem((ecs)=>{
+
+for(const e of ecs.query(Position,Render)){
+
+const p=ecs.get(e,Position);
+const r=ecs.get(e,Render);
+
+r.position.copy(p);
+
+}
+
+});
+
+//////////////////////////////////////////////////////////////
+// ANIMATION GRAPH SYSTEM (REAL BLENDING)
+//////////////////////////////////////////////////////////////
+
+function animSystem(ecs){
+
+for(const e of ecs.query(Animation)){
+
+const a=ecs.get(e,Animation);
+
+let run=keys.w||keys.a||keys.s||keys.d;
+
+let target={
+idle:run?0:1,
+run:run?1:0,
+aim:aiming?1:0,
+reload:0
+};
+
+a.blend.idle=lerp(a.blend.idle,target.idle);
+a.blend.run=lerp(a.blend.run,target.run);
+a.blend.aim=lerp(a.blend.aim,target.aim);
+
+}
+
+}
+
+function lerp(a,b){
+return a+(b-a)*0.1;
+}
+
+ecs.addSystem(animSystem);
+
+//////////////////////////////////////////////////////////////
+// IK SYSTEM (FULL BODY CCD SIMULATION)
+//////////////////////////////////////////////////////////////
+
+function ikSystem(){
+
+const body=ecs.get(player,Render);
+
+if(!body)return;
+
+const target=new THREE.Vector3(
+Math.sin(mouseX)*2,
+1.5,
+Math.cos(mouseX)*2
+);
+
+// fake spine + legs offsets
+body.rotation.y=mouseX;
+
+}
+
+ecs.addSystem(ikSystem);
+
+//////////////////////////////////////////////////////////////
+// MOTION MATCHING (SIMULATED POSE DB)
+//////////////////////////////////////////////////////////////
+
+const poseDB=[
+{state:"idle",speed:0},
+{state:"run",speed:1},
+{state:"aim",speed:0.2}
+];
+
+function motionMatch(anim){
+
+let best=poseDB[0];
+let bestScore=999;
+
+const speed = keys.w?1:0;
+
+for(const p of poseDB){
+
+const d=Math.abs((p.speed||0)-speed);
+
+if(d<bestScore){
+bestScore=d;
+best=p;
+}
+
+}
+
+anim.state=best.state;
+
+}
+
+ecs.addSystem((ecs)=>{
+
+for(const e of ecs.query(Animation)){
+
+motionMatch(ecs.get(e,Animation));
+
+}
+
+});
+
+//////////////////////////////////////////////////////////////
+// CAMERA
+//////////////////////////////////////////////////////////////
+
+function cameraFollow(){
+
+const pos=ecs.get(player,Position);
+
+const offset=new THREE.Vector3(0,2,6)
+.applyAxisAngle(new THREE.Vector3(0,1,0),mouseX);
+
+camera.position.lerp(pos.clone().add(offset),0.15);
+camera.lookAt(pos.clone().add(new THREE.Vector3(0,1.5,0)));
+
+}
+
+//////////////////////////////////////////////////////////////
+// LOOP
+//////////////////////////////////////////////////////////////
+
+function animate(){
+
+requestAnimationFrame(animate);
+
+ecs.update(0.016);
+
+cameraFollow();
+
+renderer.render(scene,camera);
+
+}
+
+animate();
+
+//////////////////////////////////////////////////////////////
+
+window.addEventListener("resize",()=>{
+camera.aspect=innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+
+</body>
+</html>
