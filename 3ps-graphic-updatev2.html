@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Mech Combat Engine Prototype</title>
+
+<style>
+body{margin:0;overflow:hidden;background:#0b1020;}
+canvas{display:block;}
+
+#hud{
+position:absolute;
+top:10px;left:10px;
+color:white;
+font-family:monospace;
+text-shadow:0 0 5px black;
+}
+</style>
+</head>
+
+<body>
+
+<div id="hud">MECH COMBAT ENGINE — AI VS AI + IK + PROJECTILES</div>
+
+<script type="module">
+
+import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+
+//////////////////////////////////////////////////////////////
+// CORE
+//////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0f1a);
+
+const camera = new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,1000);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0.4));
+
+const sun = new THREE.DirectionalLight(0x88aaff,1.2);
+sun.position.set(10,20,10);
+scene.add(sun);
+
+//////////////////////////////////////////////////////////////
+// GROUND
+//////////////////////////////////////////////////////////////
+
+const ground = new THREE.Mesh(
+new THREE.PlaneGeometry(200,200),
+new THREE.MeshStandardMaterial({color:0x1c2230})
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+//////////////////////////////////////////////////////////////
+// PROJECTILES
+//////////////////////////////////////////////////////////////
+
+const bullets = [];
+
+class Bullet{
+constructor(pos,dir,owner){
+this.pos = pos.clone();
+this.vel = dir.clone().multiplyScalar(0.8);
+this.life = 120;
+this.owner = owner;
+this.radius = 0.15;
+}
+}
+
+function spawnBullet(pos,dir,owner){
+bullets.push(new Bullet(pos,dir,owner));
+}
+
+//////////////////////////////////////////////////////////////
+// MECH CLASS (combat + IK + AI)
+//////////////////////////////////////////////////////////////
+
+function box(color,x,y,z){
+return new THREE.Mesh(
+new THREE.BoxGeometry(x,y,z),
+new THREE.MeshStandardMaterial({color,metalness:0.5,roughness:0.7})
+);
+}
+
+class Mech{
+
+constructor(x,z,color){
+
+this.group = new THREE.Group();
+this.hp = 100;
+this.cooldown = 0;
+this.target = null;
+
+// body
+this.torso = box(color,1,1.4,0.6);
+this.group.add(this.torso);
+
+// head
+this.head = box(0xffffff,0.5,0.5,0.5);
+this.head.position.y = 1.2;
+this.group.add(this.head);
+
+// arms
+this.armL = box(0x6666aa,0.3,1,0.3);
+this.armR = box(0x6666aa,0.3,1,0.3);
+
+this.armL.position.set(-0.8,0.6,0);
+this.armR.position.set(0.8,0.6,0);
+
+this.group.add(this.armL);
+this.group.add(this.armR);
+
+this.group.position.set(x,1.5,z);
+
+scene.add(this.group);
+
+}
+
+updateAI(enemies){
+
+if(this.hp<=0) return;
+
+//////////////////////////////////////////////////////////////
+// TARGET ACQUISITION
+//////////////////////////////////////////////////////////////
+
+let best = null;
+let bestD = 999;
+
+for(const e of enemies){
+
+if(e===this || e.hp<=0) continue;
+
+const d = this.group.position.distanceTo(e.group.position);
+if(d<bestD){
+best = e;
+bestD = d;
+}
+
+}
+
+this.target = best;
+
+//////////////////////////////////////////////////////////////
+// MOVEMENT (strafe AI)
+//////////////////////////////////////////////////////////////
+
+if(this.target){
+
+const dir = this.target.group.position.clone()
+.sub(this.group.position)
+.normalize();
+
+this.group.position.add(dir.multiplyScalar(0.01));
+
+// face target
+this.group.lookAt(this.target.group.position);
+
+}
+
+//////////////////////////////////////////////////////////////
+// SHOOTING
+//////////////////////////////////////////////////////////////
+
+if(this.cooldown>0) this.cooldown--;
+
+if(this.target && this.cooldown<=0){
+
+const origin = this.group.position.clone().add(new THREE.Vector3(0,1.2,0));
+const dir = this.target.group.position.clone()
+.sub(this.group.position)
+.normalize();
+
+spawnBullet(origin,dir,this);
+
+this.cooldown = 40;
+
+}
+
+//////////////////////////////////////////////////////////////
+// IK AIM (arms toward target)
+//////////////////////////////////////////////////////////////
+
+if(this.target){
+
+this.armR.lookAt(this.target.group.position);
+this.armL.lookAt(this.target.group.position);
+
+}
+
+}
+
+hit(dmg){
+
+this.hp -= dmg;
+
+if(this.hp<=0){
+
+// collapse
+this.group.rotation.z = Math.random()*0.6;
+this.group.rotation.x = Math.random()*0.6;
+
+}
+
+}
+
+}
+
+//////////////////////////////////////////////////////////////
+// MECH SPAWN
+//////////////////////////////////////////////////////////////
+
+const mechs = [];
+
+mechs.push(new Mech(-10,0,0x3a7bd5));
+mechs.push(new Mech(10,0,0xd94b4b));
+mechs.push(new Mech(0,-10,0x3bd97f));
+mechs.push(new Mech(0,10,0xd9a13b));
+
+//////////////////////////////////////////////////////////////
+// BULLET UPDATE + COLLISION
+//////////////////////////////////////////////////////////////
+
+function updateBullets(){
+
+for(let i=bullets.length-1;i>=0;i--){
+
+const b = bullets[i];
+
+b.pos.add(b.vel);
+b.life--;
+
+let removed = false;
+
+for(const m of mechs){
+
+if(m.hp<=0) continue;
+
+if(m.group.position.distanceTo(b.pos)<1){
+
+m.hit(10);
+
+bullets.splice(i,1);
+removed = true;
+break;
+}
+
+}
+
+if(removed) continue;
+
+if(b.life<=0) bullets.splice(i,1);
+
+}
+
+}
+
+//////////////////////////////////////////////////////////////
+// LOOP
+//////////////////////////////////////////////////////////////
+
+function animate(){
+
+requestAnimationFrame(animate);
+
+//////////////////////////////////////////////////////////////
+// AI UPDATE
+//////////////////////////////////////////////////////////////
+
+for(const m of mechs){
+m.updateAI(mechs);
+}
+
+updateBullets();
+
+//////////////////////////////////////////////////////////////
+// CAMERA (overview combat view)
+//////////////////////////////////////////////////////////////
+
+const center = new THREE.Vector3();
+
+for(const m of mechs){
+center.add(m.group.position);
+}
+center.divideScalar(mechs.length);
+
+camera.position.lerp(
+center.clone().add(new THREE.Vector3(0,20,20)),
+0.05
+);
+
+camera.lookAt(center);
+
+//////////////////////////////////////////////////////////////
+
+renderer.render(scene,camera);
+
+}
+
+animate();
+
+//////////////////////////////////////////////////////////////
+
+window.addEventListener("resize",()=>{
+camera.aspect = innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+
+</body>
+</html>
