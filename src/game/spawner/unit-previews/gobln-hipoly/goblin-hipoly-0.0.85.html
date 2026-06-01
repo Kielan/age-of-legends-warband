@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+
+<title>Goblin Editor</title>
+
+<style>
+
+html,
+body{
+    margin:0;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:#1a1a1a;
+}
+
+#root{
+    width:100%;
+    height:100%;
+    display:flex;
+    flex-direction:column;
+}
+
+#toolbar{
+    height:40px;
+    background:#2d2d2d;
+    border-bottom:1px solid #444;
+
+    display:flex;
+    align-items:center;
+
+    padding-left:10px;
+
+    color:white;
+    font-family:monospace;
+}
+
+#content{
+    flex:1;
+    display:flex;
+}
+
+#viewport{
+    flex:1;
+    position:relative;
+}
+
+#inspector{
+    width:280px;
+    background:#252525;
+    border-left:1px solid #444;
+
+    color:white;
+
+    font-family:monospace;
+
+    padding:10px;
+}
+
+button{
+    margin-right:5px;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="root">
+
+<div id="toolbar">
+
+<button id="selectTool">
+Select
+</button>
+
+<button id="extrudeTool">
+Extrude
+</button>
+
+<button id="sculptTool">
+Sculpt
+</button>
+
+</div>
+
+<div id="content">
+
+<div id="viewport"></div>
+
+<div id="inspector">
+
+<h3>Inspector</h3>
+
+<div id="stats">
+
+Vertices: 0<br>
+Edges: 0<br>
+Faces: 0
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+<script type="module">
+/**
+ * Currently Implemented
+ * ✔ Half-edge core
+ * ✔ Extrusion
+ * ✔ Selection
+ * ✔ Rendering sync
+ * 
+ * still missing:
+ * 1. Edge selection system
+ * click edges, not just faces
+ * 2. Vertex welding / merging
+ * prevent duplicate geometry explosion
+ * 3. Face re-meshing after extrusion
+ * currently you only “append geometry”
+ * 4. Proper twin graph maintenance engine
+ * automatic repair pass after every edit
+ * 5. Subdivision system (important for goblin shape)
+ * smooth organic forms instead of blocky cubes
+ * 6. Sculpt mode (you already hinted at it)
+ * vertex displacement + constraint preservation
+ * 7. “Edit history stack”
+ * undo/redo (critical for editors)
+ * 8. Stable rendering pipeline
+
+ * Currently geometry is rebuilt every time which is fine for now, but later you need:
+ * incremental updates
+ * not full rebuilds
+ * 
+ * TODO:
+ * A) Make selection system stable (recommended next)
+ * face/edge/vertex unified picking system
+ * A.1)“real Blender extrusion behavior”
+ * - inset faces
+ * - bevel support
+ * - clean manifold preservation under repeated edits
+ * B) Start goblin procedural generator layer
+ * noise-based skull/body deformation
+ * symmetry system
+ * C) Upgrade topology engine
+ * full half-edge correctness (Blender-lite core)
+ **/
+import * as THREE from "https://esm.sh/three@0.165.0";
+import {OrbitControls} from "https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js";
+
+const viewport =
+    document.getElementById("viewport");
+const stats =
+    document.getElementById("stats");
+
+// TOPOLOGY
+class HEVertex {
+    constructor(x,y,z){
+        this.position =
+            new THREE.Vector3(x,y,z);
+        this.edge = null;
+        this.id = HEVertex._id++;
+    }
+}
+HEVertex._id = 0;
+
+class HEFace {
+    constructor(){
+        this.edge = null;
+        this.id = HEFace._id++;
+    }
+}
+HEFace._id = 0;
+
+class HEEdge {
+    constructor(){
+        this.vertex = null;
+        this.face = null;
+        this.next = null;
+        this.prev = null;
+        this.twin = null;
+    }
+}
+
+class HalfEdgeMesh {
+    constructor(){
+        this.vertices = [];
+        this.faces = [];
+        this.edges = [];
+        this.edgeMap = new Map();
+    }
+    createCube(size=1){
+        const s = size;
+        const verts = [
+            [-s,-s,-s],
+            [ s,-s,-s],
+            [ s, s,-s],
+            [-s, s,-s],
+
+            [-s,-s, s],
+            [ s,-s, s],
+            [ s, s, s],
+            [-s, s, s]
+        ];
+
+        for(const v of verts){
+            this.vertices.push(
+                new HEVertex(...v)
+            );
+        }
+
+        if (!this.vertices[this.vertices.length - 1].edge) {
+            this.vertices[this.vertices.length - 1].edge = null;
+        }
+
+        const quads = [
+            [0,1,2,3], //face 0
+            [4,5,6,7], //face 1
+
+            [0,4,7,3], //face 2
+            [1,5,6,2], //face 3
+
+            [3,2,6,7], //face 4
+            [0,1,5,4] //face 5
+        ];
+
+        const edgeMap = new Map();
+
+        for(const quad of quads){
+            const face =
+                new HEFace();
+            const e0 = new HEEdge();
+            const e1 = new HEEdge();
+            const e2 = new HEEdge();
+            const e3 = new HEEdge();
+            e0.vertex =
+                this.vertices[quad[0]];
+            e1.vertex =
+                this.vertices[quad[1]];
+            e2.vertex =
+                this.vertices[quad[2]];
+            e3.vertex =
+                this.vertices[quad[3]];
+            e0.next=e1;
+            e1.next=e2;
+            e2.next=e3;
+            e3.next=e0;
+
+            e0.prev=e3;
+            e1.prev=e0;
+            e2.prev=e1;
+            e3.prev=e2;
+
+            e0.face=face;
+            e1.face=face;
+            e2.face=face;
+            e3.face=face;
+
+            face.edge=e0;
+
+            this.edges.push(
+                e0,e1,e2,e3
+            );
+
+            this.faces.push(face);
+
+            const edges = [
+                [quad[0],quad[1],e0],
+                [quad[1],quad[2],e1],
+                [quad[2],quad[3],e2],
+                [quad[3],quad[0],e3]
+            ];
+
+            for(const [a,b,e] of edges){
+                const key =
+                    `${a}_${b}`;
+                const twinKey =
+                    `${b}_${a}`;
+                edgeMap.set(
+                    key,
+                    e
+                );
+                if(edgeMap.has(twinKey)){
+                    const twin =
+                        edgeMap.get(
+                            twinKey
+                        );
+                    e.twin=twin;
+                    twin.twin=e;
+                }
+            }
+        }
+
+        for (const face of this.faces) {
+            const verts = [];
+            let e = face.edge;
+            do {
+                verts.push(e.vertex.position);
+                e = e.next;
+            }
+            while (e !== face.edge);
+            const ab = new THREE.Vector3()
+                .subVectors(verts[1], verts[0]);
+            const ac = new THREE.Vector3()
+                .subVectors(verts[2], verts[0]);
+            const n = new THREE.Vector3()
+                .crossVectors(ab, ac)
+                .normalize();
+            const center = new THREE.Vector3();
+            for (const v of verts) {
+                center.add(v);
+            }
+            center.multiplyScalar(1 / verts.length);
+            console.log(
+                "CUBE FACE",
+                face.id,
+                "DOT",
+                n.dot(center.clone().normalize())
+            );
+        }
+
+    }
+    buildGeometry(){
+        const faceMap = [];
+        const positions = [];
+        for(const face of this.faces){
+            faceMap.push(face);
+            faceMap.push(face);
+            const verts = [];
+            let edge =
+                face.edge;
+            do{
+                verts.push(
+                    edge.vertex.position
+                );
+                edge=edge.next;
+            }
+            while(edge!==face.edge);
+            
+            
+            const ab =
+                new THREE.Vector3().subVectors(
+                    verts[1],
+                    verts[0]
+                );
+
+            const ac =
+                new THREE.Vector3().subVectors(
+                    verts[2],
+                    verts[0]
+                );
+
+            const renderNormal =
+                new THREE.Vector3()
+                .crossVectors(ab, ac)
+                .normalize();
+
+            const center =
+                verts[0].clone()
+                .add(verts[1])
+                .add(verts[2])
+                .add(verts[3])
+                .multiplyScalar(0.25);
+
+            console.log(
+                "FACE",
+                face.id,
+                "RENDER DOT",
+                renderNormal.dot(
+                    center.clone().normalize()
+                )
+            );
+            
+            
+            positions.push(
+                verts[0].x,
+                verts[0].y,
+                verts[0].z,
+
+                verts[1].x,
+                verts[1].y,
+                verts[1].z,
+
+                verts[2].x,
+                verts[2].y,
+                verts[2].z
+            );
+            positions.push(
+                verts[0].x,
+                verts[0].y,
+                verts[0].z,
+
+                verts[2].x,
+                verts[2].y,
+                verts[2].z,
+
+                verts[3].x,
+                verts[3].y,
+                verts[3].z
+            );
+            if(verts.length !== 4){
+                console.warn(
+                    "Non quad face",
+                    face.id,
+                    verts.length
+                );
+                console.error(
+                    "Face",
+                    face.id,
+                    "has",
+                    verts.length,
+                    "vertices"
+                );
+            }
+        }
+        const geometry =
+            new THREE.BufferGeometry();
+        geometry.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute(
+                positions,
+                3
+            )
+        );
+        geometry.userData = {
+            faceMap
+        };
+        geometry.computeVertexNormals();
+        return geometry;
+    }
+    extrudeFace(face){
+        if (!face || !face.edge) return;
+
+
+        // STEP 1 — canonical loop extraction (EDGE SOURCE OF TRUTH)
+        const baseRing = this.getFaceEdgeLoop(face);
+        const orderedEdges = baseRing;
+        const orderedVerts = orderedEdges.map(e => e.vertex);
+
+        // STEP 2 — compute normal (stable)
+        const normal = this.computeFaceNormal(face);
+
+        // 🔥 INSERT HERE
+        const a = orderedVerts[0].position;
+        const b = orderedVerts[1].position;
+        const c = orderedVerts[2].position;
+
+        // (optional but consistent with your earlier debugging)
+        const ab = new THREE.Vector3().subVectors(b, a);
+        const ac = new THREE.Vector3().subVectors(c, a);
+
+        const centroid = new THREE.Vector3();
+        for (const v of orderedVerts) {
+            centroid.add(v.position);
+        }
+        centroid.multiplyScalar(1 / orderedVerts.length);
+        
+        const offset = normal.clone().multiplyScalar(0.8);
+
+        // FIX 2: stable duplication
+        const dupVerts = orderedVerts.map(v => {
+            const nv = new HEVertex(
+                v.position.x + offset.x,
+                v.position.y + offset.y,
+                v.position.z + offset.z
+            );
+
+            this.vertices.push(nv);
+
+            // important: traceability link
+            nv.original = v;
+
+            return nv;
+        });
+
+        // 4. top face
+        const topFace = new HEFace();
+        this.faces.push(topFace);
+
+        const n = dupVerts.length;
+        const topEdges = [];
+
+        for(let i=0;i<n;i++){
+            const e = new HEEdge();
+            e.face = topFace;
+            e.vertex = dupVerts[i];
+            topEdges.push(e);
+            this.edges.push(e);
+
+            const vA = dupVerts[i];
+            const vB = dupVerts[(i + 1) % n];
+            this.edgeMap.set(vA.id + "_" + vB.id, e);
+        }
+
+        for(let i=0;i<n;i++){
+            topEdges[i].next = topEdges[(i+1)%n];
+            topEdges[i].prev = topEdges[(i-1+n)%n];
+        }
+
+        topFace.edge = topEdges[0];
+
+        for(let i=0;i<n;i++){
+            dupVerts[i].edge = topEdges[i];
+        }
+
+        // 5. side faces
+        for(let i=0;i<n;i++){
+
+            const v0 = orderedVerts[i];
+            const v1 = orderedVerts[(i+1)%n];
+            const v2 = dupVerts[(i+1)%n];
+            const v3 = dupVerts[i];
+
+            const f = new HEFace();
+            this.faces.push(f);
+
+            const e0 = new HEEdge();
+            const e1 = new HEEdge();
+            const e2 = new HEEdge();
+            const e3 = new HEEdge();
+
+            e0.vertex = v1;
+            e1.vertex = v2;
+            e2.vertex = v3;
+            e3.vertex = v0;
+
+            e0.face = e1.face = e2.face = e3.face = f;
+
+            e0.next = e1;
+            e1.next = e2;
+            e2.next = e3;
+            e3.next = e0;
+
+            e0.prev = e3;
+            e1.prev = e0;
+            e2.prev = e1;
+            e3.prev = e2;
+
+            f.edge = e0;
+
+            this.edges.push(e0,e1,e2,e3);
+        }
+
+        // 6. remove old face
+        const idx = this.faces.indexOf(face);
+        if(idx !== -1){
+            this.faces.splice(idx,1);
+        }
+
+        this.repairTwins();
+    }
+    validateFaces(){
+        for(const face of this.faces){
+            let count = 0;
+            let e = face.edge;
+            do{
+                count++;
+                if(count > 20){
+                    console.error(
+                        "Broken face loop",
+                        face
+                    );
+                    break;
+                }
+                e = e.next;
+            }while(e !== face.edge);
+            console.log(
+                "Face",
+                face.id,
+                "edges:",
+                count
+            );
+        }
+    }
+    repairTwinsLegacy(){
+        const map = new Map();
+        for(const e of this.edges){
+            e.twin = null;
+            // const start =
+            //     e.prev.vertex.id;
+            // const end =
+            //     e.vertex.id;
+
+            const start = e.prev.vertex.original?.id ?? e.prev.vertex.id;
+            const end = e.vertex.original?.id ?? e.vertex.id;
+            
+            map.set(
+                start + "_" + end,
+                e
+            );
+        }
+        for(const e of this.edges){
+            const start =
+                e.prev.vertex.id;
+            const end =
+                e.vertex.id;
+            const twinKey =
+                end + "_" + start;
+            if(map.has(twinKey)){
+                e.twin =
+                    map.get(twinKey);
+            }
+        }
+    }
+    repairTwins(){
+        const map = new Map();
+        const canonicalKey = (a, b) => {
+            return a < b ? `${a}_${b}` : `${b}_${a}`;
+        };
+        // STEP 1: clear all twins
+        for (const e of this.edges) {
+            e.twin = null;
+        }
+        // STEP 2: build canonical edge registry
+        for (const e of this.edges) {
+            const a = e.prev.vertex.id;
+            const b = e.vertex.id;
+            const key = canonicalKey(a, b);
+            if (!map.has(key)) {
+                map.set(key, []);
+            }
+            map.get(key).push(e);
+        }
+        // STEP 3: assign twins
+        for (const [key, list] of map.entries()) {
+            if (list.length === 2) {
+                const e0 = list[0];
+                const e1 = list[1];
+                e0.twin = e1;
+                e1.twin = e0;
+            }
+            // optional debug safety
+            if (list.length > 2) {
+                console.warn("Non-manifold edge detected:", key, list);
+            }
+        }
+    }
+    computeFaceNormal(face){
+        const verts = [];
+        let e = face.edge;
+
+        do {
+            verts.push(e.vertex.position);
+            e = e.next;
+        } while (e !== face.edge);
+
+        const ab = new THREE.Vector3().subVectors(verts[1], verts[0]);
+        const ac = new THREE.Vector3().subVectors(verts[2], verts[0]);
+
+        return new THREE.Vector3().crossVectors(ab, ac).normalize();
+    }
+    enforceConsistentWinding(){
+        if (!this.faces.length) return;
+
+        const visited = new Set();
+        const stack = [];
+
+        // start from face 0 as canonical orientation
+        const seed = this.faces[0];
+        stack.push(seed);
+        visited.add(seed);
+
+        while (stack.length) {
+            const face = stack.pop();
+
+            let e = face.edge;
+
+            do {
+                const twin = e.twin;
+
+                if (twin && twin.face && !visited.has(twin.face)) {
+
+                    const currentN = this.computeFaceNormal(face);
+                    const neighborN = this.computeFaceNormal(twin.face);
+
+                    // if normals disagree → flip neighbor
+                    if (currentN.dot(neighborN) < 0) {
+                        this.flipFaceWinding(twin.face);
+                    }
+
+                    visited.add(twin.face);
+                    stack.push(twin.face);
+                }
+
+                e = e.next;
+
+            } while (e !== face.edge);
+        }
+    }
+    flipFaceWinding(face){
+        const edges = [];
+
+        let e = face.edge;
+        do {
+            edges.push(e);
+            e = e.next;
+        } while (e !== face.edge);
+
+        // reverse cycle
+        edges.reverse();
+
+        for (let i = 0; i < edges.length; i++) {
+            const curr = edges[i];
+            const next = edges[(i + 1) % edges.length];
+            const prev = edges[(i - 1 + edges.length) % edges.length];
+
+            curr.next = next;
+            curr.prev = prev;
+        }
+
+        face.edge = edges[0];
+    }
+    getFaceEdgeLoop(face){
+        const loop = [];
+        let start = face.edge;
+        let e = start;
+
+        do {
+            loop.push(e);
+            e = e.next;
+        } while (e !== start);
+
+        return loop;
+    }
+    weldVertex(position, epsilon = 1e-6){
+        for (const v of this.vertices) {
+            if (v.position.distanceTo(position) < epsilon) {
+                return v; // reuse existing
+            }
+        }
+
+        const nv = this.weldVertex(
+            new THREE.Vector3(
+                v.position.x + offset.x,
+                v.position.y + offset.y,
+                v.position.z + offset.z
+            )
+        );
+        this.vertices.push(nv);
+        return nv;
+    }
+}
+
+class Selection {
+    constructor(){
+        this.mode = "face";
+        this.face = null;
+        this.edge = null;
+        this.vertex = null;
+    }
+    clear(){
+        this.face = null;
+        this.edge = null;
+        this.vertex = null;
+    }
+}
+
+// MESH SYSTEM
+class MeshSystem {
+    constructor(scene){
+        this.scene = scene;
+        this.topology = new HalfEdgeMesh();
+        this.topology.createCube(1);
+        this.topology.repairTwins();
+        this.topology.enforceConsistentWinding();
+        this.createRenderMesh();
+        this.selectedVertex = null;
+        this.selectedFace = null;
+        window.mesh = this.topology;
+    }
+    createRenderMesh(){
+        const geo = this.topology.buildGeometry();
+        const mat = new THREE.MeshStandardMaterial({
+            color:0x6688aa,
+            side:THREE.DoubleSide
+        });
+        this.mesh = new THREE.Mesh(geo,mat);
+        this.geometry = geo;
+        this.scene.add(this.mesh);
+        const edgeGeo = new THREE.EdgesGeometry(geo);
+        this.edgeLines = new THREE.LineSegments(
+            edgeGeo,
+            new THREE.LineBasicMaterial({
+                color:0xff66aa
+            })
+        );
+        this.scene.add(this.edgeLines);
+        const pointMat = new THREE.PointsMaterial({
+            color:0xffffff,
+            size:0.08,
+            sizeAttenuation:true
+        });
+        this.points = new THREE.Points(geo,pointMat);
+        this.scene.add(this.points);
+        this.mesh.geometry = geo;
+
+        this.edgeLines.geometry = geo;
+        this.points.geometry = geo;
+
+        this.highlightMesh = this.mesh.clone();
+        this.highlightMesh.material = new THREE.MeshBasicMaterial({
+            color:0xffaa00,
+            transparent:true,
+            opacity:0.5,
+            side:THREE.DoubleSide
+        });
+        this.highlightMesh.visible = false;
+        this.scene.add(this.highlightMesh);
+        this.faceColors =new Float32Array(
+            this.geometry.attributes.position.count * 3
+        );
+    }
+    rebuild(){
+        const geo =
+            this.topology.buildGeometry();
+        this.mesh.geometry = geo;
+        this.edgeLines.geometry = geo;
+        this.points.geometry = geo;
+        this.geometry = geo;
+    }
+}
+
+// APP
+class EditorApp{
+constructor(){
+    // "vertex" | "edge" | "face"
+    this.selection = new Selection();
+    this.initScene();
+    this.initHelpers();
+    this.animate();
+    // window.mesh = this.topology;
+}
+
+initScene(){
+
+// var viewport =
+//     document.getElementById("viewport");
+// var stats =
+//     document.getElementById("stats");
+
+this.scene = new THREE.Scene();
+
+this.scene.background =
+new THREE.Color(0x2a2a2a);
+
+this.camera =
+new THREE.PerspectiveCamera(
+60,
+window.innerWidth /
+window.innerHeight,
+0.1,
+1000
+);
+
+this.camera.position.set(4,4,6);
+
+this.renderer =
+new THREE.WebGLRenderer({
+antialias:true
+});
+
+this.renderer.setSize(
+viewport.clientWidth,
+viewport.clientHeight
+);
+
+viewport.appendChild(
+this.renderer.domElement
+);
+
+this.controls =
+new OrbitControls(
+this.camera,
+this.renderer.domElement
+);
+
+this.raycaster = new THREE.Raycaster();
+
+this.mouse = new THREE.Vector2();
+
+this.renderer.domElement.addEventListener("pointerdown",(e)=>{
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.mouse.x = ((e.clientX - rect.left)/ rect.width) * 2 - 1;
+    this.mouse.y = -((e.clientY - rect.top)/ rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.mouse,this.camera);
+    const hits =this.raycaster.intersectObject(this.meshSystem.mesh);
+    if(!hits.length) return;
+
+    const hit = hits[0];
+    if(this.selection.mode === "face"){
+        const face =
+            this.meshSystem.geometry.userData.faceMap[
+                hit.faceIndex
+            ];
+        this.selection.face = face;
+        console.log("FACE:", hit.faceIndex);
+    }
+});
+
+window.addEventListener("keydown",(e)=>{
+    if(e.key === "e"){
+        const face =
+            APP.selection.face;
+
+        if(!face) return;
+
+        APP.meshSystem.topology.extrudeFace(face);
+        APP.meshSystem.topology.validateFaces();
+        APP.meshSystem.rebuild();
+    }
+});
+
+}
+
+initHelpers(){
+const grid =new THREE.GridHelper(50,50);
+this.scene.add(grid);
+const axes =new THREE.AxesHelper(2);
+this.scene.add(axes);
+const ambient = new THREE.AmbientLight(0xffffff,1);
+this.scene.add(ambient);
+const sun = new THREE.DirectionalLight(0xffffff,2);
+sun.position.set(10,10,5);
+this.scene.add(sun);
+this.meshSystem = new MeshSystem(this.scene);
+}
+
+updateSelectionVisual(){
+    if(!this.meshSystem ||
+       !this.meshSystem.highlightMesh){
+        return;
+    }
+    const face = this.selection.face;
+    if(!face){
+        this.meshSystem.highlightMesh.visible = false;
+        return;
+    }
+    this.meshSystem.highlightMesh.visible = true;
+}
+
+animate(){
+    requestAnimationFrame(()=>this.animate());
+    this.controls.update();
+    this.renderer.render(this.scene,this.camera);
+
+    this.updateSelectionVisual();
+}
+}
+
+const APP = new EditorApp();
+
+window.APP = APP;
+
+const topo = APP.meshSystem.topology;
+
+stats.innerHTML = `
+Vertices: ${topo.vertices.length}<br>
+Edges: ${topo.edges.length}<br>
+Faces: ${topo.faces.length}
+`;
+
+window.addEventListener(
+"resize", ()=>{
+    APP.camera.aspect = viewport.clientWidth / viewport.clientHeight;
+    APP.camera.updateProjectionMatrix();
+    APP.renderer.setSize(viewport.clientWidth,viewport.clientHeight);
+}
+);
+
+document.getElementById("selectTool")
+.addEventListener("click", () => {
+    APP.selection.mode = "face";
+});
+
+document.getElementById("extrudeTool")
+.addEventListener("click", () => {
+    APP.selection.mode = "face";
+});
+
+document.getElementById("sculptTool")
+.addEventListener("click", () => {
+    APP.selection.mode = "vertex";
+});
+
+</script>
+
+</body>
+</html>>
