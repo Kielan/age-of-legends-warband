@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+
+<title>Goblin Editor</title>
+
+<style>
+
+html,
+body{
+    margin:0;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:#1a1a1a;
+}
+
+#root{
+    width:100%;
+    height:100%;
+    display:flex;
+    flex-direction:column;
+}
+
+#toolbar{
+    height:40px;
+    background:#2d2d2d;
+    border-bottom:1px solid #444;
+
+    display:flex;
+    align-items:center;
+
+    padding-left:10px;
+
+    color:white;
+    font-family:monospace;
+}
+
+#content{
+    flex:1;
+    display:flex;
+}
+
+#viewport{
+    flex:1;
+    position:relative;
+}
+
+#inspector{
+    width:280px;
+    background:#252525;
+    border-left:1px solid #444;
+
+    color:white;
+
+    font-family:monospace;
+
+    padding:10px;
+}
+
+button{
+    margin-right:5px;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="root">
+
+<div id="toolbar">
+
+<button id="selectTool">
+Select
+</button>
+
+<button id="extrudeTool">
+Extrude
+</button>
+
+<button id="sculptTool">
+Sculpt
+</button>
+
+</div>
+
+<div id="content">
+
+<div id="viewport"></div>
+
+<div id="inspector">
+
+<h3>Inspector</h3>
+
+<div id="stats">
+
+Vertices: 0<br>
+Edges: 0<br>
+Faces: 0
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+<script type="module">
+
+import * as THREE from "https://esm.sh/three@0.165.0";
+//import {OrbitControls} from "https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js";
+
+// TOPOLOGY
+class HEVertex {
+    constructor(x,y,z){
+        this.position =
+            new THREE.Vector3(x,y,z);
+        this.edge = null;
+    }
+}
+
+class HEFace {
+    constructor(){
+        this.edge = null;
+    }
+}
+
+class HEEdge {
+    constructor(){
+        this.vertex = null;
+        this.face = null;
+        this.next = null;
+        this.prev = null;
+        this.twin = null;
+    }
+}
+
+class HalfEdgeMesh {
+    constructor(){
+        this.vertices = [];
+        this.faces = [];
+        this.edges = [];
+    }
+    createCube(size=1){
+        const s = size;
+        const verts = [
+            [-s,-s,-s],
+            [ s,-s,-s],
+            [ s, s,-s],
+            [-s, s,-s],
+
+            [-s,-s, s],
+            [ s,-s, s],
+            [ s, s, s],
+            [-s, s, s]
+        ];
+
+        for(const v of verts){
+            this.vertices.push(
+                new HEVertex(...v)
+            );
+        }
+
+        const quads = [
+            [0,1,2,3],
+            [4,5,6,7],
+
+            [0,4,7,3],
+            [1,5,6,2],
+
+            [3,2,6,7],
+            [0,1,5,4]
+        ];
+
+        const edgeMap = new Map();
+
+        for(const quad of quads){
+            const face =
+                new HEFace();
+            const e0 = new HEEdge();
+            const e1 = new HEEdge();
+            const e2 = new HEEdge();
+            const e3 = new HEEdge();
+            e0.vertex =
+                this.vertices[quad[0]];
+            e1.vertex =
+                this.vertices[quad[1]];
+            e2.vertex =
+                this.vertices[quad[2]];
+            e3.vertex =
+                this.vertices[quad[3]];
+            e0.next=e1;
+            e1.next=e2;
+            e2.next=e3;
+            e3.next=e0;
+
+            e0.prev=e3;
+            e1.prev=e0;
+            e2.prev=e1;
+            e3.prev=e2;
+
+            e0.face=face;
+            e1.face=face;
+            e2.face=face;
+            e3.face=face;
+
+            face.edge=e0;
+
+            this.edges.push(
+                e0,e1,e2,e3
+            );
+
+            this.faces.push(face);
+
+            const edges = [
+                [quad[0],quad[1],e0],
+                [quad[1],quad[2],e1],
+                [quad[2],quad[3],e2],
+                [quad[3],quad[0],e3]
+            ];
+
+            for(const [a,b,e] of edges){
+                const key =
+                    `${a}_${b}`;
+                const twinKey =
+                    `${b}_${a}`;
+                edgeMap.set(
+                    key,
+                    e
+                );
+                if(edgeMap.has(twinKey)){
+                    const twin =
+                        edgeMap.get(
+                            twinKey
+                        );
+                    e.twin=twin;
+                    twin.twin=e;
+                }
+            }
+        }
+    }
+    buildGeometry(){
+        const positions = [];
+        for(const face of this.faces){
+            const verts = [];
+            let edge =
+                face.edge;
+            do{
+                verts.push(
+                    edge.vertex.position
+                );
+                edge=edge.next;
+            }
+            while(edge!==face.edge);
+            positions.push(
+                verts[0].x,
+                verts[0].y,
+                verts[0].z,
+
+                verts[1].x,
+                verts[1].y,
+                verts[1].z,
+
+                verts[2].x,
+                verts[2].y,
+                verts[2].z
+            );
+            positions.push(
+                verts[0].x,
+                verts[0].y,
+                verts[0].z,
+
+                verts[2].x,
+                verts[2].y,
+                verts[2].z,
+
+                verts[3].x,
+                verts[3].y,
+                verts[3].z
+            );
+        }
+        const geometry =
+            new THREE.BufferGeometry();
+        geometry.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute(
+                positions,
+                3
+            )
+        );
+        geometry.computeVertexNormals();
+        return geometry;
+    }
+}
+
+// MESH SYSTEM
+class MeshSystem {
+    constructor(scene){
+        this.scene = scene;
+        this.topology =
+            new HalfEdgeMesh();
+        this.topology.createCube(1);
+        this.createRenderMesh();
+    }
+
+    createRenderMesh(){
+        const geo =
+            this.topology
+                .buildGeometry();
+        const mat =
+            new THREE.MeshStandardMaterial({
+                color:0x6688aa,
+                flatShading:false
+
+            });
+        this.mesh =
+            new THREE.Mesh(
+                geo,
+                mat
+            );
+        this.scene.add(
+            this.mesh
+        );
+
+    }
+}
+
+// APP
+class EditorApp{
+constructor(){
+    this.initScene();
+    this.initHelpers();
+    this.animate();
+}
+
+initScene(){
+
+var viewport =
+    document.getElementById("viewport");
+var stats =
+    document.getElementById("stats");
+
+this.scene =
+new THREE.Scene();
+
+this.scene.background =
+new THREE.Color(0x2a2a2a);
+
+this.camera =
+new THREE.PerspectiveCamera(
+60,
+window.innerWidth /
+window.innerHeight,
+0.1,
+1000
+);
+
+this.camera.position.set(
+4,
+4,
+6
+);
+
+this.renderer =
+new THREE.WebGLRenderer({
+antialias:true
+});
+
+this.renderer.setSize(
+viewport.clientWidth,
+viewport.clientHeight
+);
+
+viewport.appendChild(
+this.renderer.domElement
+);
+
+// this.controls =
+// new OrbitControls(
+// this.camera,
+// this.renderer.domElement
+// );
+}
+
+initHelpers(){
+
+const grid =
+new THREE.GridHelper(
+50,
+50
+);
+
+this.scene.add(grid);
+
+const axes =
+new THREE.AxesHelper(2);
+
+this.scene.add(axes);
+
+const ambient =
+new THREE.AmbientLight(
+0xffffff,
+1
+);
+
+this.scene.add(ambient);
+
+const sun =
+new THREE.DirectionalLight(
+0xffffff,
+2
+);
+
+sun.position.set(
+10,
+10,
+5
+);
+
+this.scene.add(sun);
+
+this.meshSystem = new MeshSystem(this.scene);
+}
+
+animate(){
+
+requestAnimationFrame(
+()=>this.animate()
+);
+
+// this.controls.update();
+
+this.renderer.render(
+this.scene,
+this.camera
+);
+
+}
+
+}
+
+const APP =
+new EditorApp();
+
+window.APP = APP;
+
+// const topo = APP.meshSystem.topology;
+
+// stats.innerHTML = `
+// Vertices: ${topo.vertices.length}<br>
+// Edges: ${topo.edges.length}<br>
+// Faces: ${topo.faces.length}
+// `;
+
+window.addEventListener(
+"resize",
+()=>{
+
+APP.camera.aspect =
+viewport.clientWidth /
+viewport.clientHeight;
+
+APP.camera.updateProjectionMatrix();
+
+APP.renderer.setSize(
+viewport.clientWidth,
+viewport.clientHeight
+);
+
+}
+);
+
+</script>
+
+</body>
+</html>
