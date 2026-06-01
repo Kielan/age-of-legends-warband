@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Predator TPS Engine Prototype</title>
+
+<style>
+body{margin:0;overflow:hidden;background:#000;}
+canvas{display:block;}
+
+#ui{
+position:absolute;inset:0;
+pointer-events:none;
+font-family:sans-serif;
+color:white;
+}
+
+#crosshair{
+position:absolute;left:50%;top:50%;
+width:28px;height:28px;
+transform:translate(-50%,-50%);
+transition:transform .08s;
+}
+
+#crosshair.aim{transform:translate(-50%,-50%) scale(0.5);}
+
+.line{position:absolute;background:white;}
+.h{width:100%;height:2px;top:50%;}
+.v{width:2px;height:100%;left:50%;}
+
+#graphUI{
+position:absolute;top:10px;right:10px;
+width:260px;height:180px;
+background:rgba(0,0,0,0.5);
+pointer-events:auto;
+font-size:10px;
+padding:8px;
+}
+
+.node{
+padding:4px;
+margin:4px;
+background:#222;
+border:1px solid #555;
+cursor:grab;
+}
+.node.active{border:1px solid yellow;}
+
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+
+<div id="crosshair">
+<div class="line h"></div>
+<div class="line v"></div>
+</div>
+
+<div id="graphUI">
+<b>ANIMATION GRAPH</b><br>
+<div class="node" draggable="true" data-n="idle">Idle</div>
+<div class="node" draggable="true" data-n="run">Run</div>
+<div class="node" draggable="true" data-n="aim">Aim</div>
+<div class="node" draggable="true" data-n="reload">Reload</div>
+<div class="node" draggable="true" data-n="jump">Jump</div>
+</div>
+
+</div>
+
+<script type="module">
+
+import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+
+//////////////////////////////////////////////////////////////
+// CORE
+//////////////////////////////////////////////////////////////
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0b1020);
+
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,1000);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0.3));
+const sun=new THREE.DirectionalLight(0x88ccff,1.2);
+sun.position.set(10,20,10);
+scene.add(sun);
+
+//////////////////////////////////////////////////////////////
+// GROUND
+//////////////////////////////////////////////////////////////
+
+const ground=new THREE.Mesh(
+new THREE.PlaneGeometry(200,200),
+new THREE.MeshStandardMaterial({color:0x2c2f3a})
+);
+ground.rotation.x=-Math.PI/2;
+scene.add(ground);
+
+//////////////////////////////////////////////////////////////
+// TARGETS
+//////////////////////////////////////////////////////////////
+
+const targets=[];
+
+function makeTarget(x,z){
+
+const m=new THREE.Mesh(
+new THREE.CylinderGeometry(0.5,0.5,2),
+new THREE.MeshStandardMaterial({color:0xff4444})
+);
+
+m.position.set(x,1,z);
+m.hp=100;
+
+scene.add(m);
+targets.push(m);
+
+}
+
+for(let i=0;i<6;i++){
+makeTarget((Math.random()-0.5)*30,(-Math.random()*30));
+}
+
+//////////////////////////////////////////////////////////////
+// PLAYER
+//////////////////////////////////////////////////////////////
+
+const player=new THREE.Group();
+scene.add(player);
+
+const body=new THREE.Mesh(
+new THREE.BoxGeometry(0.8,1.2,0.4),
+new THREE.MeshStandardMaterial({color:0x4aa3ff})
+);
+body.position.y=1.5;
+player.add(body);
+
+//////////////////////////////////////////////////////////////
+// SHOULDER BLASTER (Predator mode)
+//////////////////////////////////////////////////////////////
+
+const shoulder=new THREE.Group();
+const blaster=new THREE.Mesh(
+new THREE.BoxGeometry(0.4,0.2,1),
+new THREE.MeshStandardMaterial({color:0x111111})
+);
+
+shoulder.add(blaster);
+shoulder.position.set(0.6,2.2,0);
+player.add(shoulder);
+
+let predatorMode=false;
+
+//////////////////////////////////////////////////////////////
+// STATE SYSTEM
+//////////////////////////////////////////////////////////////
+
+let keys={};
+let mouseX=0;
+let aiming=false;
+
+document.addEventListener("keydown",e=>{
+
+keys[e.key.toLowerCase()]=true;
+
+if(e.key==="Tab"){
+predatorMode=!predatorMode;
+}
+
+});
+
+document.addEventListener("keyup",e=>{
+keys[e.key.toLowerCase()]=false;
+});
+
+document.addEventListener("mousedown",e=>{
+if(e.button===2)aiming=true;
+});
+
+document.addEventListener("mouseup",e=>{
+if(e.button===2)aiming=false;
+});
+
+document.addEventListener("mousemove",e=>{
+if(document.pointerLockElement){
+mouseX+=e.movementX*0.002;
+}
+});
+
+document.body.onclick=()=>document.body.requestPointerLock();
+
+//////////////////////////////////////////////////////////////
+// ANIMATION GRAPH (simplified editor runtime)
+//////////////////////////////////////////////////////////////
+
+const graph={
+idle:1,
+run:0,
+aim:0,
+reload:0,
+jump:0
+};
+
+function updateGraph(){
+
+if(keys.w||keys.a||keys.s||keys.d){
+graph.run=1;graph.idle=0;
+}else{
+graph.run=0;graph.idle=1;
+}
+
+graph.aim=aiming?1:0;
+
+}
+
+//////////////////////////////////////////////////////////////
+// AIM ASSIST (lock-on cone)
+//////////////////////////////////////////////////////////////
+
+function getNearestTarget(){
+
+let best=null;
+let bestD=999;
+
+for(const t of targets){
+
+const d=t.position.distanceTo(player.position);
+if(d<bestD){
+best=t;
+bestD=d;
+}
+
+}
+
+return best;
+
+}
+
+let lockTarget=null;
+
+//////////////////////////////////////////////////////////////
+// MOVEMENT + BOOSTS
+//////////////////////////////////////////////////////////////
+
+const vel=new THREE.Vector3();
+
+function move(){
+
+const forward=new THREE.Vector3(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0),mouseX);
+
+if(keys.w)vel.add(forward.multiplyScalar(0.02));
+if(keys.s)vel.add(forward.multiplyScalar(-0.02));
+
+vel.multiplyScalar(0.9);
+
+player.position.add(vel);
+
+player.rotation.y=mouseX;
+
+}
+
+//////////////////////////////////////////////////////////////
+// SHOULDER BLASTER LOGIC
+//////////////////////////////////////////////////////////////
+
+function predatorUpdate(){
+
+if(!predatorMode)return;
+
+lockTarget=getNearestTarget();
+
+if(lockTarget){
+
+const dir=lockTarget.position.clone().sub(player.position).normalize();
+
+player.rotation.y=Math.atan2(dir.x,dir.z);
+
+shoulder.lookAt(lockTarget.position);
+
+}
+
+}
+
+//////////////////////////////////////////////////////////////
+// BOOST JUMP SYSTEM
+//////////////////////////////////////////////////////////////
+
+function jump(type){
+
+const boost=new THREE.Vector3();
+
+if(type==="forward"){
+
+boost.set(Math.sin(mouseX)*0.5,0.3,Math.cos(mouseX)*-0.5);
+
+}
+
+if(type==="vertical"){
+
+boost.set(0,0.8,0);
+
+}
+
+player.position.add(boost);
+
+}
+
+document.addEventListener("keydown",e=>{
+
+if(e.key===" " && !e.ctrlKey && !e.shiftKey){
+player.position.y+=1.2;
+}
+
+if(e.key===" " && e.shiftKey){
+jump("forward");
+}
+
+if(e.key===" " && e.ctrlKey){
+jump("vertical");
+}
+
+});
+
+//////////////////////////////////////////////////////////////
+// AIM ASSIST
+//////////////////////////////////////////////////////////////
+
+function aimAssist(){
+
+if(!predatorMode||!lockTarget)return;
+
+player.rotation.y=THREE.MathUtils.lerp(
+player.rotation.y,
+Math.atan2(
+lockTarget.position.x-player.position.x,
+lockTarget.position.z-player.position.z
+),
+0.2
+);
+
+}
+
+//////////////////////////////////////////////////////////////
+// GRAPH UI (drag minimal editor)
+//////////////////////////////////////////////////////////////
+
+const nodes=document.querySelectorAll(".node");
+
+nodes.forEach(n=>{
+n.ondragstart=e=>{
+e.dataTransfer.setData("n",n.dataset.n);
+};
+});
+
+//////////////////////////////////////////////////////////////
+// CAMERA
+//////////////////////////////////////////////////////////////
+
+const cameraOffset=new THREE.Vector3(0,2,6);
+
+function cameraFollow(){
+
+const offset=cameraOffset.clone()
+.applyAxisAngle(new THREE.Vector3(0,1,0),mouseX);
+
+camera.position.lerp(player.position.clone().add(offset),0.15);
+
+camera.lookAt(player.position.clone().add(new THREE.Vector3(0,1.5,0)));
+
+}
+
+//////////////////////////////////////////////////////////////
+// LOOP
+//////////////////////////////////////////////////////////////
+
+const cross=document.getElementById("crosshair");
+
+function animate(){
+
+requestAnimationFrame(animate);
+
+updateGraph();
+
+move();
+
+predatorUpdate();
+
+aimAssist();
+
+cameraFollow();
+
+cross.classList.toggle("aim",aiming);
+
+renderer.render(scene,camera);
+
+}
+
+animate();
+
+//////////////////////////////////////////////////////////////
+
+window.addEventListener("resize",()=>{
+camera.aspect=innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+
+</body>
+</html>
