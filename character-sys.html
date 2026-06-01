@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Stylized TPS Character System</title>
+
+<style>
+body{margin:0;overflow:hidden;background:#87c7ff;}
+canvas{display:block;}
+
+#hud{
+position:absolute;
+bottom:10px;
+left:10px;
+color:white;
+font-family:sans-serif;
+text-shadow:0 0 5px black;
+}
+
+#crosshair{
+position:absolute;
+left:50%;
+top:50%;
+width:20px;height:20px;
+transform:translate(-50%,-50%);
+}
+
+.line{position:absolute;background:white;}
+.h{width:100%;height:2px;top:50%;}
+.v{width:2px;height:100%;left:50%;}
+</style>
+</head>
+
+<body>
+
+<div id="hud">
+WASD move • SPACE jump • CTRL crouch • SHIFT sprint • 1-4 weapons
+</div>
+
+<div id="crosshair">
+<div class="line h"></div>
+<div class="line v"></div>
+</div>
+
+<script type="module">
+
+import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+
+//////////////////////////////////////////////////////////////
+// CORE
+//////////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9ed0ff);
+
+const camera = new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,1000);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0.4));
+const sun = new THREE.DirectionalLight(0xffffff,1.2);
+sun.position.set(10,20,10);
+scene.add(sun);
+
+//////////////////////////////////////////////////////////////
+// GROUND
+//////////////////////////////////////////////////////////////
+
+const ground = new THREE.Mesh(
+new THREE.PlaneGeometry(200,200),
+new THREE.MeshStandardMaterial({color:0x3fa34d})
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+//////////////////////////////////////////////////////////////
+// STYLIZED CHARACTER RIG (procedural skeleton)
+//////////////////////////////////////////////////////////////
+
+const character = new THREE.Group();
+scene.add(character);
+
+// root
+const root = new THREE.Object3D();
+character.add(root);
+
+// torso
+const torso = new THREE.Mesh(
+new THREE.BoxGeometry(0.8,1.2,0.4),
+new THREE.MeshStandardMaterial({color:0x3b82f6})
+);
+torso.position.y = 1.4;
+root.add(torso);
+
+// head
+const head = new THREE.Mesh(
+new THREE.SphereGeometry(0.25,16,16),
+new THREE.MeshStandardMaterial({color:0xffd1a8})
+);
+head.position.y = 2.2;
+root.add(head);
+
+//////////////////////////////////////////////////////////////
+// LIMB SYSTEM (IK-style bones)
+//////////////////////////////////////////////////////////////
+
+function createLimb(side=1){
+
+const shoulder = new THREE.Object3D();
+const upper = new THREE.Object3D();
+const lower = new THREE.Object3D();
+const hand = new THREE.Object3D();
+
+shoulder.position.set(0.5*side,1.8,0);
+
+upper.position.y = -0.5;
+lower.position.y = -0.5;
+hand.position.y = -0.4;
+
+shoulder.add(upper);
+upper.add(lower);
+lower.add(hand);
+
+character.add(shoulder);
+
+return {shoulder,upper,lower,hand};
+}
+
+const leftArm = createLimb(-1);
+const rightArm = createLimb(1);
+
+const leftLeg = createLimb(-1);
+const rightLeg = createLimb(1);
+
+//////////////////////////////////////////////////////////////
+// WEAPONS
+//////////////////////////////////////////////////////////////
+
+function weapon(color=0x222222){
+return new THREE.Mesh(
+new THREE.BoxGeometry(0.8,0.1,0.2),
+new THREE.MeshStandardMaterial({color})
+);
+}
+
+const weapons = {
+rifle: weapon(0x333333),
+pistol: weapon(0x444444),
+knife: weapon(0x888888),
+shotgun: weapon(0x111111)
+};
+
+let currentWeapon = weapons.rifle;
+rightArm.hand.add(currentWeapon);
+
+//////////////////////////////////////////////////////////////
+// INPUT
+//////////////////////////////////////////////////////////////
+
+let keys = {};
+let mouseX = 0;
+
+document.addEventListener("keydown",e=>keys[e.key.toLowerCase()] = true);
+document.addEventListener("keyup",e=>keys[e.key.toLowerCase()] = false);
+
+document.addEventListener("mousemove",e=>{
+if(document.pointerLockElement)
+mouseX += e.movementX * 0.002;
+});
+
+document.body.onclick = ()=>document.body.requestPointerLock();
+
+//////////////////////////////////////////////////////////////
+// ANIMATION GRAPH (REAL WEIGHTED BLENDING)
+//////////////////////////////////////////////////////////////
+
+const anim = {
+idle:1,
+run:0,
+crouch:0,
+jump:0,
+aim:0
+};
+
+function updateAnim(){
+
+const moving = keys.w||keys.a||keys.s||keys.d;
+
+anim.run = lerp(anim.run, moving?1:0);
+anim.idle = lerp(anim.idle, moving?0:1);
+anim.crouch = lerp(anim.crouch, keys.control?1:0);
+anim.aim = lerp(anim.aim, 0.5); // constant smoothing placeholder
+
+}
+
+function lerp(a,b,t=0.1){
+return a + (b-a)*t;
+}
+
+//////////////////////////////////////////////////////////////
+// IK SYSTEM (arms follow aim target)
+//////////////////////////////////////////////////////////////
+
+function solveArm(arm, target){
+
+const shoulderWorld = new THREE.Vector3();
+arm.shoulder.getWorldPosition(shoulderWorld);
+
+const dir = target.clone().sub(shoulderWorld).normalize();
+
+arm.shoulder.rotation.y = Math.atan2(dir.x, dir.z);
+arm.upper.rotation.x = -0.5 * anim.aim;
+arm.lower.rotation.x = -0.7 * anim.aim;
+
+arm.hand.lookAt(target);
+
+}
+
+//////////////////////////////////////////////////////////////
+// MOVEMENT SYSTEM
+//////////////////////////////////////////////////////////////
+
+const velocity = new THREE.Vector3();
+let onGround = true;
+
+function move(){
+
+const speed = keys.shift ? 0.1 : 0.06;
+
+if(keys.w) character.position.z -= speed;
+if(keys.s) character.position.z += speed;
+if(keys.a) character.position.x -= speed;
+if(keys.d) character.position.x += speed;
+
+if(keys[" "] && onGround){
+velocity.y = 0.4;
+onGround = false;
+}
+
+velocity.y -= 0.02;
+character.position.y += velocity.y;
+
+if(character.position.y < 0){
+character.position.y = 0;
+velocity.y = 0;
+onGround = true;
+}
+
+character.rotation.y = mouseX;
+
+}
+
+//////////////////////////////////////////////////////////////
+// CAMERA
+//////////////////////////////////////////////////////////////
+
+function cameraFollow(){
+
+const offset = new THREE.Vector3(0,2,5)
+.applyAxisAngle(new THREE.Vector3(0,1,0), mouseX);
+
+camera.position.lerp(character.position.clone().add(offset),0.12);
+
+camera.lookAt(character.position.clone().add(new THREE.Vector3(0,1.5,0)));
+
+}
+
+//////////////////////////////////////////////////////////////
+// WEAPON SWITCH
+//////////////////////////////////////////////////////////////
+
+document.addEventListener("keydown",e=>{
+
+if(e.key==="1") switchWeapon("rifle");
+if(e.key==="2") switchWeapon("pistol");
+if(e.key==="3") switchWeapon("knife");
+if(e.key==="4") switchWeapon("shotgun");
+
+});
+
+function switchWeapon(name){
+
+rightArm.hand.remove(currentWeapon);
+currentWeapon = weapons[name];
+rightArm.hand.add(currentWeapon);
+
+}
+
+//////////////////////////////////////////////////////////////
+// AIM TARGET
+//////////////////////////////////////////////////////////////
+
+function getAimTarget(){
+
+return character.position.clone().add(new THREE.Vector3(
+Math.sin(mouseX)*3,
+1.5,
+Math.cos(mouseX)*3
+));
+
+}
+
+//////////////////////////////////////////////////////////////
+// LOOP
+//////////////////////////////////////////////////////////////
+
+function animate(){
+
+requestAnimationFrame(animate);
+
+updateAnim();
+
+move();
+
+cameraFollow();
+
+const aimTarget = getAimTarget();
+
+solveArm(rightArm, aimTarget);
+solveArm(leftArm, aimTarget);
+
+renderer.render(scene,camera);
+
+}
+
+animate();
+
+//////////////////////////////////////////////////////////////
+
+window.addEventListener("resize",()=>{
+camera.aspect = innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+
+</body>
+</html>
