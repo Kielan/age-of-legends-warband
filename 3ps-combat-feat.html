@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Unreal-Style Browser Engine Prototype</title>
+
+<style>
+body{margin:0;overflow:hidden;background:#0a0f1a;}
+canvas{display:block;}
+
+#hud{
+position:absolute;
+top:10px;left:10px;
+color:white;
+font-family:monospace;
+text-shadow:0 0 6px black;
+}
+
+#graph{
+position:absolute;
+right:10px;top:10px;
+width:220px;
+background:rgba(0,0,0,0.4);
+padding:8px;
+font-size:11px;
+color:white;
+}
+.node{padding:4px;margin:4px;background:#222;border:1px solid #444;}
+.active{border-color:#00ffcc;}
+</style>
+</head>
+
+<body>
+
+<div id="hud">UNREAL-STYLE BROWSER ENGINE (ECS + ANIM GRAPH + IK + MOTION MATCHING)</div>
+
+<div id="graph">
+<b>ANIM GRAPH</b>
+<div class="node active">Idle</div>
+<div class="node">Walk</div>
+<div class="node">Run</div>
+<div class="node">Aim</div>
+<div class="node">Shoot</div>
+<div class="node">Ragdoll</div>
+</div>
+
+<script type="module">
+
+import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+
+//////////////////////////////////////////////////////////////
+// ENGINE CORE (ECS-LIKE)
+//////////////////////////////////////////////////////////////
+
+class World{
+constructor(){
+this.entities=[];
+this.systems=[];
+}
+add(e){this.entities.push(e);}
+addSystem(fn){this.systems.push(fn);}
+update(dt){
+for(const s of this.systems)s(this,dt);
+}
+}
+
+const world = new World();
+
+//////////////////////////////////////////////////////////////
+// RIGIDBODY PHYSICS
+//////////////////////////////////////////////////////////////
+
+class Rigidbody{
+constructor(pos){
+this.pos = pos.clone();
+this.vel = new THREE.Vector3();
+this.mass = 1;
+this.grounded = false;
+}
+step(){
+this.vel.y -= 0.01;
+this.vel.multiplyScalar(0.98);
+this.pos.add(this.vel);
+
+if(this.pos.y < 0){
+this.pos.y = 0;
+this.vel.y = 0;
+this.grounded = true;
+}
+}
+}
+
+//////////////////////////////////////////////////////////////
+// ANIMATION GRAPH (REAL NODE SYSTEM)
+//////////////////////////////////////////////////////////////
+
+class AnimNode{
+constructor(name,weight=0){
+this.name=name;
+this.weight=weight;
+this.target=0;
+}
+update(){
+this.weight += (this.target-this.weight)*0.1;
+}
+}
+
+class AnimGraph{
+constructor(){
+this.nodes={
+idle:new AnimNode("idle"),
+walk:new AnimNode("walk"),
+run:new AnimNode("run"),
+aim:new AnimNode("aim"),
+shoot:new AnimNode("shoot"),
+ragdoll:new AnimNode("ragdoll")
+};
+}
+set(state){
+for(const k in this.nodes){
+this.nodes[k].target = (k===state)?1:0;
+}
+}
+update(){
+for(const k in this.nodes){
+this.nodes[k].update();
+}
+}
+getBlend(){
+return this.nodes;
+}
+}
+
+//////////////////////////////////////////////////////////////
+// IK (FABRIK STYLE)
+//////////////////////////////////////////////////////////////
+
+class Bone{
+constructor(len){
+this.len=len;
+this.pos=new THREE.Vector3();
+}
+}
+
+function solveFABRIK(chain,target,iterations=5){
+
+for(let it=0;it<iterations;it++){
+
+// forward
+for(let i=chain.length-1;i>=0;i--){
+const bone = chain[i];
+const dir = target.clone().sub(bone.pos).normalize();
+bone.pos.add(dir.multiplyScalar(0.05));
+}
+
+// backward
+for(let i=0;i<chain.length;i++){
+const bone = chain[i];
+const dir = bone.pos.clone().normalize();
+bone.pos.copy(dir.multiplyScalar(bone.len));
+}
+
+}
+
+}
+
+//////////////////////////////////////////////////////////////
+// MOTION MATCHING (LIGHT VECTOR SEARCH)
+//////////////////////////////////////////////////////////////
+
+const poseDB = [
+{state:"idle",vec:new THREE.Vector3(0,0,0)},
+{state:"walk",vec:new THREE.Vector3(1,0,0)},
+{state:"run",vec:new THREE.Vector3(2,0,0)}
+];
+
+function motionMatch(input){
+
+let best=null;
+let bestD=999;
+
+for(const p of poseDB){
+const d = p.vec.distanceTo(input);
+if(d<bestD){
+bestD=d;
+best=p;
+}
+}
+
+return best.state;
+}
+
+//////////////////////////////////////////////////////////////
+// MECH ENTITY
+//////////////////////////////////////////////////////////////
+
+class Mech{
+
+constructor(x,z,color){
+
+this.body = new Rigidbody(new THREE.Vector3(x,1.5,z));
+
+this.mesh = new THREE.Mesh(
+new THREE.BoxGeometry(1,1.4,0.6),
+new THREE.MeshStandardMaterial({color})
+);
+
+this.graph = new AnimGraph();
+
+this.group = new THREE.Group();
+this.group.add(this.mesh);
+scene.add(this.group);
+
+this.target=null;
+this.cooldown=0;
+
+// IK arm chain
+this.arm=[
+new Bone(0.5),
+new Bone(0.5),
+new Bone(0.4)
+];
+
+}
+
+updateAI(enemies){
+
+if(this.body.pos.y<0) this.body.pos.y=0;
+
+let best=null;
+let bestD=999;
+
+for(const e of enemies){
+if(e===this) continue;
+
+const d=this.body.pos.distanceTo(e.body.pos);
+if(d<bestD){
+best=e;
+bestD=d;
+}
+}
+
+this.target=best;
+
+const speedVec = new THREE.Vector3(
+this.body.vel.x,
+0,
+this.body.vel.z
+);
+
+const state = motionMatch(speedVec);
+
+this.graph.set(state);
+
+if(this.target){
+
+const dir=this.target.body.pos.clone().sub(this.body.pos);
+
+this.body.vel.add(dir.normalize().multiplyScalar(0.01));
+
+this.group.lookAt(this.target.body.pos);
+
+if(this.cooldown<=0){
+
+spawnBullet(
+this.body.pos.clone().add(new THREE.Vector3(0,1.2,0)),
+dir.normalize(),
+this
+);
+
+this.cooldown=30;
+
+}
+
+}
+
+if(this.cooldown>0) this.cooldown--;
+
+}
+
+update(){
+
+this.body.step();
+
+this.group.position.copy(this.body.pos);
+
+this.graph.update();
+
+}
+
+}
+
+//////////////////////////////////////////////////////////////
+// PROJECTILES
+//////////////////////////////////////////////////////////////
+
+class Bullet{
+constructor(pos,vel,owner){
+this.pos=pos.clone();
+this.vel=vel.clone().multiplyScalar(0.8);
+this.life=100;
+this.owner=owner;
+}
+step(){
+this.vel.y-=0.01;
+this.pos.add(this.vel);
+this.life--;
+}
+}
+
+const bullets=[];
+
+function spawnBullet(pos,vel,owner){
+bullets.push(new Bullet(pos,vel,owner));
+}
+
+function updateBullets(mechs){
+
+for(let i=bullets.length-1;i>=0;i--){
+
+const b=bullets[i];
+b.step();
+
+for(const m of mechs){
+
+if(m===b.owner) continue;
+
+if(m.body.pos.distanceTo(b.pos)<1){
+
+m.body.vel.add(new THREE.Vector3(
+Math.random()*0.2,
+0.1,
+Math.random()*0.2
+));
+
+bullets.splice(i,1);
+break;
+}
+
+}
+
+if(b.life<=0) bullets.splice(i,1);
+
+}
+
+}
+
+//////////////////////////////////////////////////////////////
+// SCENE
+//////////////////////////////////////////////////////////////
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0b1020);
+
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,1000);
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff,0.3));
+
+const sun=new THREE.DirectionalLight(0x88aaff,1.2);
+sun.position.set(10,20,10);
+scene.add(sun);
+
+const ground=new THREE.Mesh(
+new THREE.PlaneGeometry(200,200),
+new THREE.MeshStandardMaterial({color:0x1a2233})
+);
+ground.rotation.x=-Math.PI/2;
+scene.add(ground);
+
+//////////////////////////////////////////////////////////////
+// MECHS
+//////////////////////////////////////////////////////////////
+
+const mechs=[
+new Mech(-10,0,0x3a7bd5),
+new Mech(10,0,0xd94b4b),
+new Mech(0,-10,0x3bd97f),
+new Mech(0,10,0xd9a13b)
+];
+
+world.add(mechs);
+
+//////////////////////////////////////////////////////////////
+// LOOP
+//////////////////////////////////////////////////////////////
+
+function animate(){
+
+requestAnimationFrame(animate);
+
+world.update(0.016);
+
+for(const m of mechs){
+m.updateAI(mechs);
+m.update();
+}
+
+updateBullets(mechs);
+
+//////////////////////////////////////////////////////////////
+// CAMERA (tactical RTS-style framing)
+//////////////////////////////////////////////////////////////
+
+const center=new THREE.Vector3();
+
+for(const m of mechs){
+center.add(m.body.pos);
+}
+center.divideScalar(mechs.length);
+
+camera.position.lerp(
+center.clone().add(new THREE.Vector3(0,18,18)),
+0.06
+);
+
+camera.lookAt(center);
+
+renderer.render(scene,camera);
+
+}
+
+animate();
+
+//////////////////////////////////////////////////////////////
+
+window.addEventListener("resize",()=>{
+camera.aspect=innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+
+</body>
+</html>
