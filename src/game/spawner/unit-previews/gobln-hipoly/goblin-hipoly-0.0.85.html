@@ -262,6 +262,11 @@ class HalfEdgeMesh {
             twin.twin = edge;
         }
     }
+    createEdge(){
+        const e = new HEEdge();
+        this.edges.push(e);
+        return e;
+    }
     createCube(size=1){
         const s = size;
         const verts = [
@@ -302,10 +307,10 @@ class HalfEdgeMesh {
         for(const quad of quads){
             const face =
                 new HEFace();
-            const e0 = new HEEdge();
-            const e1 = new HEEdge();
-            const e2 = new HEEdge();
-            const e3 = new HEEdge();
+            const e0 = this.createEdge();
+            const e1 = this.createEdge();
+            const e2 = this.createEdge();
+            const e3 = this.createEdge();
             e0.vertex =
                 this.vertices[quad[0]];
             e1.vertex =
