@@ -773,6 +773,29 @@ class MeshSystem {
         this.selectedFace = null;
         window.mesh = this.topology;
     }
+    updateSelectedEdge(edge){
+        if(!edge){
+            this.selectedEdgeLine.visible=false;
+            return;
+        }
+        this.selectedEdgeLine.visible=true;
+        const a =
+            edge.prev.vertex.position;
+        const b =
+            edge.vertex.position;
+        const geo =
+            new THREE.BufferGeometry();
+        geo.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute([
+                a.x,a.y,a.z,
+                b.x,b.y,b.z
+            ],3)
+        );
+        this.selectedEdgeLine.geometry.dispose();
+        this.selectedEdgeLine.geometry =
+            geo;
+     }
     createRenderMesh(){
         this.selectedEdgeLine =
             new THREE.Line(
