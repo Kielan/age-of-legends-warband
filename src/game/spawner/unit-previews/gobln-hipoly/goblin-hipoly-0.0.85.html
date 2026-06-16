@@ -300,7 +300,7 @@ class HalfEdgeMesh {
                 );
             }
         }
-    }
+    } /**
     createCube(size=1){
         const s = size;
         const verts = [
@@ -430,43 +430,43 @@ class HalfEdgeMesh {
                 n.dot(center.clone().normalize())
             );
         }
-
-    }
+    } **/
+    //Cube generation drops from ~100 lines to ~25.
     createCube(size=1){
-    const s = size;
-    const verts = [
-        [-s,-s,-s],
-        [ s,-s,-s],
-        [ s, s,-s],
-        [-s, s,-s],
+        const s = size;
+        const verts = [
+            [-s,-s,-s],
+            [ s,-s,-s],
+            [ s, s,-s],
+            [-s, s,-s],
 
-        [-s,-s, s],
-        [ s,-s, s],
-        [ s, s, s],
-        [-s, s, s]
-    ];
-    for(const v of verts){
+            [-s,-s, s],
+            [ s,-s, s],
+            [ s, s, s],
+            [-s, s, s]
+        ];
+        for(const v of verts){
         this.vertices.push(
             new HEVertex(...v)
         );
-    }
-    const quads = [
-        [0,1,2,3],
-        [4,5,6,7],
+        }
+        const quads = [
+            [0,1,2,3],
+            [4,5,6,7],
 
-        [0,4,7,3],
-        [1,5,6,2],
+            [0,4,7,3],
+            [1,5,6,2],
 
-        [3,2,6,7],
-        [0,1,5,4]
-    ];
-    for(const quad of quads){
-        this.createFaceFromVertices([
-            this.vertices[quad[0]],
-            this.vertices[quad[1]],
-            this.vertices[quad[2]],
-            this.vertices[quad[3]]
-            ]);
+            [3,2,6,7],
+            [0,1,5,4]
+        ];
+        for(const quad of quads){
+            this.createFaceFromVertices([
+                this.vertices[quad[0]],
+                this.vertices[quad[1]],
+                this.vertices[quad[2]],
+                this.vertices[quad[3]]
+           ]);
         }
     }
     buildGeometry(){
