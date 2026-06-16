@@ -195,6 +195,17 @@ class HalfEdgeMesh {
         //this.edgeMap = new Map();
         this.edgeRegistry = new Map()
     }
+    /* 
+    Directed:0_1
+    means exact direction.
+    Undirected:0_1and1_0
+    collapse to same key
+    Useful for manifold detection.
+    Now:
+    registerEdge(edge);
+    registerTwin(edge);
+    instantly connects twins no repair pass
+    **/
     makeDirectedKey(a,b){
         return `${a.id}_${b.id}`;
     }
