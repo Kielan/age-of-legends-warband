@@ -192,7 +192,64 @@ class HalfEdgeMesh {
         this.vertices = [];
         this.faces = [];
         this.edges = [];
-        this.edgeMap = new Map();
+        //this.edgeMap = new Map();
+        this.edgeRegistry = new Map()
+    }
+    makeDirectedKey(a,b){
+        return `${a.id}_${b.id}`;
+    }
+    makeUndirectedKey(a,b){
+        const ia = a.id;
+        const ib = b.id;
+        return ia < ib
+            ? `${ia}_${ib}`
+            : `${ib}_${ia}`;
+    }
+    registerEdge(edge){
+        const start =
+            edge.prev.vertex;
+        const end =
+            edge.vertex;
+        const key =
+                this.makeDirectedKey(
+                    start,
+                    end
+                );
+        this.edgeRegistry.set(
+            key,
+            edge
+        );
+    }
+    unregisterEdge(edge){
+        const start =
+            edge.prev.vertex;
+        const end =
+            edge.vertex;
+        const key =
+            this.makeDirectedKey(
+                start,
+                end
+            );
+        this.edgeRegistry.delete(key);
+    }
+    registerTwin(edge){
+        const start =
+        edge.prev.vertex;
+        const end =
+        edge.vertex;
+        const twinKey =
+        this.makeDirectedKey(
+            end,
+            start
+        );
+        const twin =
+        this.edgeRegistry.get(
+            twinKey
+        );
+        if(twin){
+            edge.twin = twin;
+            twin.twin = edge;
+        }
     }
     createCube(size=1){
         const s = size;
