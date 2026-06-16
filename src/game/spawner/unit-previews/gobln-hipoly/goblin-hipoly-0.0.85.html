@@ -614,28 +614,8 @@ class HalfEdgeMesh {
             return nv;
         });
         // STEP 4. top face
-        const topFace = new HEFace();
-        this.faces.push(topFace);
-        const n = dupVerts.length;
-        const topEdges = [];
-        for(let i=0;i<n;i++){
-            const e = new HEEdge();
-            e.face = topFace;
-            e.vertex = dupVerts[i];
-            topEdges.push(e);
-            this.edges.push(e);
-            const vA = dupVerts[i];
-            const vB = dupVerts[(i + 1) % n];
-            this.edgeMap.set(vA.id + "_" + vB.id, e);
-        }
-        for(let i=0;i<n;i++){
-            topEdges[i].next = topEdges[(i+1)%n];
-            topEdges[i].prev = topEdges[(i-1+n)%n];
-        }
-        topFace.edge = topEdges[0];
-        for(let i=0;i<n;i++){
-            dupVerts[i].edge = topEdges[i];
-        }
+        const topFace =
+            this.createFaceFromVertices(dupVerts);
         // STEP 5. side faces
         for(let i=0;i<n;i++){
             const v0 = orderedVerts[i];
