@@ -807,7 +807,27 @@ class MeshSystem {
         this.selectedEdgeLine.geometry.dispose();
         this.selectedEdgeLine.geometry =
             geo;
-     }
+    }
+    updateSelectedVertex(vertex){
+        if(!vertex){
+            this.selectedVertexPoint.visible=false;
+            return;
+        }
+        this.selectedVertexPoint.visible=true;
+        const p =
+            vertex.position;
+        const geo =
+            new THREE.BufferGeometry();
+        geo.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute([
+                p.x,p.y,p.z
+            ],3)
+        );
+        this.selectedVertexPoint.geometry.dispose();
+        this.selectedVertexPoint.geometry =
+            geo;
+    }
     createRenderMesh(){
         this.selectedEdgeLine =
             new THREE.Line(
