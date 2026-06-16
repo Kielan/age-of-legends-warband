@@ -1004,6 +1004,7 @@ this.meshSystem = new MeshSystem(this.scene);
 }
 
 updateSelectionVisual(){
+    this.meshSystem.updateSelectedVertex(this.selection.vertex)
     if(!this.meshSystem ||
        !this.meshSystem.highlightMesh){
         return;
