@@ -51,11 +51,8 @@ body{
     width:280px;
     background:#252525;
     border-left:1px solid #444;
-
     color:white;
-
     font-family:monospace;
-
     padding:10px;
 }
 
@@ -242,6 +239,18 @@ class HalfEdgeMesh {
                 end
             );
         this.edgeRegistry.delete(key);
+    }
+    rebuildEdgeRegistry(){
+        this.edgeRegistry.clear();
+        for(const e of this.edges){
+            e.twin = null;
+        }
+        for(const e of this.edges){
+            this.registerEdge(e);
+        }
+        for(const e of this.edges){
+            this.registerTwin(e);
+        }
     }
     registerTwin(edge){
         const start =
@@ -818,7 +827,6 @@ class HalfEdgeMesh {
                 return v; // reuse existing
             }
         }
-
         const nv = this.weldVertex(
             new THREE.Vector3(
                 v.position.x + offset.x,
@@ -828,6 +836,11 @@ class HalfEdgeMesh {
         );
         this.vertices.push(nv);
         return nv;
+    }
+    findEdge(a,b){
+        return this.edgeRegistry.get(
+            this.makeDirectedKey(a,b)
+        );
     }
 }
 
