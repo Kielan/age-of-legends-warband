@@ -774,6 +774,16 @@ class MeshSystem {
         window.mesh = this.topology;
     }
     createRenderMesh(){
+        this.selectedEdgeLine =
+            new THREE.Line(
+            new THREE.BufferGeometry(),
+            new THREE.LineBasicMaterial({
+                color:0xffff00
+            })
+        );
+        this.scene.add(
+            this.selectedEdgeLine
+        );
         const geo = this.topology.buildGeometry();
         const mat = new THREE.MeshStandardMaterial({
             color:0x6688aa,
