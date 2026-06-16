@@ -279,6 +279,28 @@ class HalfEdgeMesh {
         this.edges.push(e);
         return e;
     }
+    validateRegistry(){
+        const map = new Map();
+        for(const e of this.edges){
+            const key =
+                this.makeUndirectedKey(
+                    e.prev.vertex,
+                    e.vertex
+                );
+            if(!map.has(key)){
+            map.set(key, []);
+        }
+        map.get(key).push(e);
+    }
+    for(const [key,list] of map){
+        if(list.length > 2){
+                console.warn(
+                    "Non-manifold",
+                    key
+                );
+            }
+        }
+    }
     createCube(size=1){
         const s = size;
         const verts = [
@@ -410,6 +432,43 @@ class HalfEdgeMesh {
         }
 
     }
+    createCube(size=1){
+    const s = size;
+    const verts = [
+        [-s,-s,-s],
+        [ s,-s,-s],
+        [ s, s,-s],
+        [-s, s,-s],
+
+        [-s,-s, s],
+        [ s,-s, s],
+        [ s, s, s],
+        [-s, s, s]
+    ];
+    for(const v of verts){
+        this.vertices.push(
+            new HEVertex(...v)
+        );
+    }
+    const quads = [
+        [0,1,2,3],
+        [4,5,6,7],
+
+        [0,4,7,3],
+        [1,5,6,2],
+
+        [3,2,6,7],
+        [0,1,5,4]
+    ];
+    for(const quad of quads){
+        this.createFaceFromVertices([
+            this.vertices[quad[0]],
+            this.vertices[quad[1]],
+            this.vertices[quad[2]],
+            this.vertices[quad[3]]
+            ]);
+        }
+    }
     buildGeometry(){
         const faceMap = [];
         const positions = [];
@@ -520,22 +579,17 @@ class HalfEdgeMesh {
     }
     extrudeFace(face){
         if (!face || !face.edge) return;
-
-
         // STEP 1 — canonical loop extraction (EDGE SOURCE OF TRUTH)
         const baseRing = this.getFaceEdgeLoop(face);
         const orderedEdges = baseRing;
         const orderedVerts = orderedEdges.map(e => e.vertex);
-
         // STEP 2 — compute normal (stable)
         const normal = this.computeFaceNormal(face);
-
-        // 🔥 INSERT HERE
+        //
         const a = orderedVerts[0].position;
         const b = orderedVerts[1].position;
         const c = orderedVerts[2].position;
-
-        // (optional but consistent with your earlier debugging)
+        // (optional but consistent w earlier debugging)
         const ab = new THREE.Vector3().subVectors(b, a);
         const ac = new THREE.Vector3().subVectors(c, a);
 
@@ -554,68 +608,53 @@ class HalfEdgeMesh {
                 v.position.y + offset.y,
                 v.position.z + offset.z
             );
-
             this.vertices.push(nv);
-
             // important: traceability link
             nv.original = v;
-
             return nv;
         });
-
-        // 4. top face
+        // STEP 4. top face
         const topFace = new HEFace();
         this.faces.push(topFace);
-
         const n = dupVerts.length;
         const topEdges = [];
-
         for(let i=0;i<n;i++){
             const e = new HEEdge();
             e.face = topFace;
             e.vertex = dupVerts[i];
             topEdges.push(e);
             this.edges.push(e);
-
             const vA = dupVerts[i];
             const vB = dupVerts[(i + 1) % n];
             this.edgeMap.set(vA.id + "_" + vB.id, e);
         }
-
         for(let i=0;i<n;i++){
             topEdges[i].next = topEdges[(i+1)%n];
             topEdges[i].prev = topEdges[(i-1+n)%n];
         }
-
         topFace.edge = topEdges[0];
-
         for(let i=0;i<n;i++){
             dupVerts[i].edge = topEdges[i];
         }
-
-        // 5. side faces
+        // STEP 5. side faces
         for(let i=0;i<n;i++){
-
             const v0 = orderedVerts[i];
             const v1 = orderedVerts[(i+1)%n];
             const v2 = dupVerts[(i+1)%n];
             const v3 = dupVerts[i];
-
             const f = new HEFace();
             this.faces.push(f);
-
             const e0 = new HEEdge();
             const e1 = new HEEdge();
             const e2 = new HEEdge();
             const e3 = new HEEdge();
-
             e0.vertex = v1;
             e1.vertex = v2;
             e2.vertex = v3;
             e3.vertex = v0;
-
+     
             e0.face = e1.face = e2.face = e3.face = f;
-
+            
             e0.next = e1;
             e1.next = e2;
             e2.next = e3;
