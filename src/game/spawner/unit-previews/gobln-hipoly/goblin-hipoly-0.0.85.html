@@ -612,6 +612,18 @@ class HalfEdgeMesh {
         const canonicalKey = (a, b) => {
             return a < b ? `${a}_${b}` : `${b}_${a}`;
         };
+        this.selectedVertexPoint =
+            new THREE.Points(
+            new THREE.BufferGeometry(),
+                new THREE.PointsMaterial({
+                    color:0xffff00,
+                    size:0.18
+                })
+            );
+        this.scene.add(
+            this.selectedVertexPoint
+        );
+        
         // STEP 1: clear all twins
         for (const e of this.edges) {
             e.twin = null;
