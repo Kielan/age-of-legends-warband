@@ -892,6 +892,14 @@ this.renderer.domElement.addEventListener("pointerdown",(e)=>{
     if(!hits.length) return;
 
     const hit = hits[0];
+    if(this.selection.mode === "vertex"){
+        this.selection.clear();
+        this.selection.vertex =
+            this.pickVertex(
+                this.raycaster.ray
+            );
+        return;
+    }
     if(this.selection.mode === "face"){
         const face =
             this.meshSystem.geometry.userData.faceMap[
