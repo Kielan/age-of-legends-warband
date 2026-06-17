@@ -248,6 +248,12 @@ class HalfEdgeMesh {
         this.edges.push(e);
         return e;
     }
+    getNextLoopEdge(edge){
+        if(!edge.twin)
+            return null;
+        const e = edge.twin.next.next;
+        return e;
+    }
     createFaceFromVertices(vertices){
         const face = new HEFace();
         this.faces.push(face);
