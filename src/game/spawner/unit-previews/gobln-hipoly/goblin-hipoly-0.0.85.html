@@ -190,15 +190,15 @@ class HalfEdgeMesh {
             : `${ib}_${ia}`;
     }
     registerEdge(edge){
-        if(this.edgeRegistry.has(key)){
-            console.warn("Duplicate edge",key);
-        }
         const start = edge.prev.vertex;
         const end = edge.vertex;
         const key = this.makeDirectedKey(
                         start,
                         end
                     );
+        if(this.edgeRegistry.has(key)){
+            console.warn("Duplicate edge",key);
+        }
         this.edgeRegistry.set(
             key,
             edge);
