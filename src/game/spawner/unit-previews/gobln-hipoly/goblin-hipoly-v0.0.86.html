@@ -1011,138 +1011,141 @@ class MeshSystem {
 
 // APP
 class EditorApp{
-constructor(){
+    constructor(){
     // "vertex" | "edge" | "face"
     this.selection = new Selection();
     this.initScene();
     this.initHelpers();
     this.animate();
     // window.mesh = this.topology;
-}
-
-initScene(){
-
+    }
+    pickEdge(ray){
+        let bestEdge = null;
+        let bestDistance = Infinity;
+        const cpRay = new THREE.Vector3();
+        const cpSeg = new THREE.Vector3();
+        for(const edge of this.meshSystem.topology.edges){
+            const a = edge.prev.vertex.position;
+            const b = edge.vertex.position;
+            ray.distanceSqToSegment(
+                a,
+                b,
+                cpRay,
+                cpSeg
+            );
+            const d = cpRay.distanceTo(cpSeg);
+            if(d < 0.15 && d < bestDistance){
+                bestDistance = d;
+                bestEdge = edge;
+            }
+        }
+        return bestEdge;
+    }
+    initScene(){
 // var viewport =
 //     document.getElementById("viewport");
 // var stats =
 //     document.getElementById("stats");
 
-this.scene = new THREE.Scene();
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x2a2a2a);
+        this.camera = new THREE.PerspectiveCamera(
+        60,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        1000
+        );
 
-this.scene.background =
-new THREE.Color(0x2a2a2a);
+        this.camera.position.set(4,4,6);
+        this.renderer =
+        new THREE.WebGLRenderer({
+            antialias:true
+        });
 
-this.camera =
-new THREE.PerspectiveCamera(
-60,
-window.innerWidth /
-window.innerHeight,
-0.1,
-1000
-);
+        this.renderer.setSize(
+            viewport.clientWidth,
+            viewport.clientHeight
+        );
 
-this.camera.position.set(4,4,6);
+        viewport.appendChild(this.renderer.domElement);
 
-this.renderer =
-new THREE.WebGLRenderer({
-antialias:true
-});
+        this.controls =
+        new OrbitControls(
+            this.camera,
+            this.renderer.domElement
+        );
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
 
-this.renderer.setSize(
-viewport.clientWidth,
-viewport.clientHeight
-);
+        this.renderer.domElement.addEventListener("pointerdown",(e)=>{
+            const rect = this.renderer.domElement.getBoundingClientRect();
+            this.mouse.x = ((e.clientX - rect.left)/ rect.width) * 2 - 1;
+            this.mouse.y = -((e.clientY - rect.top)/ rect.height) * 2 + 1;
+            this.raycaster.setFromCamera(this.mouse,this.camera);
+            const hits =this.raycaster.intersectObject(this.meshSystem.mesh);
+            if(!hits.length) return;
 
-viewport.appendChild(
-this.renderer.domElement
-);
-
-this.controls =
-new OrbitControls(
-this.camera,
-this.renderer.domElement
-);
-
-this.raycaster = new THREE.Raycaster();
-
-this.mouse = new THREE.Vector2();
-
-this.renderer.domElement.addEventListener("pointerdown",(e)=>{
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    this.mouse.x = ((e.clientX - rect.left)/ rect.width) * 2 - 1;
-    this.mouse.y = -((e.clientY - rect.top)/ rect.height) * 2 + 1;
-    this.raycaster.setFromCamera(this.mouse,this.camera);
-    const hits =this.raycaster.intersectObject(this.meshSystem.mesh);
-    if(!hits.length) return;
-
-    const hit = hits[0];
-    if(this.selection.mode === "vertex"){
-        this.selection.clear();
-        this.selection.vertex =
-            this.pickVertex(
-                this.raycaster.ray
-            );
-        return;
-    }
-    if(this.selection.mode === "face"){
-        const face =
-            this.meshSystem.geometry.userData.faceMap[
+            const hit = hits[0];
+            if(this.selection.mode === "vertex"){
+                this.selection.clear();
+                this.selection.vertex =
+                this.pickVertex(
+                    this.raycaster.ray
+                );
+                return;
+            }
+            if(this.selection.mode === "face"){
+                const face =
+                this.meshSystem.geometry.userData.faceMap[
                 hit.faceIndex
-            ];
-        this.selection.face = face;
-        console.log("FACE:", hit.faceIndex);
-    }
-});
+                ];
+                this.selection.face = face;
+            console.log("FACE:", hit.faceIndex);
+            }
+        });
 
-window.addEventListener("keydown",(e)=>{
-    if(e.key === "e"){
+        window.addEventListener("keydown",(e)=>{
+        if(e.key === "e"){
         const face =
             APP.selection.face;
-
         if(!face) return;
-
         APP.meshSystem.topology.extrudeFace(face);
         APP.meshSystem.topology.validateFaces();
         APP.meshSystem.rebuild();
+        }
+        });
     }
-});
-
-}
-
-initHelpers(){
-const grid =new THREE.GridHelper(50,50);
-this.scene.add(grid);
-const axes =new THREE.AxesHelper(2);
-this.scene.add(axes);
-const ambient = new THREE.AmbientLight(0xffffff,1);
-this.scene.add(ambient);
-const sun = new THREE.DirectionalLight(0xffffff,2);
-sun.position.set(10,10,5);
-this.scene.add(sun);
-this.meshSystem = new MeshSystem(this.scene);
-}
-
-updateSelectionVisual(){
-    this.meshSystem.updateSelectedVertex(this.selection.vertex)
-    if(!this.meshSystem ||
-       !this.meshSystem.highlightMesh){
-        return;
-    }
-    const face = this.selection.face;
-    if(!face){
+    initHelpers(){
+        const grid =new THREE.GridHelper(50,50);
+        this.scene.add(grid);
+        const axes =new THREE.AxesHelper(2);
+        this.scene.add(axes);
+        const ambient = new THREE.AmbientLight(0xffffff,1);
+        this.scene.add(ambient);
+        const sun = new THREE.DirectionalLight(0xffffff,2);
+        sun.position.set(10,10,5);
+        this.scene.add(sun);
+        this.meshSystem = new MeshSystem(this.scene);
+     }
+    updateSelectionVisual(){
+        this.meshSystem.updateSelectedVertex(this.selection.vertex)
+        if(!this.meshSystem ||
+            !this.meshSystem.highlightMesh){
+            return;
+        }
+        const face = this.selection.face;
+        if(!face){
         this.meshSystem.highlightMesh.visible = false;
         return;
+        }
+        this.meshSystem.highlightMesh.visible = true;
     }
-    this.meshSystem.highlightMesh.visible = true;
-}
-
-animate(){
+    animate(){
     requestAnimationFrame(()=>this.animate());
     this.controls.update();
     this.renderer.render(this.scene,this.camera);
-
     this.updateSelectionVisual();
-}
+    }
 }
 
 const APP = new EditorApp();
