@@ -2,9 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-
 <title>Goblin Editor</title>
-
 <style>
 
 html,
@@ -36,17 +34,14 @@ body{
     color:white;
     font-family:monospace;
 }
-
 #content{
     flex:1;
     display:flex;
 }
-
 #viewport{
     flex:1;
     position:relative;
 }
-
 #inspector{
     width:280px;
     background:#252525;
@@ -55,56 +50,37 @@ body{
     font-family:monospace;
     padding:10px;
 }
-
 button{
     margin-right:5px;
 }
-
 </style>
 </head>
-
 <body>
-
 <div id="root">
-
 <div id="toolbar">
-
 <button id="selectTool">
 Select
 </button>
-
 <button id="extrudeTool">
 Extrude
 </button>
-
 <button id="sculptTool">
 Sculpt
 </button>
-
 </div>
 
 <div id="content">
-
 <div id="viewport"></div>
-
 <div id="inspector">
-
 <h3>Inspector</h3>
-
 <div id="stats">
-
 Vertices: 0<br>
 Edges: 0<br>
 Faces: 0
-
 </div>
-
 </div>
-
 </div>
-
 </div>
-
 <script type="module">
 /**
  * Currently Implemented
@@ -217,30 +193,20 @@ class HalfEdgeMesh {
         if(this.edgeRegistry.has(key)){
             console.warn("Duplicate edge",key);
         }
-        const start =
-            edge.prev.vertex;
-        const end =
-            edge.vertex;
-        const key =
-                this.makeDirectedKey(
-                    start,
-                    end
-                );
+        const start = edge.prev.vertex;
+        const end = edge.vertex;
+        const key = this.makeDirectedKey(
+                        start,
+                        end
+                    );
         this.edgeRegistry.set(
             key,
-            edge
-        );
+            edge);
     }
     unregisterEdge(edge){
-        const start =
-            edge.prev.vertex;
-        const end =
-            edge.vertex;
-        const key =
-            this.makeDirectedKey(
-                start,
-                end
-            );
+        const start = edge.prev.vertex;
+        const end = edge.vertex;
+        const key = this.makeDirectedKey(start, end);
         this.edgeRegistry.delete(key);
     }
     rebuildEdgeRegistry(){
@@ -256,17 +222,14 @@ class HalfEdgeMesh {
         }
     }
     registerTwin(edge){
-        const start =
-        edge.prev.vertex;
-        const end =
-        edge.vertex;
+        const start = edge.prev.vertex;
+        const end = edge.vertex;
         const twinKey =
         this.makeDirectedKey(
             end,
             start
         );
-        const twin =
-        this.edgeRegistry.get(
+        const twin =this.edgeRegistry.get(
             twinKey
         );
         if(twin){
@@ -562,8 +525,7 @@ class HalfEdgeMesh {
                 );
             }
         }
-        const geometry =
-            new THREE.BufferGeometry();
+        const geometry = new THREE.BufferGeometry();
         geometry.setAttribute(
             "position",
             new THREE.Float32BufferAttribute(
@@ -598,7 +560,6 @@ class HalfEdgeMesh {
             centroid.add(v.position);
         }
         centroid.multiplyScalar(1 / orderedVerts.length);
-        
         const offset = normal.clone().multiplyScalar(0.8);
 
         // FIX 2: stable duplication
@@ -617,6 +578,7 @@ class HalfEdgeMesh {
         const topFace =
             this.createFaceFromVertices(dupVerts);
         // STEP 5. side faces
+        /**
         for(let i=0;i<n;i++){
             const v0 = orderedVerts[i];
             const v1 = orderedVerts[(i+1)%n];
@@ -648,14 +610,26 @@ class HalfEdgeMesh {
             f.edge = e0;
 
             this.edges.push(e0,e1,e2,e3);
-        }
+        } **/
+        for(let i=0;i<n;i++){
+            const v0 = orderedVerts[i];
+            const v1 = orderedVerts[(i+1)%n];
 
+            const v2 = dupVerts[(i+1)%n];
+            const v3 = dupVerts[i];
+
+            this.createFaceFromVertices([
+                v0,
+                v1,
+                v2,
+                v3
+            ]);
+        }
         // 6. remove old face
         const idx = this.faces.indexOf(face);
         if(idx !== -1){
             this.faces.splice(idx,1);
         }
-
         this.repairTwins();
     }
     validateFaces(){
