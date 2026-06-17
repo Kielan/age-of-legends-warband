@@ -1086,6 +1086,14 @@ class EditorApp{
             if(!hits.length) return;
 
             const hit = hits[0];
+            if(this.selection.mode === "edge"){
+                this.selection.clear();
+                this.selection.edge =
+                this.pickEdge(
+                    this.raycaster.ray
+                );
+                return;
+            }
             if(this.selection.mode === "vertex"){
                 this.selection.clear();
                 this.selection.vertex =
