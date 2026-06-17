@@ -215,9 +215,15 @@ class HalfEdgeMesh {
             e.twin = null;
         }
         for(const e of this.edges){
+            if(e.prev.vertex === e.vertex){
+                continue;
+            }
             this.registerEdge(e);
         }
         for(const e of this.edges){
+            if(e.prev.vertex === e.vertex){
+                continue;
+            }
             this.registerTwin(e);
         }
     }
@@ -241,6 +247,49 @@ class HalfEdgeMesh {
         const e = new HEEdge();
         this.edges.push(e);
         return e;
+    }
+    createFaceFromVertices(vertices){
+        const face = new HEFace();
+        this.faces.push(face);
+        const edges = [];
+        const count = vertices.length;
+        for(let i=0;i<count;i++){
+            const start = vertices[i];
+            const end = vertices[(i+1)%count];
+            const edge = this.createEdge(
+                start,
+                end,
+                face
+            );
+            edges.push(edge);
+        }
+        for(let i=0;i<count;i++){
+            const edge = edges[i];
+            edge.next = edges[(i+1)%count];
+            edge.prev = edges[(i-1+count)%count];
+        }
+        face.edge = edges[0];
+        for(const edge of edges){
+            this.registerEdge(edge);
+        }
+        for(const edge of edges){
+            this.registerTwin(edge);
+        }
+        return face;
+    }
+    validateFaceLoops(){
+        for(const face of this.faces){
+            let count = 0;
+            let e = face.edge;
+            do{
+                count++;
+                if(count > 100){
+                   console.error("Broken face loop",face.id);
+                    break;
+                }
+                e = e.next;
+            }while(e !== face.edge);
+        }
     }
     validateRegistry(){
         const map = new Map();
@@ -449,7 +498,6 @@ class HalfEdgeMesh {
             }
             while(edge!==face.edge);
             
-            
             const ab =
                 new THREE.Vector3().subVectors(
                     verts[1],
@@ -482,7 +530,6 @@ class HalfEdgeMesh {
                     center.clone().normalize()
                 )
             );
-            
             
             positions.push(
                 verts[0].x,
@@ -611,6 +658,7 @@ class HalfEdgeMesh {
 
             this.edges.push(e0,e1,e2,e3);
         } **/
+        const n = dupVerts.length;
         for(let i=0;i<n;i++){
             const v0 = orderedVerts[i];
             const v1 = orderedVerts[(i+1)%n];
@@ -690,18 +738,6 @@ class HalfEdgeMesh {
         const canonicalKey = (a, b) => {
             return a < b ? `${a}_${b}` : `${b}_${a}`;
         };
-        this.selectedVertexPoint =
-            new THREE.Points(
-            new THREE.BufferGeometry(),
-                new THREE.PointsMaterial({
-                    color:0xffff00,
-                    size:0.18
-                })
-            );
-        this.scene.add(
-            this.selectedVertexPoint
-        );
-        
         // STEP 1: clear all twins
         for (const e of this.edges) {
             e.twin = null;
@@ -809,7 +845,6 @@ class HalfEdgeMesh {
         const loop = [];
         let start = face.edge;
         let e = start;
-
         do {
             loop.push(e);
             e = e.next;
@@ -817,19 +852,21 @@ class HalfEdgeMesh {
 
         return loop;
     }
-    weldVertex(position, epsilon = 1e-6){
-        for (const v of this.vertices) {
-            if (v.position.distanceTo(position) < epsilon) {
-                return v; // reuse existing
+    weldVertex(position, epsilon=1e-6){
+        for(const v of this.vertices){
+            if(
+                v.position.distanceTo(position)
+                < epsilon
+            ){
+                return v;
             }
         }
-        const nv = this.weldVertex(
-            new THREE.Vector3(
-                v.position.x + offset.x,
-                v.position.y + offset.y,
-                v.position.z + offset.z
-            )
-        );
+        const nv =
+            new HEVertex(
+                position.x,
+                position.y,
+                position.z
+            );
         this.vertices.push(nv);
         return nv;
     }
