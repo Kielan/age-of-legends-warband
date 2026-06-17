@@ -254,6 +254,36 @@ class HalfEdgeMesh {
         const e = edge.twin.next.next;
         return e;
     }
+    collectEdgeLoop(startEdge){
+    const loop = [];
+    let edge = startEdge;
+    while(edge){
+        loop.push(edge);
+        edge =
+            this.getNextLoopEdge(
+                edge
+            );
+        if(edge === startEdge)
+            break;
+    }
+    return loop;
+    }
+    getNextRingEdge(edge){
+    if(!edge.twin)
+        return null;
+    return edge.next.twin?.next;
+    }
+    collectEdgeRing(startEdge){
+        const ring = [];
+        let edge = startEdge;
+        while(edge){
+            ring.push(edge);
+            edge = this.getNextRingEdge(edge);
+            if(edge === startEdge)
+                break;
+        }
+        return ring;
+    }
     createFaceFromVertices(vertices){
         const face = new HEFace();
         this.faces.push(face);
