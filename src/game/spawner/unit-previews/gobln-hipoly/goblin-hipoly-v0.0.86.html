@@ -556,6 +556,45 @@ class HalfEdgeMesh {
     }
     replaceEdgeWithSplit(edge, newVertex) {
         const oldNext = edge.next;
+        const newEdge = this.createEdge();
+        newEdge.vertex = edge.vertex;
+        edge.vertex = newVertex;
+        edge.next = newEdge;
+        newEdge.prev = edge;
+        newEdge.next = oldNext;
+        oldNext.prev = newEdge;
+        newEdge.face = edge.face;
+        this.registerEdge(edge);
+        this.registerEdge(newEdge);
+        this.registerTwin(edge);
+        this.registerTwin(newEdge);
+        return newEdge;
+    }
+    splitEdgeFull(edge){
+        const newVertex = this.splitEdge(edge);
+        this.replaceEdgeWithSplit(edge,newVertex);
+        if(edge.twin) {
+            const twin = edge.twin;
+            this.replaceEdgeWithSplit(edge, newVertex);
+        }
+        this.rebuildEdgeRegistry();
+        return newVertex;
+    }
+    getVertexEdges(vertex){
+        const result = [];
+        for (const e of this.edges) {
+            if(e.vertex === vertex || e.prev.vertex === vertex) {
+                result.push(e);
+            }
+        }
+        return result;
+    }
+    dissolveVertex(vertex) {
+        const edges = this.getVertexEdges(vertex);
+        if(edges.length !==4) {
+            console.warn("cannot dissolve vertex", vertex.id);
+            return;
+        }
     }
     //Cube generation drops from ~100 lines to ~25.
     createCube(size=1){
