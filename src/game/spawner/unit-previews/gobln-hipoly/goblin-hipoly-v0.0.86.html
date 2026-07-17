@@ -150,7 +150,6 @@ class MeshEuler {
             "makeFace requires at least 3 vertices."
         );
         return null;
-
     }
     //--------------------------------------------------
     // Create face
@@ -176,7 +175,6 @@ class MeshEuler {
     //--------------------------------------------------
     // Build circular loop
     //--------------------------------------------------
-
     const n = edges.length;
     for(let i=0;i<n;i++){
         edges[i].next = edges[(i+1)%n];
@@ -186,7 +184,6 @@ class MeshEuler {
     //--------------------------------------------------
     // Assign representative pointers
     //--------------------------------------------------
-
     face.edge = edges[0];
     for(let i=0;i<n;i++){
         if(!vertices[i].edge){
@@ -197,7 +194,6 @@ class MeshEuler {
     //--------------------------------------------------
     // Register edges
     //--------------------------------------------------
-
     for(const e of edges){
         this.registerEdge(e);
     }
@@ -205,12 +201,61 @@ class MeshEuler {
     //--------------------------------------------------
     // Connect twins immediately
     //--------------------------------------------------
-
     for(const e of edges){
         this.registerTwin(e);
     }
-
     return face;
+    }
+    
+    killFace(face){
+        if(!face)
+            return;
+
+    //--------------------------------------------------
+    // Collect loop
+    //--------------------------------------------------
+    const edges = [];
+    let e = face.edge;
+    do{
+        edges.push(e);
+        e = e.next;
+    }
+    while(e !== face.edge);
+
+    //--------------------------------------------------
+    // Disconnect twins
+    //--------------------------------------------------
+    for(const edge of edges){
+        if(edge.twin){
+            edge.twin.twin = null;
+            edge.twin = null;
+        }
+
+    }
+
+    //--------------------------------------------------
+    // Remove registry entries
+    //--------------------------------------------------
+    for(const edge of edges){
+        this.unregisterEdge(edge);
+    }
+    //--------------------------------------------------
+    // Remove edges
+    //--------------------------------------------------
+    this.edges =
+        this.edges.filter(
+            edge => !edges.includes(edge)
+        );
+l
+    //--------------------------------------------------
+    // Remove face
+    //--------------------------------------------------
+    const index =
+        this.faces.indexOf(face);
+    if(index !== -1){
+        this.faces.splice(index,1);
+    }
+
 }
 
 }
