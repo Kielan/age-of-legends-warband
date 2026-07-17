@@ -131,6 +131,24 @@ const viewport =
 const stats =
     document.getElementById("stats");
 
+
+class FaceBuilder{
+    constructor(mesh){
+        this.mesh = mesh;
+    }
+    collectVertices(face){
+        const verts=[];
+        let e=face.edge;
+        do{
+            verts.push(e.vertex);
+            e=e.next;
+        }while(e!==face.edge);
+
+        return verts;
+    }
+
+}
+    
 class MeshEuler {
     constructor(mesh){
         this.mesh = mesh;
