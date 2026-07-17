@@ -255,9 +255,216 @@ l
     if(index !== -1){
         this.faces.splice(index,1);
     }
+    }
+    joinFace(faceA, faceB){
+
+    if(!faceA || !faceB)
+        return null;
+
+    //--------------------------------------------------
+    // Find shared edge
+    //--------------------------------------------------
+
+    let shared = null;
+
+    let e = faceA.edge;
+
+    do{
+        if(
+            e.twin &&
+            e.twin.face === faceB
+        ){
+            shared = e;
+            break;
+        }
+        e = e.next;
+
+    }while(e !== faceA.edge);
+
+    if(!shared){
+        console.warn(
+            "Faces are not adjacent."
+        );
+        return null;
+
+    }
+
+    //--------------------------------------------------
+    // Collect loop from Face A
+    //--------------------------------------------------
+
+    const verts = [];
+
+    e = shared.next;
+
+    while(e !== shared){
+
+        verts.push(e.vertex);
+
+        e = e.next;
+
+    }
+
+    //--------------------------------------------------
+    // Collect loop from Face B
+    //--------------------------------------------------
+
+    let t = shared.twin.next;
+
+    while(t !== shared.twin){
+
+        verts.push(t.vertex);
+
+        t = t.next;
+
+    }
+
+    //--------------------------------------------------
+    // Remove duplicate consecutive vertices
+    //--------------------------------------------------
+
+    const clean = [];
+
+    for(const v of verts){
+
+        if(
+            clean.length===0 ||
+            clean[clean.length-1]!==v
+        ){
+            clean.push(v);
+        }
+
+    }
+
+    //--------------------------------------------------
+    // Remove duplicate first/last
+    //--------------------------------------------------
+
+    if(
+        clean.length>2 &&
+        clean[0]===clean[clean.length-1]
+    ){
+
+        clean.pop();
+
+    }
+
+    //--------------------------------------------------
+    // Delete old faces
+    //--------------------------------------------------
+
+    this.killFace(faceA);
+
+    this.killFace(faceB);
+
+    //--------------------------------------------------
+    // Build merged face
+    //--------------------------------------------------
+
+    return this.makeFace(clean);
 
 }
+    splitFace(face, vertexA, vertexB){
 
+    if(!face)
+        return [];
+
+    //--------------------------------------------------
+    // Find both vertices
+    //--------------------------------------------------
+
+    let startEdge = null;
+    let endEdge = null;
+
+    let e = face.edge;
+
+    do{
+
+        if(e.vertex === vertexA)
+            startEdge = e;
+
+        if(e.vertex === vertexB)
+            endEdge = e;
+
+        e = e.next;
+
+    }
+    while(e !== face.edge);
+
+    if(
+        !startEdge ||
+        !endEdge
+    ){
+
+        console.warn(
+            "Vertices not on face."
+        );
+
+        return [];
+
+    }
+
+    //--------------------------------------------------
+    // Walk first path
+    //--------------------------------------------------
+
+    const loop1 = [];
+
+    e = startEdge;
+
+    while(true){
+
+        loop1.push(e.vertex);
+
+        if(e.vertex===vertexB)
+            break;
+
+        e=e.next;
+
+    }
+
+    //--------------------------------------------------
+    // Walk second path
+    //--------------------------------------------------
+
+    const loop2 = [];
+
+    e = endEdge;
+
+    while(true){
+
+        loop2.push(e.vertex);
+
+        if(e.vertex===vertexA)
+            break;
+
+        e=e.next;
+
+    }
+
+    //--------------------------------------------------
+    // Remove original face
+    //--------------------------------------------------
+
+    this.killFace(face);
+
+    //--------------------------------------------------
+    // Create two new faces
+    //--------------------------------------------------
+
+    const f0 =
+        this.makeFace(loop1);
+
+    const f1 =
+        this.makeFace(loop2);
+
+    return [
+        f0,
+        f1
+    ];
+
+}
+    
 }
 
     
