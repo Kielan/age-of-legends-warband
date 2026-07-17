@@ -131,6 +131,26 @@ const viewport =
 const stats =
     document.getElementById("stats");
 
+class MeshEuler {
+    constructor(mesh){
+        this.mesh = mesh;
+
+    }
+    makeEdge(vertex, face) {
+        const e = new HEEdge();
+        e.vertex = vertex;
+        e.face = face;
+        mesh.edges.push(e);
+
+        return e;
+    }
+
+}
+
+    
+const euler =
+    new MeshEuler(mesh);
+    
 // TOPOLOGY
 class HEVertex {
     constructor(x,y,z){
