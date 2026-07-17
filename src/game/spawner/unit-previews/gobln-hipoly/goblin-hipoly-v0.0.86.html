@@ -1681,13 +1681,22 @@ class EditorApp{
 
         window.addEventListener("keydown",(e)=>{
         if(e.key === "e"){
-        const face =
-            APP.selection.face;
-        if(!face) return;
-        APP.meshSystem.topology.extrudeFace(face);
-        APP.meshSystem.topology.validateFaces();
-        APP.meshSystem.rebuild();
+            const face = APP.selection.face;
+            if(!face) return;
+            APP.meshSystem.topology.extrudeFace(face);
+            APP.meshSystem.topology.validateFaces();
+            APP.meshSystem.rebuild();
         }
+        
+        if(e.key==="s"){
+            const face=APP.selection.face;
+            if(!face)
+                return;
+            APP.meshSystem.faceBuilder
+            .splitVertical(face);
+            APP.meshSystem.rebuild();
+        }
+            
         });
     }
     initHelpers(){
