@@ -144,6 +144,74 @@ class MeshEuler {
 
         return e;
     }
+    makeFace(vertices){
+    if(vertices.length < 3){
+        console.warn(
+            "makeFace requires at least 3 vertices."
+        );
+        return null;
+
+    }
+    //--------------------------------------------------
+    // Create face
+    //--------------------------------------------------
+
+    const face = new HEFace();
+    this.faces.push(face);
+
+    //--------------------------------------------------
+    // Create edges
+    //--------------------------------------------------
+
+    const edges = [];
+
+    for(let i=0;i<vertices.length;i++){
+        const e = this.createEdge();
+        e.vertex = vertices[i];
+        e.face = face;
+        edges.push(e);
+
+    }
+
+    //--------------------------------------------------
+    // Build circular loop
+    //--------------------------------------------------
+
+    const n = edges.length;
+    for(let i=0;i<n;i++){
+        edges[i].next = edges[(i+1)%n];
+        edges[i].prev = edges[(i-1+n)%n];
+    }
+
+    //--------------------------------------------------
+    // Assign representative pointers
+    //--------------------------------------------------
+
+    face.edge = edges[0];
+    for(let i=0;i<n;i++){
+        if(!vertices[i].edge){
+            vertices[i].edge = edges[i];
+        }
+    }
+
+    //--------------------------------------------------
+    // Register edges
+    //--------------------------------------------------
+
+    for(const e of edges){
+        this.registerEdge(e);
+    }
+
+    //--------------------------------------------------
+    // Connect twins immediately
+    //--------------------------------------------------
+
+    for(const e of edges){
+        this.registerTwin(e);
+    }
+
+    return face;
+}
 
 }
 
