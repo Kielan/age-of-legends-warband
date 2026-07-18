@@ -23,12 +23,9 @@ body{
     height:40px;
     background:#2d2d2d;
     border-bottom:1px solid #444;
-
     display:flex;
     align-items:center;
-
     padding-left:10px;
-
     color:white;
     font-family:monospace;
 }
@@ -202,6 +199,19 @@ class LandmarkDetector{
         };
     }
 }
+
+class GoblinTemplate{
+    constructor(mesh){
+        this.mesh=mesh;
+    }
+    build(lm){
+        this.buildHead(lm);
+        this.buildTorso(lm);
+        this.buildPelvis(lm);
+        this.buildArms(lm);
+        this.buildLegs(lm);
+    }
+}
     
 class GoblinSkeleton{
     head
@@ -227,9 +237,7 @@ class FaceBuilder{
         return verts;
     }
     splitVertical(face){
-
         const verts=this.collectVertices(face);
-
         if(verts.length!==4)
             return;
 
@@ -237,35 +245,28 @@ class FaceBuilder{
         const v1=verts[1];
         const v2=verts[2];
         const v3=verts[3];
-
     const topMid=
         this.mesh.weldVertex(
             v0.position.clone().lerp(v1.position,0.5)
         );
-
     const bottomMid=
         this.mesh.weldVertex(
             v3.position.clone().lerp(v2.position,0.5)
         );
-
     this.mesh.killFace(face);
-
     this.mesh.createFaceFromVertices([
         v0,
         topMid,
         bottomMid,
         v3
     ]);
-
     this.mesh.createFaceFromVertices([
         topMid,
         v1,
         v2,
         bottomMid
     ]);
-
     this.mesh.rebuildEdgeRegistry();
-
     this.mesh.validateFaceLoops();
     }
 }
