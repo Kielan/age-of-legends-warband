@@ -167,7 +167,24 @@ class Silhouette{
     width;
     height;
 }
+class SilhouetteExtractor{
+    extract(image){
+        const mask=[];
+        for(let y=0;y<image.height;y++){
+            mask[y]=[];
+            for(let x=0;x<image.width;x++) {
+                const i=(y*image.width+x)*4;
 
+                const r=image.pixels[i];
+                const g=image.pixels[i+1];
+                const b=image.pixels[i+2];
+                const brightness=(r+g+b)/3;
+                mask[y][x]=brightness<180;
+            }
+        }
+        return mask;
+    }
+}
 class GoblinSkeleton{
     head
     neck
