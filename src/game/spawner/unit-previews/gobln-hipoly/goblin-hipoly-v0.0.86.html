@@ -13,14 +13,12 @@ body{
     overflow:hidden;
     background:#1a1a1a;
 }
-
 #root{
     width:100%;
     height:100%;
     display:flex;
     flex-direction:column;
 }
-
 #toolbar{
     height:40px;
     background:#2d2d2d;
@@ -191,6 +189,20 @@ class SilhouetteExtractor{
         return mask;
     }
 }
+
+class LandmarkDetector{
+    detect(mask){
+        return{
+            head:this.findHead(mask),
+            neck:this.findNeck(mask),
+            shoulders:this.findShoulders(mask),
+            pelvis:this.findPelvis(mask),
+            hands:this.findHands(mask),
+            feet:this.findFeet(mask)
+        };
+    }
+}
+    
 class GoblinSkeleton{
     head
     neck
