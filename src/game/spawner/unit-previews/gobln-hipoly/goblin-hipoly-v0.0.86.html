@@ -211,6 +211,18 @@ class GoblinTemplate{
         this.buildArms(lm);
         this.buildLegs(lm);
     }
+    buildHead(lm){
+        const cube=this.mesh.createCubePrimitive();
+        cube.scale(
+            lm.head.width,
+            lm.head.height,
+            lm.head.depth
+        );
+        cube.translate(
+            lm.head.center
+        );
+    }
+    
 }
     
 class GoblinSkeleton{
