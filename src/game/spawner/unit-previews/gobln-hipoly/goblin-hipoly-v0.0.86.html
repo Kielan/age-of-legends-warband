@@ -252,6 +252,52 @@ export class PrimitiveFactory {
 
 }
     createCapsule(radius,height,sides){}
+    createCapsule(radius,height,sides=16){
+
+    const body =
+        this.createCylinder(
+            radius,
+            height,
+            sides
+        );
+
+    const top =
+        this.createSphere(2);
+
+    const bottom =
+        this.createSphere(2);
+
+    //--------------------------------------------------
+
+    for(const v of top.vertices){
+
+        if(v.position.y<0)
+            continue;
+
+        v.position.y += height*0.5;
+
+    }
+
+    for(const v of bottom.vertices){
+
+        if(v.position.y>0)
+            continue;
+
+        v.position.y -= height*0.5;
+
+    }
+
+    //--------------------------------------------------
+
+    return this.mergeMeshes(
+
+        this.mergeMeshes(body,top),
+
+        bottom
+
+    );
+
+}
     createSphere(subdivisions){}
     createSphere(subdivisions=3){
 
