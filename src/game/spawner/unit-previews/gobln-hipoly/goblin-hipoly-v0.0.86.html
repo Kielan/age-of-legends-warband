@@ -126,6 +126,33 @@ const viewport =
 const stats =
     document.getElementById("stats");
 
+export class PrimitiveFactory {
+    constructor(mesh){
+        
+    }
+    createCube(size){
+        
+    }
+    createCylinder(radius,height,sides){}
+    createCapsule(radius,height,sides){}
+    createSphere(subdivisions){}
+    createCone(radius,height,sides){}
+    createWedge(width,height,depth){}
+    mirrorMesh(axis){}
+    mergeMeshes(meshA,meshB){}
+    weldSeam(){}
+    connectLoops(){}
+    bridgeLoops(){}
+    createQuadStrip(){}
+    buildFace(){}
+    duplicateMesh(){}
+    transformMesh(){}
+
+    rotateMesh(){}
+    scaleMesh(){}
+    translateMesh(){}
+}
+    
 class ImageReader{
     constructor(){
         this.canvas=document.createElement("canvas");
