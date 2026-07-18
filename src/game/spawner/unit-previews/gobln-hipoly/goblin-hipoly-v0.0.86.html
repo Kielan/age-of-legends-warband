@@ -241,6 +241,23 @@ class GoblinSkeleton{
     leftShoulder
     rightShoulder
 }
+class GoblinNoise{
+    apply(mesh){
+        for(const v of mesh.vertices){
+            const p=v.position;
+            const n=noise3D(
+                p.x*1.8,
+                p.y*1.8,
+                p.z*1.8
+            );
+
+            p.addScaledVector(
+                p.clone().normalize(),
+                n*0.05
+            );
+        }
+    }
+}    
 //half edge mesh utils
 class FaceBuilder{
     constructor(mesh){
