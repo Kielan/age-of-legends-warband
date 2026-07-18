@@ -254,6 +254,93 @@ export class PrimitiveFactory {
     createCapsule(radius,height,sides){}
     createSphere(subdivisions){}
     createCone(radius,height,sides){}
+    createCone(radius,height,sides=16){
+
+    const mesh = new HalfEdgeMesh();
+
+    const ring=[];
+
+    const h=height*0.5;
+
+    for(let i=0;i<sides;i++){
+
+        const a=i/sides*Math.PI*2;
+
+        ring.push(
+
+            mesh.weldVertex(
+
+                new THREE.Vector3(
+
+                    Math.cos(a)*radius,
+                    -h,
+                    Math.sin(a)*radius
+
+                )
+
+            )
+
+        );
+
+    }
+
+    const apex=
+        mesh.weldVertex(
+            new THREE.Vector3(
+                0,
+                h,
+                0
+            )
+        );
+
+    //--------------------------------------------------
+
+    for(let i=0;i<sides;i++){
+
+        const n=(i+1)%sides;
+
+        mesh.createFaceFromVertices([
+
+            ring[i],
+            ring[n],
+            apex,
+            apex
+
+        ]);
+
+    }
+
+    //--------------------------------------------------
+
+    const center=
+        mesh.weldVertex(
+            new THREE.Vector3(
+                0,
+                -h,
+                0
+            )
+        );
+
+    for(let i=0;i<sides;i++){
+
+        const n=(i+1)%sides;
+
+        mesh.createFaceFromVertices([
+
+            center,
+            ring[n],
+            ring[i],
+            center
+
+        ]);
+
+    }
+
+    mesh.rebuildEdgeRegistry();
+
+    return mesh;
+
+}
     createWedge(width,height,depth){}
     mirrorMesh(axis){}
     mergeMeshes(meshA,meshB){}
