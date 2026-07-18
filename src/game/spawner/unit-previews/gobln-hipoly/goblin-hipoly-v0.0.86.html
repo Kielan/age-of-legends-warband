@@ -253,6 +253,29 @@ export class PrimitiveFactory {
 }
     createCapsule(radius,height,sides){}
     createSphere(subdivisions){}
+    createSphere(subdivisions=3){
+
+    const mesh=this.createCube(1);
+
+    for(let i=0;i<subdivisions;i++){
+
+        CatmullClark.subdivide(mesh);
+
+    }
+
+    //--------------------------------------------------
+
+    for(const v of mesh.vertices){
+
+        v.position.normalize();
+
+    }
+
+    mesh.rebuildEdgeRegistry();
+
+    return mesh;
+
+}
     createCone(radius,height,sides){}
     createCone(radius,height,sides=16){
 
