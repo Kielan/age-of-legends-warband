@@ -222,6 +222,14 @@ class GoblinTemplate{
             lm.head.center
         );
     }
+    buildArm(start,end){
+    return this.mesh.createCylinder(
+        start,
+        end,
+        8
+    );
+    }
+    
     
 }
     
@@ -1825,6 +1833,20 @@ class EditorApp{
     }
 }
 
+//test 2dto2d meshpipeline
+ const reader=new ImageReader();
+await reader.load("goblin.png");
+const image=reader.read();
+const silhouette=
+    new SilhouetteExtractor()
+        .extract(image);
+const landmarks=
+    new LandmarkDetector()
+        .detect(silhouette);
+const generator=
+    new GoblinTemplate(mesh);
+generator.build(landmarks);   
+    
 const APP = new EditorApp();
 
 window.APP = APP;
