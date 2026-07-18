@@ -134,6 +134,123 @@ export class PrimitiveFactory {
         
     }
     createCylinder(radius,height,sides){}
+    createCylinder(radius, height, sides = 16){
+    const mesh = new HalfEdgeMesh();
+    const top = [];
+    const bottom = [];
+    const h = height * 0.5;
+    //------------------------------------------------------
+    // Create rings
+    //------------------------------------------------------
+    for(let i=0;i<sides;i++){
+
+        const a = i / sides * Math.PI * 2;
+
+        const x = Math.cos(a) * radius;
+        const z = Math.sin(a) * radius;
+
+        bottom.push(
+            mesh.weldVertex(
+                new THREE.Vector3(
+                    x,
+                    -h,
+                    z
+                )
+            )
+        );
+
+        top.push(
+            mesh.weldVertex(
+                new THREE.Vector3(
+                    x,
+                    h,
+                    z
+                )
+            )
+        );
+
+    }
+
+    //------------------------------------------------------
+    // Side quads
+    //------------------------------------------------------
+
+    for(let i=0;i<sides;i++){
+
+        const n = (i+1)%sides;
+
+        mesh.createFaceFromVertices([
+
+            bottom[i],
+            bottom[n],
+            top[n],
+            top[i]
+
+        ]);
+
+    }
+
+    //------------------------------------------------------
+    // Bottom cap
+    //------------------------------------------------------
+
+    const bottomCenter =
+        mesh.weldVertex(
+            new THREE.Vector3(
+                0,
+                -h,
+                0
+            )
+        );
+
+    for(let i=0;i<sides;i++){
+
+        const n=(i+1)%sides;
+
+        mesh.createFaceFromVertices([
+
+            bottomCenter,
+            bottom[i],
+            bottom[n],
+            bottomCenter
+
+        ]);
+
+    }
+
+    //------------------------------------------------------
+    // Top cap
+    //------------------------------------------------------
+
+    const topCenter =
+        mesh.weldVertex(
+            new THREE.Vector3(
+                0,
+                h,
+                0
+            )
+        );
+
+    for(let i=0;i<sides;i++){
+
+        const n=(i+1)%sides;
+
+        mesh.createFaceFromVertices([
+
+            topCenter,
+            top[n],
+            top[i],
+            topCenter
+
+        ]);
+
+    }
+
+    mesh.rebuildEdgeRegistry();
+
+    return mesh;
+
+}
     createCapsule(radius,height,sides){}
     createSphere(subdivisions){}
     createCone(radius,height,sides){}
