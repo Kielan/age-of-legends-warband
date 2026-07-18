@@ -131,7 +131,14 @@ const viewport =
 const stats =
     document.getElementById("stats");
 
+//2dto3d pipeline classes
+class Silhouette{
+    points=[];
+    width;
+    height;
+}
 
+//half edge mesh utils
 class FaceBuilder{
     constructor(mesh){
         this.mesh = mesh;
