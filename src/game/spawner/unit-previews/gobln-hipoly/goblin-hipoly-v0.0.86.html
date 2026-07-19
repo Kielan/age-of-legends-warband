@@ -1194,6 +1194,18 @@ class HalfEdgeMesh {
         }
         return tris;
     }
+    bridgeRings(outer, inner){
+        const ratio = outer.length / inner.length;
+        for(let i=0;i<inner.length;i++){
+            const o0 = outer[(i*ratio)%outer.length];
+            const o1 = outer[(i*ratio+1)%outer.length];
+            const i0 = inner[i];
+            const i1 = inner[(i+1)%inner.length];
+            this.createFaceFromVertices([
+                o0, o1, i1, i0
+            ]);
+        }
+    }
     /**
     createCube(size=1){
         const s = size;
