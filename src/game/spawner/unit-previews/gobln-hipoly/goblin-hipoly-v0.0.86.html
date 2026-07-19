@@ -217,13 +217,9 @@ export class PrimitiveFactory {
     //------------------------------------------------------
     // Side quads
     //------------------------------------------------------
-
     for(let i=0;i<sides;i++){
-
         const n = (i+1)%sides;
-
         mesh.createFaceFromVertices([
-
             bottom[i],
             bottom[n],
             top[n],
@@ -526,6 +522,11 @@ class LandmarkDetector{
         width:maxX-minX,
         height:maxY-minY
         };
+    }
+    computeSymmetryAxis(){
+        this.computeBounds();
+        this.axisX=
+            (this.bounds.minX+this.bounds.maxX)*0.5;
     }
 
 }
