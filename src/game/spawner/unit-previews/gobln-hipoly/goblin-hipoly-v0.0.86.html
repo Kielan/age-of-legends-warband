@@ -136,6 +136,15 @@ const viewport =
 const stats =
     document.getElementById("stats");
 
+class Ring{
+    constructor(vertices,radius,y){
+        this.vertices = vertices;
+        this.radius = radius;
+        this.y = y;
+        this.count = vertices.length;
+    }
+}
+    
 function createNgon(vertices){
     const face = new HEFace();
     this.faces.push(face);
