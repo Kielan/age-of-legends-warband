@@ -665,16 +665,13 @@ class MeshEuler {
     //--------------------------------------------------
     // Create face
     //--------------------------------------------------
-
     const face = new HEFace();
     this.faces.push(face);
 
     //--------------------------------------------------
     // Create edges
     //--------------------------------------------------
-
     const edges = [];
-
     for(let i=0;i<vertices.length;i++){
         const e = this.createEdge();
         e.vertex = vertices[i];
@@ -774,7 +771,6 @@ class MeshEuler {
     //--------------------------------------------------
     // Find shared edge
     //--------------------------------------------------
-
     let shared = null;
     let e = faceA.edge;
 
@@ -801,7 +797,6 @@ class MeshEuler {
     //--------------------------------------------------
     // Collect loop from Face A
     //--------------------------------------------------
-
     const verts = [];
 
     e = shared.next;
@@ -817,7 +812,6 @@ class MeshEuler {
     //--------------------------------------------------
     // Collect loop from Face B
     //--------------------------------------------------
-
     let t = shared.twin.next;
 
     while(t !== shared.twin){
@@ -848,7 +842,6 @@ class MeshEuler {
     //--------------------------------------------------
     // Remove duplicate first/last
     //--------------------------------------------------
-
     if(
         clean.length>2 &&
         clean[0]===clean[clean.length-1]
@@ -867,7 +860,6 @@ class MeshEuler {
     //--------------------------------------------------
     // Build merged face
     //--------------------------------------------------
-
     return this.makeFace(clean);
 
 }
@@ -879,7 +871,6 @@ class MeshEuler {
     //--------------------------------------------------
     // Find both vertices
     //--------------------------------------------------
-
     let startEdge = null;
     let endEdge = null;
 
@@ -914,7 +905,6 @@ class MeshEuler {
     //--------------------------------------------------
     // Walk first path
     //--------------------------------------------------
-
     const loop1 = [];
 
     e = startEdge;
@@ -952,13 +942,11 @@ class MeshEuler {
     //--------------------------------------------------
     // Remove original face
     //--------------------------------------------------
-
     this.killFace(face);
 
     //--------------------------------------------------
     // Create two new faces
     //--------------------------------------------------
-
     const f0 =
         this.makeFace(loop1);
 
@@ -979,9 +967,27 @@ const euler =
     new MeshEuler(mesh);
 
  class QuadFillBuilder {
-    constructor(mesh){}
-
-    createRing(radius,y,count){}
+    constructor(mesh){
+        this.mesh = mesh;
+    }
+    createRing(radius, y, count){
+        const ring = [];
+        for(let i=0;i<count;i++){
+            const angle = i/count*Math.PI*2;
+            const x = Math.cos(angle)*radius;
+            const z = Math.sin(angle)*radius;
+            ring.push(
+                this.mesh.weldVertex(
+                    new THREE.Vector3(
+                        x,
+                        y,
+                        z
+                    )
+                )
+            );
+        }
+        return ring;
+    } 
     bridgeRings(outer,inner){}
     createCenterQuad(ring){}
     fillCircleQuads(ring){}
