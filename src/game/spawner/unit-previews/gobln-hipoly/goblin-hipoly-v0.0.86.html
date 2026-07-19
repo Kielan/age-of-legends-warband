@@ -402,7 +402,6 @@ export class PrimitiveFactory {
     }
 
     //--------------------------------------------------
-
     const center=
         mesh.weldVertex(
             new THREE.Vector3(
@@ -413,18 +412,13 @@ export class PrimitiveFactory {
         );
 
     for(let i=0;i<sides;i++){
-
         const n=(i+1)%sides;
-
         mesh.createFaceFromVertices([
-
             center,
             ring[n],
             ring[i],
             center
-
         ]);
-
     }
 
     mesh.rebuildEdgeRegistry();
@@ -477,6 +471,63 @@ class ImageReader{
             pixels:pixels.data
         };
     }
+}
+class LandmarkDetector{
+
+    constructor(){
+        this.outline=[];
+        this.axisX=0;
+        this.landmarks={};
+
+    }
+
+    detect(points){
+
+        this.outline=points;
+
+        this.computeSymmetryAxis();
+
+        this.detectHead();
+
+        this.detectShoulders();
+
+        this.detectTorso();
+
+        this.detectLegs();
+
+        this.detectArms();
+
+        return this.landmarks;
+
+    }
+    computeBounds(){
+
+    let minX=Infinity;
+    let minY=Infinity;
+
+    let maxX=-Infinity;
+    let maxY=-Infinity;
+
+    for(const p of this.outline){
+
+        if(p.x<minX) minX=p.x;
+        if(p.y<minY) minY=p.y;
+
+        if(p.x>maxX) maxX=p.x;
+        if(p.y>maxY) maxY=p.y;
+
+    }
+
+        this.bounds={
+        minX,
+        minY,
+        maxX,
+        maxY,
+        width:maxX-minX,
+        height:maxY-minY
+        };
+    }
+
 }
 //2dto3d pipeline classes
 class Silhouette{
