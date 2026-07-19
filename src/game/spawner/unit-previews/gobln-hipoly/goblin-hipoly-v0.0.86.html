@@ -1185,7 +1185,16 @@ class HalfEdgeMesh {
                 );
             }
         }
-    } /**
+    } 
+    triangulateFace(face){
+        const verts = this.collectFaceVertices(face);
+        const tris = [];
+        for(let i=1;i<verts.length-1;i++){
+            tris.push([verts[0], verts[i], verts[i+1]]);
+        }
+        return tris;
+    }
+    /**
     createCube(size=1){
         const s = size;
         const verts = [
