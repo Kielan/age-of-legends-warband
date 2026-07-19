@@ -967,6 +967,15 @@ class MeshEuler {
     
 const euler =
     new MeshEuler(mesh);
+
+ class QuadFillBuilder {
+    constructor(mesh){}
+
+    createRing(radius,y,count){}
+    bridgeRings(outer,inner){}
+    createCenterQuad(ring){}
+    fillCircleQuads(ring){}
+}
     
 // TOPOLOGY
 class HEVertex {
