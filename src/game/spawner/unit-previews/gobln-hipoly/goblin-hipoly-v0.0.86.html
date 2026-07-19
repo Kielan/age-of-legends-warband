@@ -528,7 +528,182 @@ class LandmarkDetector{
         this.axisX=
             (this.bounds.minX+this.bounds.maxX)*0.5;
     }
+    sampleWidths(step=2){
 
+    const samples=[];
+
+    for(
+
+        let y=this.bounds.minY;
+
+        y<=this.bounds.maxY;
+
+        y+=step
+
+    ){
+
+        let left=Infinity;
+
+        let right=-Infinity;
+
+        for(const p of this.outline){
+
+            if(Math.abs(p.y-y)<step){
+
+                left=Math.min(left,p.x);
+
+                right=Math.max(right,p.x);
+
+            }
+
+        }
+
+        if(right>left){
+
+            samples.push({
+
+                y,
+
+                left,
+
+                right,
+
+                width:right-left
+
+            });
+
+        }
+
+    }
+
+    return samples;
+
+    }
+    detectHead(){
+
+    const rows=this.sampleWidths();
+
+    let widest=0;
+
+    let index=0;
+
+    const limit=Math.floor(rows.length*0.25);
+
+    for(
+
+        let i=0;
+
+        i<limit;
+
+        i++
+
+    ){
+
+        if(rows[i].width>widest){
+
+            widest=rows[i].width;
+
+            index=i;
+
+        }
+
+    }
+
+    this.landmarks.head={
+
+        centerX:this.axisX,
+
+        centerY:rows[index].y,
+
+        radius:widest*0.5
+
+    };
+
+    }
+    detectNeck(){
+
+    const rows=this.sampleWidths();
+
+    let best=0;
+
+    let smallest=Infinity;
+
+    const start=
+
+        Math.floor(rows.length*.1);
+
+    const end=
+
+        Math.floor(rows.length*.35);
+
+    for(
+
+        let i=start;
+
+        i<end;
+
+        i++
+
+    ){
+
+        if(rows[i].width<smallest){
+
+            smallest=rows[i].width;
+
+            best=i;
+
+        }
+
+    }
+
+    this.landmarks.neck=rows[best];
+
+    }
+    detectShoulders(){
+
+    const rows=this.sampleWidths();
+
+    let best=0;
+
+    let slope=-Infinity;
+
+    for(
+
+        let i=1;
+
+        i<rows.length;
+
+        i++
+
+    ){
+
+        const d=
+
+            rows[i].width-
+
+            rows[i-1].width;
+
+        if(d>slope){
+
+            slope=d;
+
+            best=i;
+
+        }
+
+    }
+
+    this.landmarks.shoulders={
+
+        y:rows[best].y,
+
+        left:rows[best].left,
+
+        right:rows[best].right
+
+    };
+
+    }
 }
 //2dto3d pipeline classes
 class Silhouette{
