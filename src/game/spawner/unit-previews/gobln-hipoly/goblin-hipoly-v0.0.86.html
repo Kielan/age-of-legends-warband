@@ -923,11 +923,8 @@ class MeshEuler {
     //--------------------------------------------------
     // Walk second path
     //--------------------------------------------------
-
     const loop2 = [];
-
     e = endEdge;
-
     while(true){
         loop2.push(e.vertex);
         if(e.vertex===vertexA)
@@ -997,7 +994,44 @@ const euler =
         }
     } 
     createCenterQuad(ring){}
-    fillCircleQuads(ring){}
+    fillCircle(radius,y,count,levels){
+        let outer = this.createRing(
+            radius,
+            y,
+            count
+        );
+
+        let current = outer;
+        let currentRadius = radius;
+
+        for(let i=0;i<levels;i++){
+
+        currentRadius *= 0.55;
+
+        const inner =
+            this.createRing(
+                currentRadius,
+
+                y,
+
+                count
+
+            );
+
+        this.bridgeRings(
+
+            current,
+
+            inner
+
+        );
+
+        current = inner;
+
+    }
+
+    this.createCenterPatch(current);
+    } 
 }
     
 // TOPOLOGY
