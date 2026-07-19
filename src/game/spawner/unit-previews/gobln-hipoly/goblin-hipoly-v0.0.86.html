@@ -468,51 +468,45 @@ class ImageReader{
         };
     }
 }
-class LandmarkDetector{
 
+class Landmark {
+    constructor(name, x, y) {
+        this.name = name;
+        this.position = new THREE.Vector2(x, y);
+        this.radius = 0;
+        this.confidence = 1.0;
+    }
+}
+    
+class LandmarkDetector{
     constructor(){
         this.outline=[];
         this.axisX=0;
         this.landmarks={};
 
     }
-
     detect(points){
-
         this.outline=points;
-
         this.computeSymmetryAxis();
-
         this.detectHead();
-
         this.detectShoulders();
-
         this.detectTorso();
-
         this.detectLegs();
-
         this.detectArms();
-
         return this.landmarks;
-
     }
     computeBounds(){
+        let minX=Infinity;
+        let minY=Infinity;
+        let maxX=-Infinity;
+        let maxY=-Infinity;
 
-    let minX=Infinity;
-    let minY=Infinity;
-
-    let maxX=-Infinity;
-    let maxY=-Infinity;
-
-    for(const p of this.outline){
-
-        if(p.x<minX) minX=p.x;
-        if(p.y<minY) minY=p.y;
-
-        if(p.x>maxX) maxX=p.x;
-        if(p.y>maxY) maxY=p.y;
-
-    }
+        for(const p of this.outline){
+            if(p.x<minX) minX=p.x;
+            if(p.y<minY) minY=p.y;
+            if(p.x>maxX) maxX=p.x;
+            if(p.y>maxY) maxY=p.y;
+        }
 
         this.bounds={
         minX,
@@ -529,49 +523,29 @@ class LandmarkDetector{
             (this.bounds.minX+this.bounds.maxX)*0.5;
     }
     sampleWidths(step=2){
-
-    const samples=[];
+        const samples=[];
 
     for(
-
         let y=this.bounds.minY;
-
         y<=this.bounds.maxY;
-
         y+=step
-
     ){
-
         let left=Infinity;
-
         let right=-Infinity;
-
         for(const p of this.outline){
-
             if(Math.abs(p.y-y)<step){
-
                 left=Math.min(left,p.x);
-
                 right=Math.max(right,p.x);
-
             }
-
         }
 
         if(right>left){
-
             samples.push({
-
                 y,
-
                 left,
-
                 right,
-
                 width:right-left
-
             });
-
         }
 
     }
