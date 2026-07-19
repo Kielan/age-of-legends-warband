@@ -284,8 +284,7 @@ export class PrimitiveFactory {
 
     return mesh;
 
-}
-    createCapsule(radius,height,sides){}
+    }
     createCapsule(radius,height,sides=16){
 
     const body =
@@ -304,35 +303,23 @@ export class PrimitiveFactory {
     //--------------------------------------------------
 
     for(const v of top.vertices){
-
         if(v.position.y<0)
             continue;
-
         v.position.y += height*0.5;
-
     }
 
     for(const v of bottom.vertices){
-
         if(v.position.y>0)
             continue;
-
         v.position.y -= height*0.5;
-
     }
 
     //--------------------------------------------------
-
     return this.mergeMeshes(
-
         this.mergeMeshes(body,top),
-
         bottom
-
     );
-
-}
-    createSphere(subdivisions){}
+    }
     createSphere(subdivisions=3){
 
     const mesh=this.createCube(1);
@@ -344,7 +331,6 @@ export class PrimitiveFactory {
     }
 
     //--------------------------------------------------
-
     for(const v of mesh.vertices){
 
         v.position.normalize();
@@ -355,8 +341,7 @@ export class PrimitiveFactory {
 
     return mesh;
 
-}
-    createCone(radius,height,sides){}
+    }
     createCone(radius,height,sides=16){
 
     const mesh = new HalfEdgeMesh();
@@ -877,7 +862,6 @@ class MeshEuler {
     let e = face.edge;
 
     do{
-
         if(e.vertex === vertexA)
             startEdge = e;
 
@@ -910,14 +894,10 @@ class MeshEuler {
     e = startEdge;
 
     while(true){
-
         loop1.push(e.vertex);
-
         if(e.vertex===vertexB)
             break;
-
         e=e.next;
-
     }
 
     //--------------------------------------------------
@@ -993,7 +973,95 @@ const euler =
             ]);
         }
     } 
-    createCenterQuad(ring){}
+    createCenterPatch(ring){
+        if(ring.length !== 8){
+            console.warn(
+            "Center patch currently expects an 8 vertex ring."
+            );
+            return;
+        }
+
+    //--------------------------------------------------
+    // Compute center
+    //--------------------------------------------------
+    const center = new THREE.Vector3();
+
+    for(const v of ring){
+        center.add(v.position);
+    }
+
+    center.multiplyScalar(1/8);
+
+    //--------------------------------------------------
+    // Create four interior vertices
+    //--------------------------------------------------
+    const i0 = this.mesh.weldVertex(
+        center.clone().add(
+            ring[1].position.clone().sub(center).multiplyScalar(0.35)
+        )
+    );
+
+    const i1 = this.mesh.weldVertex(
+        center.clone().add(
+            ring[3].position.clone().sub(center).multiplyScalar(0.35)
+        )
+    );
+
+    const i2 = this.mesh.weldVertex(
+        center.clone().add(
+            ring[5].position.clone().sub(center).multiplyScalar(0.35)
+        )
+    );
+
+    const i3 = this.mesh.weldVertex(
+        center.clone().add(
+            ring[7].position.clone().sub(center).multiplyScalar(0.35)
+        )
+    );
+
+    //--------------------------------------------------
+    // Create center quad
+    //--------------------------------------------------
+    this.mesh.createFaceFromVertices([
+
+        i0,
+        i1,
+        i2,
+        i3
+
+    ]);
+
+    //--------------------------------------------------
+    // Four surrounding quads
+    //--------------------------------------------------
+    this.mesh.createFaceFromVertices([
+        ring[0],
+        ring[1],
+        i0,
+        i3
+    ]);
+
+    this.mesh.createFaceFromVertices([
+        ring[2],
+        ring[3],
+        i1,
+        i0
+    ]);
+
+    this.mesh.createFaceFromVertices([
+        ring[4],
+        ring[5],
+        i2,
+        i1
+    ]);
+
+    this.mesh.createFaceFromVertices([
+        ring[6],
+        ring[7],
+        i3,
+        i2
+    ]);
+    }
     fillCircle(radius,y,count,levels){
         let outer = this.createRing(
             radius,
