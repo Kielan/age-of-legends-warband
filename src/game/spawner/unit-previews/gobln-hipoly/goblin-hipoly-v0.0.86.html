@@ -275,18 +275,13 @@ export class PrimitiveFactory {
         );
 
     for(let i=0;i<sides;i++){
-
         const n=(i+1)%sides;
-
         mesh.createFaceFromVertices([
-
             topCenter,
             top[n],
             top[i],
             topCenter
-
         ]);
-
     }
 
     mesh.rebuildEdgeRegistry();
@@ -310,7 +305,6 @@ export class PrimitiveFactory {
         this.createSphere(2);
 
     //--------------------------------------------------
-
     for(const v of top.vertices){
         if(v.position.y<0)
             continue;
@@ -513,6 +507,397 @@ class SilhouetteExtractor{
         }
         return mask;
     }
+}
+
+    class UpdatedSilhouetteExtractor{
+    constructor(){
+        this.canvas = document.createElement("canvas");
+        this.ctx = this.canvas.getContext("2d");
+    }
+    //--------------------------------------------------------
+    // Public
+    //--------------------------------------------------------
+    async loadImage(url){
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        return new Promise(resolve=>{
+            img.onload=()=>{
+                this.canvas.width=img.width;
+                this.canvas.height=img.height;
+                this.ctx.drawImage(img,0,0);
+                resolve(img);
+            };
+            img.src=url;
+        });
+    }
+    extract(options={}){
+
+        const threshold =
+            options.threshold ?? 128;
+
+        const simplify =
+            options.simplify ?? 2;
+
+        const image =
+            this.ctx.getImageData(
+                0,
+                0,
+                this.canvas.width,
+                this.canvas.height
+            );
+
+        const binary =
+            this.makeBinary(
+                image,
+                threshold
+            );
+
+        const contours =
+            this.traceContours(binary);
+
+        const simplified=[];
+
+        for(const c of contours){
+
+            simplified.push(
+                this.simplifyContour(
+                    c,
+                    simplify
+                )
+            );
+
+        }
+
+        return simplified;
+
+    }
+
+    //--------------------------------------------------------
+    // grayscale -> binary
+    //--------------------------------------------------------
+
+    makeBinary(imageData,threshold){
+
+        const w=imageData.width;
+        const h=imageData.height;
+
+        const out=
+            new Uint8Array(w*h);
+
+        const d=imageData.data;
+
+        for(let i=0;i<w*h;i++){
+
+            const r=d[i*4];
+            const g=d[i*4+1];
+            const b=d[i*4+2];
+
+            const gray=
+                0.299*r+
+                0.587*g+
+                0.114*b;
+
+            out[i]=
+                gray<threshold
+                ?1
+                :0;
+
+        }
+
+        return{
+            width:w,
+            height:h,
+            data:out
+
+        };
+    }
+
+    //--------------------------------------------------------
+    // marching squares
+    //--------------------------------------------------------
+
+    traceContours(binary){
+        const contours=[];
+        const visited=new Uint8Array(
+            binary.width*
+            binary.height
+        );
+        for(let y=1;y<binary.height-1;y++){
+            for(let x=1;x<binary.width-1;x++){
+
+                const i=
+                    x+y*binary.width;
+
+                if(
+                    binary.data[i]===1 &&
+                    !visited[i]
+                ){
+
+                    const contour=
+                        this.followContour(
+                            binary,
+                            x,
+                            y,
+                            visited
+                        );
+
+                    if(contour.length>10){
+
+                        contours.push(
+                            contour
+                        );
+
+                    }
+
+                }
+
+            }
+
+        }
+
+        return contours;
+
+    }
+
+    //--------------------------------------------------------
+    // Moore Neighbor tracing
+    //--------------------------------------------------------
+    followContour(
+        binary,
+        sx,
+        sy,
+        visited
+    ){
+        const contour=[];
+        const dirs=[
+            [1,0],
+            [1,1],
+            [0,1],
+            [-1,1],
+
+            [-1,0],
+            [-1,-1],
+            [0,-1],
+            [1,-1]
+
+        ];
+
+        let x=sx;
+        let y=sy;
+
+        while(true){
+
+            contour.push({
+                x,
+                y
+            });
+
+            visited[
+                x+y*binary.width
+            ]=1;
+
+            let found=false;
+
+            for(const d of dirs){
+
+                const nx=x+d[0];
+                const ny=y+d[1];
+
+                if(
+                    nx<0||
+                    ny<0||
+                    nx>=binary.width||
+                    ny>=binary.height
+                )
+                    continue;
+
+                const index=
+                    nx+ny*binary.width;
+
+                if(
+                    binary.data[index] &&
+                    !visited[index]
+                ){
+
+                    x=nx;
+                    y=ny;
+
+                    found=true;
+
+                    break;
+
+                }
+
+            }
+
+            if(!found)
+                break;
+
+        }
+
+        return contour;
+
+    }
+
+    //--------------------------------------------------------
+    // Douglas Peucker
+    //--------------------------------------------------------
+
+    simplifyContour(
+        points,
+        epsilon
+    ){
+
+        if(points.length<3)
+            return points;
+
+        return this.dp(
+            points,
+            epsilon
+        );
+
+    }
+
+    dp(points,epsilon){
+
+        let maxDistance=0;
+
+        let index=0;
+
+        const start=points[0];
+        const end=
+            points[
+                points.length-1
+            ];
+
+        for(
+            let i=1;
+            i<points.length-1;
+            i++
+        ){
+
+            const d=
+                this.pointLineDistance(
+                    points[i],
+                    start,
+                    end
+                );
+
+            if(d>maxDistance){
+
+                index=i;
+                maxDistance=d;
+
+            }
+
+        }
+
+        if(maxDistance>epsilon){
+
+            const left=
+                this.dp(
+                    points.slice(
+                        0,
+                        index+1
+                    ),
+                    epsilon
+                );
+
+            const right=
+                this.dp(
+                    points.slice(index),
+                    epsilon
+                );
+
+            return left
+                .slice(0,-1)
+                .concat(right);
+
+        }
+
+        return[
+            start,
+            end
+        ];
+
+    }
+
+    pointLineDistance(
+        p,
+        a,
+        b
+    ){
+
+        const dx=b.x-a.x;
+        const dy=b.y-a.y;
+
+        const t=
+
+            (
+                (p.x-a.x)*dx+
+                (p.y-a.y)*dy
+            )/
+
+            (
+                dx*dx+
+                dy*dy
+            );
+
+        const px=
+            a.x+t*dx;
+
+        const py=
+            a.y+t*dy;
+
+        return Math.hypot(
+
+            p.x-px,
+
+            p.y-py
+
+        );
+
+    }
+
+    //--------------------------------------------------------
+    // normalize
+    //--------------------------------------------------------
+
+    normalize(contour){
+
+        let minX=Infinity;
+        let minY=Infinity;
+
+        let maxX=-Infinity;
+        let maxY=-Infinity;
+
+        for(const p of contour){
+
+            minX=Math.min(minX,p.x);
+            minY=Math.min(minY,p.y);
+
+            maxX=Math.max(maxX,p.x);
+            maxY=Math.max(maxY,p.y);
+
+        }
+
+        const w=maxX-minX;
+        const h=maxY-minY;
+
+        return contour.map(p=>{
+
+            return{
+
+                x:(p.x-minX)/w,
+
+                y:(p.y-minY)/h
+
+            };
+
+        });
+
+    }
+
 }
 
 class LandmarkDetector{
