@@ -704,6 +704,45 @@ class LandmarkDetector{
     };
 
     }
+    detectWaist(){
+
+    const rows=this.sampleWidths();
+
+    let smallest=Infinity;
+
+    let best=0;
+
+    const start=
+
+        Math.floor(rows.length*.35);
+
+    const end=
+
+        Math.floor(rows.length*.7);
+
+    for(
+
+        let i=start;
+
+        i<end;
+
+        i++
+
+    ){
+
+        if(rows[i].width<smallest){
+
+            smallest=rows[i].width;
+
+            best=i;
+
+        }
+
+    }
+
+    this.landmarks.waist=rows[best];
+
+    }
 }
 //2dto3d pipeline classes
 class Silhouette{
