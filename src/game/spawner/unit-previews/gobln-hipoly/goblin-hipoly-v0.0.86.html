@@ -929,14 +929,10 @@ class MeshEuler {
     e = endEdge;
 
     while(true){
-
         loop2.push(e.vertex);
-
         if(e.vertex===vertexA)
             break;
-
         e=e.next;
-
     }
 
     //--------------------------------------------------
@@ -987,8 +983,19 @@ const euler =
             );
         }
         return ring;
+    }
+    bridgeRings(outer, inner){
+        const count = outer.length;
+        for(let i=0;i<count;i++){
+            const next = (i+1)%count;
+            this.mesh.createFaceFromVertices([
+                outer[i],
+                outer[next],
+                inner[next],
+                inner[i]
+            ]);
+        }
     } 
-    bridgeRings(outer,inner){}
     createCenterQuad(ring){}
     fillCircleQuads(ring){}
 }
