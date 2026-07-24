@@ -1,0 +1,2375 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Goblin Editor</title>
+<style>
+
+html,
+body{
+    margin:0;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:#1a1a1a;
+}
+#root{
+    width:100%;
+    height:100%;
+    display:flex;
+    flex-direction:column;
+}
+#toolbar{
+    height:40px;
+    background:#2d2d2d;
+    border-bottom:1px solid #444;
+    display:flex;
+    align-items:center;
+    padding-left:10px;
+    color:white;
+    font-family:monospace;
+}
+#content{
+    flex:1;
+    display:flex;
+}
+#viewport{
+    flex:1;
+    position:relative;
+}
+#inspector{
+    width:280px;
+    background:#252525;
+    border-left:1px solid #444;
+    color:white;
+    font-family:monospace;
+    padding:10px;
+}
+button{
+    margin-right:5px;
+}
+</style>
+</head>
+<body>
+<div id="root">
+<div id="toolbar">
+<button id="selectTool">
+Select
+</button>
+<button id="extrudeTool">
+Extrude
+</button>
+<button id="sculptTool">
+Sculpt
+</button>
+<button>
+
+</button>
+</div>
+
+<div id="content">
+<div id="viewport"></div>
+<div id="inspector">
+<h3>Inspector</h3>
+<div id="stats">
+Vertices: 0<br>
+Edges: 0<br>
+Faces: 0
+</div>
+<div id="wikibox">
+    props.landmark.succeeded
+</div>
+</div>
+</div>
+</div>
+<script type="module">
+/**
+ * Currently Implemented
+ * ✔ Half-edge core
+ * ✔ Extrusion
+ * ✔ Selection
+ * ✔ Rendering sync
+ * 
+ * still missing:
+ * 1. Edge selection system
+ * click edges, not just faces
+ * 2. Vertex welding / merging
+ * prevent duplicate geometry explosion
+ * 3. Face re-meshing after extrusion
+ * currently you only “append geometry”
+ * 4. Proper twin graph maintenance engine
+ * automatic repair pass after every edit
+ * 5. Subdivision system (important for goblin shape)
+ * smooth organic forms instead of blocky cubes
+ * 6. Sculpt mode (you already hinted at it)
+ * vertex displacement + constraint preservation
+ * 7. “Edit history stack”
+ * undo/redo (critical for editors)
+ * 8. Stable rendering pipeline
+
+ * Currently geometry is rebuilt every time which is fine for now, but later you need:
+ * incremental updates
+ * not full rebuilds
+ * 
+ * TODO:
+ * A) Make selection system stable (recommended next)
+ * face/edge/vertex unified picking system
+ * A.1)“real Blender extrusion behavior”
+ * - inset faces
+ * - bevel support
+ * - clean manifold preservation under repeated edits
+ * B) Start goblin procedural generator layer
+ * noise-based skull/body deformation
+ * symmetry system
+ * C) Upgrade topology engine
+ * full half-edge correctness (Blender-lite core)
+
+ TODO Continued (todo v2):
+ [] QuadFillBuilder (cap generation)
+ [] PrimitiveFactory (cylinder, cone, sphere, capsule)
+ [] Silhouette extractor (canvas edge detection)
+ [] Profile revolver (2D outline → 3D surface)
+ [] Noise deformation layer (goblin features)
+ [] Symmetry pass
+ [] Subdivision pass
+ [] Mesh cleanup pass
+ **/
+import * as THREE from "https://esm.sh/three@0.165.0";
+import {OrbitControls} from "https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js";
+
+const viewport =
+    document.getElementById("viewport");
+const stats =
+    document.getElementById("stats");
+
+class Ring{
+    constructor(vertices,radius,y){
+        this.vertices = vertices;
+        this.radius = radius;
+        this.y = y;
+        this.count = vertices.length;
+    }
+}
+    
+export class PrimitiveFactory {
+    constructor(mesh){
+        
+    }
+    createCube(size){
+        
+    }
+    createCylinder(radius,height,sides){}
+    createCylinder(radius, height, sides = 16){
+        const mesh = new HalfEdgeMesh();
+        const top = [];
+        const bottom = [];
+        const h = height * 0.5;
+        // Create rings
+        for(let i=0;i<sides;i++){
+            const a = i / sides * Math.PI * 2;
+            const x = Math.cos(a) * radius;
+            const z = Math.sin(a) * radius;
+            bottom.push(
+                mesh.weldVertex(
+                    new THREE.Vector3(
+                        x,
+                        -h,
+                        z
+                    )
+                )
+            );
+            top.push(
+                mesh.weldVertex(
+                    new THREE.Vector3(
+                        x,
+                        h,
+                        z
+                    )
+                )
+            );
+        }
+        // Side quads
+        for(let i=0;i<sides;i++){
+            const n = (i+1)%sides;
+            mesh.createFaceFromVertices([
+                bottom[i],
+                bottom[n],
+                top[n],
+                top[i]
+
+            ]);
+        }
+        // Bottom cap
+        const bottomCenter =
+            mesh.weldVertex(
+                new THREE.Vector3(
+                    0,
+                    -h,
+                    0
+                )
+            );
+        for(let i=0;i<sides;i++){
+            const n=(i+1)%sides;
+            mesh.createFaceFromVertices([
+                bottomCenter,
+                bottom[i],
+                bottom[n],
+                bottomCenter
+            ]);
+        }
+        // Top cap
+        const topCenter =
+            mesh.weldVertex(
+                new THREE.Vector3(
+                    0,
+                    h,
+                    0
+                )
+            );
+        for(let i=0;i<sides;i++){
+            const n=(i+1)%sides;
+            mesh.createFaceFromVertices([
+                topCenter,
+                top[n],
+                top[i],
+                topCenter
+            ]);
+        }
+        mesh.rebuildEdgeRegistry();
+        return mesh;
+    }
+    createCapsule(radius,height,sides=16){
+        const body =
+            this.createCylinder(
+                radius,
+                height,
+                sides
+            );
+        const top =
+            this.createSphere(2);
+        const bottom =
+            this.createSphere(2);
+        for(const v of top.vertices){
+            if(v.position.y<0)
+                continue;
+            v.position.y += height*0.5;
+        }
+        for(const v of bottom.vertices){
+            if(v.position.y>0)
+                continue;
+            v.position.y -= height*0.5;
+        }
+        return this.mergeMeshes(
+            this.mergeMeshes(body,top),
+            bottom
+        );
+    }
+    createSphere(subdivisions=3){
+        const mesh=this.createCube(1);
+        for(let i=0;i<subdivisions;i++){
+            CatmullClark.subdivide(mesh);
+        }
+        for(const v of mesh.vertices){
+            v.position.normalize();
+        }
+        mesh.rebuildEdgeRegistry();
+        return mesh;
+    }
+    createCone(radius,height,sides=16){
+        const mesh = new HalfEdgeMesh();
+        const ring=[];
+        const h=height*0.5;
+        for(let i=0;i<sides;i++){
+            const a=i/sides*Math.PI*2;
+            ring.push(
+                mesh.weldVertex(
+                    new THREE.Vector3(
+                        Math.cos(a)*radius,
+                        -h,
+                        Math.sin(a)*radius
+                    )
+                )
+            );
+        }
+        const apex=
+            mesh.weldVertex(new THREE.Vector3(0,h,0));
+        for(let i=0;i<sides;i++){
+            const n=(i+1)%sides;
+            mesh.createFaceFromVertices([
+                ring[i],
+                ring[n],
+                apex,
+                apex
+            ]);
+        }
+        const center=
+            mesh.weldVertex(
+                new THREE.Vector3(
+                    0,
+                    -h,
+                    0
+                )
+            );
+        for(let i=0;i<sides;i++){
+            const n=(i+1)%sides;
+            mesh.createFaceFromVertices([
+                center,
+                ring[n],
+                ring[i],
+                center
+            ]);
+        }
+        mesh.rebuildEdgeRegistry();
+        return mesh;
+    }
+    createWedge(width,height,depth){}
+    mirrorMesh(axis){}
+    mergeMeshes(meshA,meshB){}
+    weldSeam(){}
+    connectLoops(){}
+    bridgeLoops(){}
+    createQuadStrip(){}
+    buildFace(){}
+    duplicateMesh(){}
+    transformMesh(){}
+
+    rotateMesh(){}
+    scaleMesh(){}
+    translateMesh(){}
+}
+    
+class ImageReader{
+    constructor(){
+        this.canvas=document.createElement("canvas");
+        this.ctx=this.canvas.getContext("2d");
+    }
+    async load(url){
+        return new Promise(resolve=>{
+            const img=new Image();
+            img.onload=()=>{
+                this.canvas.width=img.width;
+                this.canvas.height=img.height;
+                this.ctx.drawImage(img,0,0);
+                resolve(img);
+            };
+            img.src=url;
+        });
+
+    }
+    read(){
+        const w=this.canvas.width;
+        const h=this.canvas.height;
+        const pixels=this.ctx.getImageData(0,0,w,h);
+        return{
+            width:w,
+            height:h,
+            pixels:pixels.data
+        };
+    }
+}
+class Landmark {
+    constructor(name, x, y) {
+        this.name = name;
+        this.position = new THREE.Vector2(x, y);
+        this.radius = 0;
+        this.confidence = 1.0;
+    }
+}   
+class LandmarkDetector{
+    constructor(){
+        this.outline=[];
+        this.axisX=0;
+        this.landmarks={};
+
+    }
+    detect(points){
+        this.outline=points;
+        this.computeSymmetryAxis();
+        this.detectHead();
+        this.detectShoulders();
+        this.detectTorso();
+        this.detectLegs();
+        this.detectArms();
+        return this.landmarks;
+    }
+    computeBounds(){
+        let minX=Infinity;
+        let minY=Infinity;
+        let maxX=-Infinity;
+        let maxY=-Infinity;
+        for(const p of this.outline){
+            if(p.x<minX) minX=p.x;
+            if(p.y<minY) minY=p.y;
+            if(p.x>maxX) maxX=p.x;
+            if(p.y>maxY) maxY=p.y;
+        }
+        this.bounds={
+            minX,
+            minY,
+            maxX,
+            maxY,
+            width:maxX-minX,
+            height:maxY-minY
+        };
+    }
+    computeSymmetryAxis(){
+        this.computeBounds();
+        this.axisX=
+            (this.bounds.minX+this.bounds.maxX)*0.5;
+    }
+    sampleWidths(step=2){
+        const samples=[];
+        for(
+            let y=this.bounds.minY;
+            y<=this.bounds.maxY;
+            y+=step
+        ){
+            let left=Infinity;
+            let right=-Infinity;
+            for(const p of this.outline){
+                if(Math.abs(p.y-y)<step){
+                    left=Math.min(left,p.x);
+                    right=Math.max(right,p.x);
+                }
+            }
+            if(right>left){
+                samples.push({
+                    y,
+                    left,
+                    right,
+                    width:right-left
+                });
+            }
+
+        }
+        return samples;
+    }
+    detectHead(){
+        const rows=this.sampleWidths();
+        let widest=0;
+        let index=0;
+        const limit=Math.floor(rows.length*0.25);
+        for(
+            let i=0;
+            i<limit;
+            i++
+        ){
+            if(rows[i].width>widest){
+                widest=rows[i].width;
+                index=i;
+            }
+        }
+        this.landmarks.head={
+            centerX:this.axisX,
+            centerY:rows[index].y,
+            radius:widest*0.5
+        };
+    }
+    detectNeck(){
+        const rows=this.sampleWidths();
+        let best=0;
+        let smallest=Infinity;
+        const start=
+            Math.floor(rows.length*.1);
+        const end=
+            Math.floor(rows.length*.35);
+        for(
+            let i=start;
+            i<end;
+            i++
+        ){
+            if(rows[i].width<smallest){
+                smallest=rows[i].width;
+                best=i;
+            }
+        }
+        this.landmarks.neck=rows[best];
+    }
+    detectShoulders(){
+        const rows=this.sampleWidths();
+        let best=0;
+        let slope=-Infinity;
+        for(
+            let i=1;
+            i<rows.length;
+            i++
+        ){
+            const d=rows[i].width-rows[i-1].width;
+            if(d>slope){
+                slope=d;
+                best=i;
+            }
+        }
+        this.landmarks.shoulders={
+            y:rows[best].y,
+            left:rows[best].left,
+            right:rows[best].right
+        };
+    }
+    detectWaist(){
+        const rows=this.sampleWidths();
+        let smallest=Infinity;
+        let best=0;
+        const start=
+            Math.floor(rows.length*.35);
+        const end=
+            Math.floor(rows.length*.7);
+        for(
+            let i=start;
+            i<end;
+            i++
+        ){
+        if(rows[i].width<smallest){
+            smallest=rows[i].width;
+            best=i;
+        }
+    }
+    this.landmarks.waist=rows[best];
+    }
+}
+//2dto3d pipeline classes
+class Silhouette{
+    points=[];
+    width;
+    height;
+}
+    /** 
+    mask example result
+    0000001111111000000
+    0000111111111110000
+    0011111111111111100
+    **/
+class SilhouetteExtractor{
+    extract(image){
+        const mask=[];
+        for(let y=0;y<image.height;y++){
+            mask[y]=[];
+            for(let x=0;x<image.width;x++) {
+                const i=(y*image.width+x)*4;
+                const r=image.pixels[i];
+                const g=image.pixels[i+1];
+                const b=image.pixels[i+2];
+                const brightness=(r+g+b)/3;
+                mask[y][x]=brightness<180;
+            }
+        }
+        return mask;
+    }
+}
+class UpdatedSilhouetteExtractor{
+    constructor(){
+        this.canvas = document.createElement("canvas");
+        this.ctx = this.canvas.getContext("2d");
+    }
+    // Public
+    async loadImage(url){
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        return new Promise(resolve=>{
+            img.onload=()=>{
+                this.canvas.width=img.width;
+                this.canvas.height=img.height;
+                this.ctx.drawImage(img,0,0);
+                resolve(img);
+            };
+            img.src=url;
+        });
+    }
+    extract(options={}){
+        const threshold =
+            options.threshold ?? 128;
+        const simplify =
+            options.simplify ?? 2;
+        const image =
+            this.ctx.getImageData(
+                0,
+                0,
+                this.canvas.width,
+                this.canvas.height
+            );
+        const binary =
+            this.makeBinary(
+                image,
+                threshold
+            );
+        const contours =
+            this.traceContours(binary);
+        const simplified=[];
+        for(const c of contours){
+            simplified.push(
+                this.simplifyContour(
+                    c,
+                    simplify
+                )
+            );
+        }
+        return simplified;
+    }
+    // grayscale -> binary
+    makeBinary(imageData,threshold){
+        const w=imageData.width;
+        const h=imageData.height;
+        const out=new Uint8Array(w*h);
+        const d=imageData.data;
+        for(let i=0;i<w*h;i++){
+            const r=d[i*4];
+            const g=d[i*4+1];
+            const b=d[i*4+2];
+            const gray=
+                0.299*r+
+                0.587*g+
+                0.114*b;
+            out[i]=
+                gray<threshold
+                ?1
+                :0;
+        }
+        return{
+            width:w,
+            height:h,
+            data:out
+        };
+    }
+    // marching squares
+    traceContours(binary){
+        const contours=[];
+        const visited=new Uint8Array(
+            binary.width*
+            binary.height
+        );
+        for(let y=1;y<binary.height-1;y++){
+            for(let x=1;x<binary.width-1;x++){
+                const i=
+                    x+y*binary.width;
+                if(
+                    binary.data[i]===1 &&
+                    !visited[i]
+                ){
+                    const contour=
+                        this.followContour(
+                            binary,
+                            x,
+                            y,
+                            visited
+                        );
+                    if(contour.length>10){
+                        contours.push(
+                            contour
+                        );
+                    }
+                }
+            }
+        }
+        return contours;
+    }
+    // Moore Neighbor tracing
+    followContour(
+        binary,
+        sx,
+        sy,
+        visited
+    ){
+        const contour=[];
+        const dirs=[
+            [1,0],
+            [1,1],
+            [0,1],
+            [-1,1],
+
+            [-1,0],
+            [-1,-1],
+            [0,-1],
+            [1,-1]
+
+        ];
+
+        let x=sx;
+        let y=sy;
+        while(true){
+            contour.push({
+                x,
+                y
+            });
+            visited[
+                x+y*binary.width
+            ]=1;
+            let found=false;
+            for(const d of dirs){
+                const nx=x+d[0];
+                const ny=y+d[1];
+                if(
+                    nx<0||
+                    ny<0||
+                    nx>=binary.width||
+                    ny>=binary.height
+                )
+                continue;
+                const index=nx+ny*binary.width;
+                if(binary.data[index] &&!visited[index]){
+                    x=nx;
+                    y=ny;
+                    found=true;
+                    break;
+                }
+            }
+            if(!found)
+                break;
+        }
+        return contour;
+    }
+    // Douglas Peucker
+    simplifyContour(points,epsilon){
+        if(points.length<3)
+            return points;
+        return this.dp(
+            points,
+            epsilon
+        );
+    }
+    dp(points,epsilon){
+        let maxDistance=0;
+        let index=0;
+        const start=points[0];
+        const end=points[points.length-1];
+        for(let i=1;i<points.length-1;i++){
+            const d=this.pointLineDistance(
+                points[i],
+                start,
+                end
+            );
+            if(d>maxDistance){
+                index=i;
+                maxDistance=d;
+            }
+        }
+        if(maxDistance>epsilon){
+            const left=this.dp(points.slice(0,index+1),epsilon);
+            const right=this.dp(points.slice(index),epsilon);
+            return left
+                .slice(0,-1)
+                .concat(right);
+        }
+        return[start,end];
+    }
+    pointLineDistance(p,a,b){
+        const dx=b.x-a.x;
+        const dy=b.y-a.y;
+        const t=
+            (
+                (p.x-a.x)*dx+
+                (p.y-a.y)*dy
+            )/
+
+            (
+                dx*dx+
+                dy*dy
+            );
+
+        const px=a.x+t*dx;
+        const py=a.y+t*dy;
+        return Math.hypot(
+            p.x-px,
+            p.y-py
+        );
+    }
+    // normalize
+    normalize(contour){
+        let minX=Infinity;
+        let minY=Infinity;
+        let maxX=-Infinity;
+        let maxY=-Infinity;
+        for(const p of contour){
+            minX=Math.min(minX,p.x);
+            minY=Math.min(minY,p.y);
+            maxX=Math.max(maxX,p.x);
+            maxY=Math.max(maxY,p.y);
+        }
+        const w=maxX-minX;
+        const h=maxY-minY;
+        return contour.map(p=>{
+            return{
+                x:(p.x-minX)/w,
+                y:(p.y-minY)/h
+            };
+        });
+    }
+}
+
+class LandmarkDetector{
+    detect(mask){
+        return{
+            head:this.findHead(mask),
+            neck:this.findNeck(mask),
+            shoulders:this.findShoulders(mask),
+            pelvis:this.findPelvis(mask),
+            hands:this.findHands(mask),
+            feet:this.findFeet(mask)
+        };
+    }
+}
+
+class GoblinTemplate{
+    constructor(mesh){
+        this.mesh=mesh;
+    }
+    build(lm){
+        this.buildHead(lm);
+        this.buildTorso(lm);
+        this.buildPelvis(lm);
+        this.buildArms(lm);
+        this.buildLegs(lm);
+    }
+    buildHead(lm){
+        const cube=this.mesh.createCubePrimitive();
+        cube.scale(
+            lm.head.width,
+            lm.head.height,
+            lm.head.depth
+        );
+        cube.translate(
+            lm.head.center
+        );
+    }
+    buildArm(start,end){
+        return this.mesh.createCylinder(
+            start,
+            end,
+            8
+        );
+    }
+}
+    
+class GoblinSkeleton{
+    head
+    neck
+    spine
+    pelvis
+    leftShoulder
+    rightShoulder
+}
+class GoblinNoise{
+    apply(mesh){
+        for(const v of mesh.vertices){
+            const p=v.position;
+            const n=noise3D(
+                p.x*1.8,
+                p.y*1.8,
+                p.z*1.8
+            );
+            p.addScaledVector(
+                p.clone().normalize(),
+                n*0.05
+            );
+        }
+    }
+}    
+//half edge mesh utils
+class FaceBuilder{
+    constructor(mesh){
+        this.mesh = mesh;
+    }
+    collectVertices(face){
+        const verts=[];
+        let e=face.edge;
+        do{
+            verts.push(e.vertex);
+            e=e.next;
+        }while(e!==face.edge);
+
+        return verts;
+    }
+    splitVertical(face){
+        const verts=this.collectVertices(face);
+        if(verts.length!==4)
+            return;
+        const v0=verts[0];
+        const v1=verts[1];
+        const v2=verts[2];
+        const v3=verts[3];
+        const topMid=
+            this.mesh.weldVertex(
+                v0.position.clone().lerp(v1.position,0.5)
+            );
+        const bottomMid=
+            this.mesh.weldVertex(
+                v3.position.clone().lerp(v2.position,0.5)
+            );
+        this.mesh.killFace(face);
+        this.mesh.createFaceFromVertices([
+            v0,
+            topMid,
+            bottomMid,
+            v3
+        ]);
+        this.mesh.createFaceFromVertices([
+            topMid,
+            v1,
+            v2,
+            bottomMid
+        ]);
+        this.mesh.rebuildEdgeRegistry();
+        this.mesh.validateFaceLoops();
+    }
+}
+    
+class MeshEuler {
+    constructor(mesh){
+        this.mesh = mesh;
+    }
+    makeEdge(vertex, face) {
+        const e = new HEEdge();
+        e.vertex = vertex;
+        e.face = face;
+        mesh.edges.push(e);
+        return e;
+    }
+    makeFace(vertices){
+    if(vertices.length < 3){
+        console.warn(
+            "makeFace requires at least 3 vertices."
+        );
+        return null;
+    }
+    // Create face
+    const face = new HEFace();
+    this.faces.push(face);
+    // Create edges
+    const edges = [];
+    for(let i=0;i<vertices.length;i++){
+        const e = this.createEdge();
+        e.vertex = vertices[i];
+        e.face = face;
+        edges.push(e);
+    }
+    // Build circular loop
+    const n = edges.length;
+    for(let i=0;i<n;i++){
+        edges[i].next = edges[(i+1)%n];
+        edges[i].prev = edges[(i-1+n)%n];
+    }
+    // Assign representative pointers
+    face.edge = edges[0];
+    for(let i=0;i<n;i++){
+        if(!vertices[i].edge){
+            vertices[i].edge = edges[i];
+        }
+    }
+    // Register edges
+    for(const e of edges){
+        this.registerEdge(e);
+    }
+    // Connect twins immediately
+    for(const e of edges){
+        this.registerTwin(e);
+    }
+    return face;
+    }
+    killFace(face){
+        if(!face)
+            return;
+        // Collect loop
+        const edges = [];
+        let e = face.edge;
+        do{
+            edges.push(e);
+            e = e.next;
+        }
+        while(e !== face.edge);
+        // Disconnect twins
+        for(const edge of edges){
+            if(edge.twin){
+                edge.twin.twin = null;
+                edge.twin = null;
+            }
+        }
+        // Remove registry entries
+        for(const edge of edges){
+            this.unregisterEdge(edge);
+        }
+        // Remove edges
+        this.edges =
+            this.edges.filter(
+                edge => !edges.includes(edge)
+            );
+        // Remove face
+        const index =
+            this.faces.indexOf(face);
+        if(index !== -1){
+            this.faces.splice(index,1);
+        }
+    }
+    joinFace(faceA, faceB){
+        if(!faceA || !faceB)
+            return null;
+        // Find shared edge
+        let shared = null;
+        let e = faceA.edge;
+
+        do{
+            if(
+                e.twin &&
+                e.twin.face === faceB
+            ){
+                shared = e;
+                break;
+            }
+            e = e.next;
+
+        }while(e !== faceA.edge);
+        if(!shared){
+            console.warn(
+                "Faces are not adjacent."
+            );
+            return null;
+        }
+        // Collect loop from Face A
+        const verts = [];
+        e = shared.next;
+        while(e !== shared){
+            verts.push(e.vertex);
+            e = e.next;
+        }
+        // Collect loop from Face B
+        let t = shared.twin.next;
+        while(t !== shared.twin){
+            verts.push(t.vertex);
+            t = t.next;
+        }
+        // Remove duplicate consecutive vertices
+        const clean = [];
+        for(const v of verts){
+            if(
+                clean.length===0 ||
+                clean[clean.length-1]!==v
+            ){
+                clean.push(v);
+            }
+        }
+        // Remove duplicate first/last
+        if(
+            clean.length>2 &&
+            clean[0]===clean[clean.length-1]
+        ){
+            clean.pop();
+        }
+        // Delete old faces
+        this.killFace(faceA);
+        this.killFace(faceB);
+        // Build merged face
+        return this.makeFace(clean);
+    }
+    splitFace(face, vertexA, vertexB){
+        if(!face)
+            return [];
+        // Find both vertices
+        let startEdge = null;
+        let endEdge = null;
+        let e = face.edge;
+        do{
+            if(e.vertex === vertexA)
+                startEdge = e;
+
+            if(e.vertex === vertexB)
+                endEdge = e;
+
+            e = e.next;
+
+        }
+        while(e !== face.edge);
+        if(
+            !startEdge ||
+            !endEdge
+        ){
+        console.warn(
+            "Vertices not on face."
+        );
+        return [];
+    }
+    // Walk first path
+    const loop1 = [];
+    e = startEdge;
+    while(true){
+        loop1.push(e.vertex);
+        if(e.vertex===vertexB)
+            break;
+        e=e.next;
+    }
+    // Walk second path
+    const loop2 = [];
+    e = endEdge;
+    while(true){
+        loop2.push(e.vertex);
+        if(e.vertex===vertexA)
+            break;
+        e=e.next;
+    }
+    // Remove original face
+    this.killFace(face);
+    // Create two new faces
+    const f0 =
+        this.makeFace(loop1);
+    const f1 =
+        this.makeFace(loop2);
+    return [
+        f0,
+        f1
+    ];
+}
+}   
+const euler =
+    new MeshEuler(mesh);
+class QuadFillBuilder {
+    constructor(mesh){
+        this.mesh = mesh;
+    }
+    createRing(radius, y, count){
+        const ring = [];
+        for(let i=0;i<count;i++){
+            const angle = i/count*Math.PI*2;
+            const x = Math.cos(angle)*radius;
+            const z = Math.sin(angle)*radius;
+            ring.push(
+                this.mesh.weldVertex(
+                    new THREE.Vector3(
+                        x,
+                        y,
+                        z
+                    )
+                )
+            );
+        }
+        return ring;
+    }
+    bridgeRings(outer, inner){
+        const count = outer.length;
+        for(let i=0;i<count;i++){
+            const next = (i+1)%count;
+            this.mesh.createFaceFromVertices([
+                outer[i],
+                outer[next],
+                inner[next],
+                inner[i]
+            ]);
+        }
+    } 
+    createCenterPatch(ring){
+        if(ring.length !== 8){
+            console.warn(
+            "Center patch currently expects an 8 vertex ring."
+            );
+            return;
+        }
+        // Compute center
+        const center = new THREE.Vector3();
+
+        for(const v of ring){
+            center.add(v.position);
+        }
+        center.multiplyScalar(1/8);
+        // Create four interior vertices
+        const i0 = this.mesh.weldVertex(
+            center.clone().add(
+                ring[1].position.clone().sub(center).multiplyScalar(0.35)
+            )
+        );
+    const i1 = this.mesh.weldVertex(
+        center.clone().add(
+            ring[3].position.clone().sub(center).multiplyScalar(0.35)
+        )
+    );
+    const i2 = this.mesh.weldVertex(
+        center.clone().add(
+            ring[5].position.clone().sub(center).multiplyScalar(0.35)
+        )
+    );
+    const i3 = this.mesh.weldVertex(
+        center.clone().add(
+            ring[7].position.clone().sub(center).multiplyScalar(0.35)
+        )
+    );
+    // Create center quad
+    this.mesh.createFaceFromVertices([
+        i0,
+        i1,
+        i2,
+        i3
+    ]);
+    // Four surrounding quads
+    this.mesh.createFaceFromVertices([
+        ring[0],
+        ring[1],
+        i0,
+        i3
+    ]);
+    this.mesh.createFaceFromVertices([
+        ring[2],
+        ring[3],
+        i1,
+        i0
+    ]);
+    this.mesh.createFaceFromVertices([
+        ring[4],
+        ring[5],
+        i2,
+        i1
+    ]);
+    this.mesh.createFaceFromVertices([
+        ring[6],
+        ring[7],
+        i3,
+        i2
+    ]);
+    }
+    fillCircle(radius,y,count,levels){
+        let outer = this.createRing(
+            radius,
+            y,
+            count
+        );
+        let current = outer;
+        let currentRadius = radius;
+        for(let i=0;i<levels;i++){
+        currentRadius *= 0.55;
+        const inner =
+            this.createRing(
+                currentRadius,
+                y,
+                count
+            );
+        this.bridgeRings(
+            current,
+            inner
+        );
+        current = inner;
+    }
+    this.createCenterPatch(current);
+    } 
+}
+    
+// TOPOLOGY
+class HEVertex {
+    constructor(x,y,z){
+        this.position =
+            new THREE.Vector3(x,y,z);
+        this.edge = null;
+        this.id = HEVertex._id++;
+    }
+}
+HEVertex._id = 0;
+class HEFace {
+    constructor(){
+        this.edge = null;
+        this.id = HEFace._id++;
+    }
+}
+HEFace._id = 0;
+class HEEdge {
+    constructor(){
+        this.vertex = null;
+        this.face = null;
+        this.next = null;
+        this.prev = null;
+        this.twin = null;
+    }
+}
+class HalfEdgeMesh {
+    constructor(){
+        this.vertices = [];
+        this.faces = [];
+        this.edges = [];
+        //this.edgeMap = new Map();
+        this.edgeRegistry = new Map()
+    }
+    /*     Directed:0_1
+    means exact direction.
+    Undirected:0_1and1_0
+    collapse to same key
+    Useful for manifold detection.
+    Now:
+    registerEdge(edge);
+    registerTwin(edge);
+    instantly connects twins no repair pass   **/
+    makeDirectedKey(a,b){
+        return `${a.id}_${b.id}`;
+    }
+    makeUndirectedKey(a,b){
+        const ia = a.id;
+        const ib = b.id;
+        return ia < ib
+            ? `${ia}_${ib}`
+            : `${ib}_${ia}`;
+    }
+    registerEdge(edge){
+        const start = edge.prev.vertex;
+        const end = edge.vertex;
+        const key = this.makeDirectedKey(
+                        start,
+                        end
+                    );
+        if(this.edgeRegistry.has(key)){
+            console.warn("Duplicate edge",key);
+        }
+        this.edgeRegistry.set(key,edge);
+    }
+    unregisterEdge(edge){
+        const start = edge.prev.vertex;
+        const end = edge.vertex;
+        const key = this.makeDirectedKey(start, end);
+        this.edgeRegistry.delete(key);
+    }
+    rebuildEdgeRegistry(){
+        this.edgeRegistry.clear();
+        for(const e of this.edges){
+            e.twin = null;
+        }
+        for(const e of this.edges){
+            if(e.prev.vertex === e.vertex){
+                continue;
+            }
+            this.registerEdge(e);
+        }
+        for(const e of this.edges){
+            if(e.prev.vertex === e.vertex){
+                continue;
+            }
+            this.registerTwin(e);
+        }
+    }
+    registerTwin(edge){
+        const start = edge.prev.vertex;
+        const end = edge.vertex;
+        const twinKey =
+        this.makeDirectedKey(
+            end,
+            start
+        );
+        const twin =this.edgeRegistry.get(
+            twinKey
+        );
+        if(twin){
+            edge.twin = twin;
+            twin.twin = edge;
+        }
+    }
+    createEdge(){
+        const e = new HEEdge();
+        this.edges.push(e);
+        return e;
+    }
+    getNextLoopEdge(edge){
+        if(!edge.twin)
+            return null;
+        const e = edge.twin.next.next;
+        return e;
+    }
+    collectEdgeLoop(startEdge){
+        const loop = [];
+        let edge = startEdge;
+        while(edge){
+            loop.push(edge);
+            edge =
+                this.getNextLoopEdge(
+                    edge
+                );
+            if(edge === startEdge)
+                break;
+        }
+        return loop;
+    }
+    getNextRingEdge(edge){
+        if(!edge.twin)
+            return null;
+        return edge.next.twin?.next;
+    }
+    collectEdgeRing(startEdge){
+        const ring = [];
+        let edge = startEdge;
+        while(edge){
+            ring.push(edge);
+            edge = this.getNextRingEdge(edge);
+            if(edge === startEdge)
+                break;
+        }
+        return ring;
+    }
+    createFaceFromVertices(vertices){
+        const face = new HEFace();
+        this.faces.push(face);
+        const edges = [];
+        const count = vertices.length;
+        for(let i=0;i<count;i++){
+            const start = vertices[i];
+            const end = vertices[(i+1)%count];
+            const edge = this.createEdge(
+                start,
+                end,
+                face
+            );
+            edges.push(edge);
+        }
+        for(let i=0;i<count;i++){
+            const edge = edges[i];
+            edge.next = edges[(i+1)%count];
+            edge.prev = edges[(i-1+count)%count];
+        }
+        face.edge = edges[0];
+        for(const edge of edges){
+            this.registerEdge(edge);
+        }
+        for(const edge of edges){
+            this.registerTwin(edge);
+        }
+        return face;
+    }
+    validateFaceLoops(){
+        for(const face of this.faces){
+            let count = 0;
+            let e = face.edge;
+            do{
+                count++;
+                if(count > 100){
+                   console.error("Broken face loop",face.id);
+                    break;
+                }
+                e = e.next;
+            }while(e !== face.edge);
+        }
+    }
+    validateRegistry(){
+        const map = new Map();
+        for(const e of this.edges){
+            const key =
+                this.makeUndirectedKey(
+                    e.prev.vertex,
+                    e.vertex
+                );
+            if(!map.has(key)){
+            map.set(key, []);
+        }
+        map.get(key).push(e);
+    }
+    for(const [key,list] of map){
+        if(list.length > 2){
+                console.warn(
+                    "Non-manifold",
+                    key
+                );
+            }
+        }
+    } 
+    triangulateFace(face){
+        const verts = this.collectFaceVertices(face);
+        const tris = [];
+        for(let i=1;i<verts.length-1;i++){
+            tris.push([verts[0], verts[i], verts[i+1]]);
+        }
+        return tris;
+    }
+    bridgeRings(outer, inner){
+        const ratio = outer.length / inner.length;
+        for(let i=0;i<inner.length;i++){
+            const o0 = outer[(i*ratio)%outer.length];
+            const o1 = outer[(i*ratio+1)%outer.length];
+            const i0 = inner[i];
+            const i1 = inner[(i+1)%inner.length];
+            this.createFaceFromVertices([
+                o0, o1, i1, i0
+            ]);
+        }
+    }
+    getEdgeNeighborhood(edge) {
+        return {
+            edge,
+            twin: edge.twin,
+            faceA: edge.face,
+            faceB: edge.twin?.face,
+            start: edge.prev.vertex,
+            end: edge.vertex
+        };
+    }
+    collapseEdge(edge) {
+        if(!edge) return;
+        const info = this.getEdgeNeighborhood(edge);
+        const start = edge.prev.vertex;
+        const end = edge.vertex;
+        const affectedFaces = [];
+        if(edge.face) {
+            affectedFaces.push(edge.face);
+        }
+        if(edge.twin && edge.twin.face) {
+            affectedFaces.push(edge.twin.face);
+        }
+        start.position.add(end.position).multiplyScalar(0.5);
+        for(const e of this.edges) {
+            if(e.vertex === end) {
+                e.vertex = start;
+            }
+        }
+        this.removeEdge(edge);
+        if(edge.twin) {
+            this.removeEdge(edge.twin);
+        }
+        this.removeVertex(end);
+        const rebuilt = new Set();
+        for(const face of affectedFaces) {
+            if(!face) continue;
+            if(rebuilt.has(face))
+                continue;
+            rebuilt.add(face);
+            this.rebuildFace(face);
+        }
+        this.cleanupEdges();
+        this.cleanupVertices();
+        this.rebuildEdgeRegistry();
+        this.validateMesh();
+    } //end collapseEdge
+    removeEdge(edge) {
+        const i = this.edges.indexOf(edge);
+        if(i !== -1) {
+            this.edges.splice(i,1);
+        }
+    }
+    removeVertex(vertex) {
+        const i = this.vertices.indexOf(vertex);
+        if(i !== -1) {
+            this.vertices.splice(i,1);
+        }
+    }
+    computeEdgeMidpoint(edge) {
+        const a = edge.prev.vertex.position;
+        const b = edge.vertext.position;
+        return new THREE.Vector3()
+            .addVectors(a,b)
+            .multiplyScalar(0.5);
+    }
+    splitEdge(edge) {
+        if(!edge)
+            return null;
+        const oldStart = edge.prev.vertex;
+        const oldEnd = edge.vertex;
+        const midpoint = this.computeEdgeMidpoint(edge);
+        const newVertex = this.weldVertex(midpoint);
+        this.vertices.push(newVertex);
+        return newVertex;
+    }
+    replaceEdgeWithSplit(edge, newVertex) {
+        const oldNext = edge.next;
+        const newEdge = this.createEdge();
+        newEdge.vertex = edge.vertex;
+        edge.vertex = newVertex;
+        edge.next = newEdge;
+        newEdge.prev = edge;
+        newEdge.next = oldNext;
+        oldNext.prev = newEdge;
+        newEdge.face = edge.face;
+        this.registerEdge(edge);
+        this.registerEdge(newEdge);
+        this.registerTwin(edge);
+        this.registerTwin(newEdge);
+        return newEdge;
+    }
+    splitEdgeFull(edge){
+        const newVertex = this.splitEdge(edge);
+        this.replaceEdgeWithSplit(edge,newVertex);
+        if(edge.twin) {
+            const twin = edge.twin;
+            this.replaceEdgeWithSplit(edge, newVertex);
+        }
+        this.rebuildEdgeRegistry();
+        return newVertex;
+    }
+    getVertexEdges(vertex){
+        const result = [];
+        for (const e of this.edges) {
+            if(e.vertex === vertex || e.prev.vertex === vertex) {
+                result.push(e);
+            }
+        }
+        return result;
+    }
+    dissolveVertex(vertex) {
+        const edges = this.getVertexEdges(vertex);
+        if(edges.length !==4) {
+            console.warn("cannot dissolve vertex", vertex.id);
+            return;
+        }
+    }
+    //Cube generation drops from ~100 lines to ~25.
+    createCube(size=1){
+        const s = size;
+        const verts = [
+            [-s,-s,-s],
+            [ s,-s,-s],
+            [ s, s,-s],
+            [-s, s,-s],
+
+            [-s,-s, s],
+            [ s,-s, s],
+            [ s, s, s],
+            [-s, s, s]
+        ];
+        for(const v of verts){
+        this.vertices.push(
+            new HEVertex(...v)
+        );
+        }
+        const quads = [
+            [0,1,2,3],
+            [4,5,6,7],
+
+            [0,4,7,3],
+            [1,5,6,2],
+
+            [3,2,6,7],
+            [0,1,5,4]
+        ];
+        for(const quad of quads){
+            this.createFaceFromVertices([
+                this.vertices[quad[0]],
+                this.vertices[quad[1]],
+                this.vertices[quad[2]],
+                this.vertices[quad[3]]
+           ]);
+        }
+    }
+    buildGeometry(){
+        const faceMap = [];
+        const positions = [];
+        for(const face of this.faces){
+            faceMap.push(face);
+            faceMap.push(face);
+            const verts = [];
+            let edge =
+                face.edge;
+            do{
+                verts.push(
+                    edge.vertex.position
+                );
+                edge=edge.next;
+            }
+            while(edge!==face.edge);
+            
+            const ab =
+                new THREE.Vector3().subVectors(
+                    verts[1],
+                    verts[0]
+                );
+
+            const ac =
+                new THREE.Vector3().subVectors(
+                    verts[2],
+                    verts[0]
+                );
+
+            const renderNormal =
+                new THREE.Vector3()
+                .crossVectors(ab, ac)
+                .normalize();
+
+            const center =
+                verts[0].clone()
+                .add(verts[1])
+                .add(verts[2])
+                .add(verts[3])
+                .multiplyScalar(0.25);
+
+            console.log(
+                "FACE",
+                face.id,
+                "RENDER DOT",
+                renderNormal.dot(
+                    center.clone().normalize()
+                )
+            );
+            
+            positions.push(
+                verts[0].x,
+                verts[0].y,
+                verts[0].z,
+
+                verts[1].x,
+                verts[1].y,
+                verts[1].z,
+
+                verts[2].x,
+                verts[2].y,
+                verts[2].z
+            );
+            positions.push(
+                verts[0].x,
+                verts[0].y,
+                verts[0].z,
+
+                verts[2].x,
+                verts[2].y,
+                verts[2].z,
+
+                verts[3].x,
+                verts[3].y,
+                verts[3].z
+            );
+            if(verts.length !== 4){
+                console.warn(
+                    "Non quad face",
+                    face.id,
+                    verts.length
+                );
+                console.error(
+                    "Face",
+                    face.id,
+                    "has",
+                    verts.length,
+                    "vertices"
+                );
+            }
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute(
+                positions,
+                3
+            )
+        );
+        geometry.userData = {
+            faceMap
+        };
+        geometry.computeVertexNormals();
+        return geometry;
+    }
+    extrudeFace(face){
+        if (!face || !face.edge) return;
+        // STEP 1 — canonical loop extraction (EDGE SOURCE OF TRUTH)
+        const baseRing = this.getFaceEdgeLoop(face);
+        const orderedEdges = baseRing;
+        const orderedVerts = orderedEdges.map(e => e.vertex);
+        // STEP 2 — compute normal (stable)
+        const normal = this.computeFaceNormal(face);
+        const a = orderedVerts[0].position;
+        const b = orderedVerts[1].position;
+        const c = orderedVerts[2].position;
+        // (optional but consistent w earlier debugging)
+        const ab = new THREE.Vector3().subVectors(b, a);
+        const ac = new THREE.Vector3().subVectors(c, a);
+        const centroid = new THREE.Vector3();
+        for (const v of orderedVerts) {
+            centroid.add(v.position);
+        }
+        centroid.multiplyScalar(1 / orderedVerts.length);
+        const offset = normal.clone().multiplyScalar(0.8);
+        // FIX 2: stable duplication
+        const dupVerts = orderedVerts.map(v => {
+            const nv = new HEVertex(
+                v.position.x + offset.x,
+                v.position.y + offset.y,
+                v.position.z + offset.z
+            );
+            this.vertices.push(nv);
+            // important: traceability link
+            nv.original = v;
+            return nv;
+        });
+        // STEP 4. top face
+        const topFace =
+            this.createFaceFromVertices(dupVerts);
+        // STEP 5. side faces
+        /**
+        for(let i=0;i<n;i++){
+            const v0 = orderedVerts[i];
+            const v1 = orderedVerts[(i+1)%n];
+            const v2 = dupVerts[(i+1)%n];
+            const v3 = dupVerts[i];
+            const f = new HEFace();
+            this.faces.push(f);
+            const e0 = new HEEdge();
+            const e1 = new HEEdge();
+            const e2 = new HEEdge();
+            const e3 = new HEEdge();
+            e0.vertex = v1;
+            e1.vertex = v2;
+            e2.vertex = v3;
+            e3.vertex = v0;
+     
+            e0.face = e1.face = e2.face = e3.face = f;
+            
+            e0.next = e1;
+            e1.next = e2;
+            e2.next = e3;
+            e3.next = e0;
+
+            e0.prev = e3;
+            e1.prev = e0;
+            e2.prev = e1;
+            e3.prev = e2;
+
+            f.edge = e0;
+
+            this.edges.push(e0,e1,e2,e3);
+        } **/
+        const n = dupVerts.length;
+        for(let i=0;i<n;i++){
+            const v0 = orderedVerts[i];
+            const v1 = orderedVerts[(i+1)%n];
+
+            const v2 = dupVerts[(i+1)%n];
+            const v3 = dupVerts[i];
+
+            this.createFaceFromVertices([
+                v0,
+                v1,
+                v2,
+                v3
+            ]);
+        }
+        // 6. remove old face
+        const idx = this.faces.indexOf(face);
+        if(idx !== -1){
+            this.faces.splice(idx,1);
+        }
+        this.repairTwins();
+    }
+    validateFaces(){
+        for(const face of this.faces){
+            let count = 0;
+            let e = face.edge;
+            do{
+                count++;
+                if(count > 20){
+                    console.error(
+                        "Broken face loop",
+                        face
+                    );
+                    break;
+                }
+                e = e.next;
+            }while(e !== face.edge);
+            console.log(
+                "Face",
+                face.id,
+                "edges:",
+                count
+            );
+        }
+    }
+    repairTwinsLegacy(){
+        const map = new Map();
+        for(const e of this.edges){
+            e.twin = null;
+            // const start =
+            //     e.prev.vertex.id;
+            // const end =
+            //     e.vertex.id;
+
+            const start = e.prev.vertex.original?.id ?? e.prev.vertex.id;
+            const end = e.vertex.original?.id ?? e.vertex.id;
+            map.set(
+                start + "_" + end,
+                e
+            );
+        }
+        for(const e of this.edges){
+            const start =
+                e.prev.vertex.id;
+            const end =
+                e.vertex.id;
+            const twinKey =
+                end + "_" + start;
+            if(map.has(twinKey)){
+                e.twin =
+                    map.get(twinKey);
+            }
+        }
+    }
+    repairTwins(){
+        const map = new Map();
+        const canonicalKey = (a, b) => {
+            return a < b ? `${a}_${b}` : `${b}_${a}`;
+        };
+        // STEP 1: clear all twins
+        for (const e of this.edges) {
+            e.twin = null;
+        }
+        // STEP 2: build canonical edge registry
+        for (const e of this.edges) {
+            const a = e.prev.vertex.id;
+            const b = e.vertex.id;
+            const key = canonicalKey(a, b);
+            if (!map.has(key)) {
+                map.set(key, []);
+            }
+            map.get(key).push(e);
+        }
+        // STEP 3: assign twins
+        for (const [key, list] of map.entries()) {
+            if (list.length === 2) {
+                const e0 = list[0];
+                const e1 = list[1];
+                e0.twin = e1;
+                e1.twin = e0;
+            }
+            // optional debug safety
+            if (list.length > 2) {
+                console.warn("Non-manifold edge detected:", key, list);
+            }
+        }
+    }
+    computeFaceNormal(face){
+        const verts = [];
+        let e = face.edge;
+        do {
+            verts.push(e.vertex.position);
+            e = e.next;
+        } while (e !== face.edge);
+
+        const ab = new THREE.Vector3().subVectors(verts[1], verts[0]);
+        const ac = new THREE.Vector3().subVectors(verts[2], verts[0]);
+
+        return new THREE.Vector3().crossVectors(ab, ac).normalize();
+    }
+    enforceConsistentWinding(){
+        if (!this.faces.length) return;
+        const visited = new Set();
+        const stack = [];
+        // start from face 0 as canonical orientation
+        const seed = this.faces[0];
+        stack.push(seed);
+        visited.add(seed);
+        while (stack.length) {
+            const face = stack.pop();
+            let e = face.edge;
+            do {
+                const twin = e.twin;
+                if (twin && twin.face && !visited.has(twin.face)) {
+                    const currentN = this.computeFaceNormal(face);
+                    const neighborN = this.computeFaceNormal(twin.face);
+                    // if normals disagree → flip neighbor
+                    if (currentN.dot(neighborN) < 0) {
+                        this.flipFaceWinding(twin.face);
+                    }
+                    visited.add(twin.face);
+                    stack.push(twin.face);
+                }
+                e = e.next;
+            } while (e !== face.edge);
+        }
+    }
+    flipFaceWinding(face){
+        const edges = [];
+        let e = face.edge;
+        do {
+            edges.push(e);
+            e = e.next;
+        } while (e !== face.edge);
+        // reverse cycle
+        edges.reverse();
+        for (let i = 0; i < edges.length; i++) {
+            const curr = edges[i];
+            const next = edges[(i + 1) % edges.length];
+            const prev = edges[(i - 1 + edges.length) % edges.length];
+            curr.next = next;
+            curr.prev = prev;
+        }
+        face.edge = edges[0];
+    }
+    getFaceEdgeLoop(face){
+        const loop = [];
+        let start = face.edge;
+        let e = start;
+        do {
+            loop.push(e);
+            e = e.next;
+        } while (e !== start);
+        return loop;
+    }
+    createNgon(vertices){
+        const face = new HEFace();
+        this.faces.push(face);
+        const edges = [];
+        for(let i=0;i<vertices.length;i++){
+            const e = this.createEdge();
+            e.vertex = vertices[i];
+            e.face = face;
+            edges.push(e);
+        }
+        for(let i=0;i<edges.length;i++){
+            edges[i].next = edges[(i+1)%edges.length];
+            edges[i].prev = edges[(i-1+edges.length)%edges.length];
+        }
+        face.edge = edges[0];
+        for(const e of edges){
+            this.registerEdge(e);
+        }
+        for(const e of edges){
+            this.registerTwin(e);
+        }
+        return face;
+    }
+    weldVertex(position, epsilon=1e-6){
+        for(const v of this.vertices){
+            if(
+                v.position.distanceTo(position)
+                < 1e-6
+            ){
+                return v;
+            }
+        }
+        const nv =
+            new HEVertex(
+                position.x,
+                position.y,
+                position.z
+            );
+        this.vertices.push(nv);
+        return nv;
+    }
+    findEdge(a,b){
+        return this.edgeRegistry.get(
+            this.makeDirectedKey(a,b)
+        );
+    }
+}
+
+class Selection {
+    constructor(){
+        this.mode = "face";
+        this.face = null;
+        this.edge = null;
+        this.vertex = null;
+    }
+    clear(){
+        this.face = null;
+        this.edge = null;
+        this.vertex = null;
+    }
+}
+
+// MESH SYSTEM
+class MeshSystem {
+    constructor(scene){
+        this.scene = scene;
+        this.topology = new HalfEdgeMesh();
+        this.faceBuilder = new FaceBuilder(this.topology);
+        this.topology.createCube(1);
+        this.topology.repairTwins();
+        this.topology.enforceConsistentWinding();
+        this.createRenderMesh();
+        this.selectedVertex = null;
+        this.selectedFace = null;
+        window.mesh = this.topology;
+    }
+    updateSelectedEdge(edge){
+        if(!edge){
+            this.selectedEdgeLine.visible=false;
+            return;
+        }
+        this.selectedEdgeLine.visible=true;
+        const a =
+            edge.prev.vertex.position;
+        const b =
+            edge.vertex.position;
+        const geo =
+            new THREE.BufferGeometry();
+        geo.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute([
+                a.x,a.y,a.z,
+                b.x,b.y,b.z
+            ],3)
+        );
+        this.selectedEdgeLine.geometry.dispose();
+        this.selectedEdgeLine.geometry =
+            geo;
+    }
+    updateSelectedVertex(vertex){
+        if(!vertex){
+            this.selectedVertexPoint.visible=false;
+            return;
+        }
+        this.selectedVertexPoint.visible=true;
+        const p =
+            vertex.position;
+        const geo =
+            new THREE.BufferGeometry();
+        geo.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute([
+                p.x,p.y,p.z
+            ],3)
+        );
+        this.selectedVertexPoint.geometry.dispose();
+        this.selectedVertexPoint.geometry =
+            geo;
+    }
+    createRenderMesh(){
+        this.selectedEdgeLine =
+            new THREE.Line(
+            new THREE.BufferGeometry(),
+            new THREE.LineBasicMaterial({
+                color:0xffff00
+            })
+        );
+        this.scene.add(
+            this.selectedEdgeLine
+        );
+        const geo = this.topology.buildGeometry();
+        const mat = new THREE.MeshStandardMaterial({
+            color:0x6688aa,
+            side:THREE.DoubleSide
+        });
+        this.mesh = new THREE.Mesh(geo,mat);
+        this.geometry = geo;
+        this.scene.add(this.mesh);
+        const edgeGeo = new THREE.EdgesGeometry(geo);
+        this.edgeLines = new THREE.LineSegments(
+            edgeGeo,
+            new THREE.LineBasicMaterial({
+                color:0xff66aa
+            })
+        );
+        this.scene.add(this.edgeLines);
+        const pointMat = new THREE.PointsMaterial({
+            color:0xffffff,
+            size:0.08,
+            sizeAttenuation:true
+        });
+        this.points = new THREE.Points(geo,pointMat);
+        this.scene.add(this.points);
+        this.mesh.geometry = geo;
+        this.edgeLines.geometry = geo;
+        this.points.geometry = geo;
+        this.highlightMesh = this.mesh.clone();
+        this.highlightMesh.material = new THREE.MeshBasicMaterial({
+            color:0xffaa00,
+            transparent:true,
+            opacity:0.5,
+            side:THREE.DoubleSide
+        });
+        this.highlightMesh.visible = false;
+        this.scene.add(this.highlightMesh);
+        this.faceColors =new Float32Array(
+            this.geometry.attributes.position.count * 3
+        );
+    }
+    rebuild(){
+        const geo = this.topology.buildGeometry();
+        this.mesh.geometry = geo;
+        this.edgeLines.geometry = geo;
+        this.points.geometry = geo;
+        this.geometry = geo;
+    }
+}
+
+// APP
+class EditorApp{
+    constructor(){
+    // "vertex" | "edge" | "face"
+    this.selection = new Selection();
+    this.initScene();
+    this.initHelpers();
+    this.animate();
+    // window.mesh = this.topology;
+    }
+    pickEdge(ray){
+        let bestEdge = null;
+        let bestDistance = Infinity;
+        const cpRay = new THREE.Vector3();
+        const cpSeg = new THREE.Vector3();
+        for(const edge of this.meshSystem.topology.edges){
+            const a = edge.prev.vertex.position;
+            const b = edge.vertex.position;
+            ray.distanceSqToSegment(
+                a,
+                b,
+                cpRay,
+                cpSeg
+            );
+            const d = cpRay.distanceTo(cpSeg);
+            if(d < 0.15 && d < bestDistance){
+                bestDistance = d;
+                bestEdge = edge;
+            }
+        }
+        return bestEdge;
+    }
+    pickVertex(ray) {
+        let best = null;
+        let bestDistance = Infinity;
+        for (const v of this.meshSystem.topology.vertices) {
+            const p = v.position;
+            const closest = ray.closestPointToPoint(
+                p,
+                true,
+                new THREE.Vector3()
+            );
+            const d = closest.distanceTo(p);
+            if(d < 0.12 && d << bestDistance) {
+                bestDistance = d;
+                best = v;
+            }
+        }
+        return best;
+    }
+    initScene(){
+// var viewport =
+//     document.getElementById("viewport");
+// var stats =
+//     document.getElementById("stats");
+
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x2a2a2a);
+        this.camera = new THREE.PerspectiveCamera(
+            60,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            1000
+        );
+        this.camera.position.set(4,4,6);
+        this.renderer = new THREE.WebGLRenderer({
+            antialias:true
+        });
+        this.renderer.setSize(
+            viewport.clientWidth,
+            viewport.clientHeight
+        );
+        viewport.appendChild(this.renderer.domElement);
+        this.controls =
+        new OrbitControls(
+            this.camera,
+            this.renderer.domElement
+        );
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
+        this.renderer.domElement.addEventListener("pointerdown",(e)=>{
+            const rect = this.renderer.domElement.getBoundingClientRect();
+            this.mouse.x = ((e.clientX - rect.left)/ rect.width) * 2 - 1;
+            this.mouse.y = -((e.clientY - rect.top)/ rect.height) * 2 + 1;
+            this.raycaster.setFromCamera(this.mouse,this.camera);
+            const hits =this.raycaster.intersectObject(this.meshSystem.mesh);
+            if(!hits.length) return;
+            const hit = hits[0];
+            if(this.selection.mode === "edge"){
+                this.selection.clear();
+                this.selection.edge =
+                this.pickEdge(
+                    this.raycaster.ray
+                );
+                return;
+            }
+            if(this.selection.mode === "vertex"){
+                this.selection.clear();
+                this.selection.vertex =
+                this.pickVertex(
+                    this.raycaster.ray
+                );
+                return;
+            }
+            if(this.selection.mode === "face"){
+                const face =
+                this.meshSystem.geometry.userData.faceMap[
+                hit.faceIndex
+                ];
+                this.selection.face = face;
+                console.log("FACE:", hit.faceIndex);
+            }
+        });
+        window.addEventListener("keydown",(e)=>{
+        if(e.key === "e"){
+            const face = APP.selection.face;
+            if(!face) return;
+            APP.meshSystem.topology.extrudeFace(face);
+            APP.meshSystem.topology.validateFaces();
+            APP.meshSystem.rebuild();
+        }
+        if(e.key==="s"){
+            const face=APP.selection.face;
+            if(!face)
+                return;
+            APP.meshSystem.faceBuilder
+            .splitVertical(face);
+            APP.meshSystem.rebuild();
+        }   
+        });
+    }
+    initHelpers(){
+        const grid =new THREE.GridHelper(50,50);
+        this.scene.add(grid);
+        const axes =new THREE.AxesHelper(2);
+        this.scene.add(axes);
+        const ambient = new THREE.AmbientLight(0xffffff,1);
+        this.scene.add(ambient);
+        const sun = new THREE.DirectionalLight(0xffffff,2);
+        sun.position.set(10,10,5);
+        this.scene.add(sun);
+        this.meshSystem = new MeshSystem(this.scene);
+        this.meshSystem.createCube(1);
+        console.warn("initHelpers called.");
+     }
+    updateSelectionVisual(){
+        this.meshSystem.updateSelectedVertex(this.selection.vertex)
+        if(!this.meshSystem ||
+            !this.meshSystem.highlightMesh){
+            return;
+        }
+        const face = this.selection.face;
+        if(!face){
+        this.meshSystem.highlightMesh.visible = false;
+        return;
+        }
+        this.meshSystem.highlightMesh.visible = true;
+    }
+    animate(){
+        requestAnimationFrame(()=>this.animate());
+        this.controls.update();
+        this.renderer.render(this.scene,this.camera);
+        this.updateSelectionVisual();
+    }
+}
+
+//test 2dto2d meshpipeline
+ const reader=new ImageReader();
+await reader.load("goblin.jpg");
+const image=reader.read();
+const silhouette=
+    new SilhouetteExtractor()
+        .extract(image);
+const landmarks=
+    new LandmarkDetector()
+        .detect(silhouette);
+const generator=
+    new GoblinTemplate(mesh);
+generator.build(landmarks);   
+const APP = new EditorApp();
+window.APP = APP;
+const topo = APP.meshSystem.topology;
+stats.innerHTML = `
+Vertices: ${topo.vertices.length}<br>
+Edges: ${topo.edges.length}<br>
+Faces: ${topo.faces.length}
+`;
+window.addEventListener(
+    "resize", ()=>{
+        APP.camera.aspect = viewport.clientWidth / viewport.clientHeight;
+        APP.camera.updateProjectionMatrix();
+        APP.renderer.setSize(viewport.clientWidth,viewport.clientHeight);
+    }
+);
+document.getElementById("selectTool")
+.addEventListener("click", () => {
+    APP.selection.mode = "face";
+});
+document.getElementById("extrudeTool")
+.addEventListener("click", () => {
+    APP.selection.mode = "face";
+});
+document.getElementById("sculptTool")
+.addEventListener("click", () => {
+    APP.selection.mode = "vertex";
+});
+document.getElementById("loadImg")
+.addEventListener("click", () => {
+//    APP.selection.mode = "vertex";
+});
+</script>
+
+</body>
+</html>>
