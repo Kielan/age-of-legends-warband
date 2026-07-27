@@ -1,0 +1,221 @@
+{
+  "asset": {
+    "name": "mercenary_camp",
+    "type": "building",
+    "version": "1.0"
+  },
+
+  "transform": {
+    "scale": [1.0, 1.0, 1.0],
+    "rotation": [0, 0, 0],
+    "origin": "center"
+  },
+
+  "materials": [
+    {
+      "id": "wood",
+      "albedo": "textures/wood_diffuse.png",
+      "normal": "textures/wood_normal.png",
+      "roughness": "textures/wood_roughness.png",
+      "metallic": 0.0
+    },
+    {
+      "id": "canvas",
+      "albedo": "textures/canvas_diffuse.png",
+      "normal": "textures/canvas_normal.png",
+      "roughness": "textures/canvas_roughness.png"
+    },
+    {
+      "id": "rope",
+      "albedo": "textures/rope_diffuse.png"
+    },
+    {
+      "id": "stone",
+      "albedo": "textures/stone_diffuse.png"
+    },
+    {
+      "id": "leather",
+      "albedo": "textures/leather_diffuse.png"
+    }
+  ],
+
+  "lods": [
+    {
+      "name": "LOD0",
+      "targetTriangles": 42000
+    },
+    {
+      "name": "LOD1",
+      "targetTriangles": 12000
+    },
+    {
+      "name": "LOD2",
+      "targetTriangles": 2500
+    }
+  ],
+
+  "modules": [
+    {
+      "id": "mainTent",
+      "primitive": "canvasTent",
+      "size": [10.5, 6.2, 8.5],
+      "segments": 18,
+      "material": "canvas"
+    },
+
+    {
+      "id": "rearTent",
+      "primitive": "canvasTent",
+      "size": [5.0, 3.8, 4.8],
+      "position": [-3.8, 0.0, -5.2],
+      "rotation": 15,
+      "material": "canvas"
+    },
+
+    {
+      "id": "watchPlatform",
+      "primitive": "woodPlatform",
+      "size": [3.0, 3.0, 2.8],
+      "position": [5.0, 0.0, 4.2],
+      "material": "wood"
+    },
+
+    {
+      "id": "banner01",
+      "primitive": "clothBanner",
+      "position": [5.2, 2.8, 4.3],
+      "size": [0.9, 2.3],
+      "material": "canvas"
+    },
+
+    {
+      "id": "banner02",
+      "primitive": "clothBanner",
+      "position": [-5.1, 2.8, 4.3],
+      "size": [0.9, 2.3],
+      "material": "canvas"
+    }
+  ],
+
+  "props": [
+    {
+      "type": "crate",
+      "count": 12,
+      "randomRadius": 7
+    },
+    {
+      "type": "barrel",
+      "count": 8
+    },
+    {
+      "type": "weaponRack",
+      "count": 4
+    },
+    {
+      "type": "shieldRack",
+      "count": 3
+    },
+    {
+      "type": "supplySack",
+      "count": 16
+    },
+    {
+      "type": "campfire",
+      "count": 1
+    },
+    {
+      "type": "torch",
+      "count": 6
+    },
+    {
+      "type": "horseTether",
+      "count": 2
+    }
+  ],
+
+  "fence": {
+    "enabled": true,
+    "style": "rough_logs",
+    "height": 1.7,
+    "gateWidth": 3.2,
+    "stakes": 42
+  },
+
+  "terrain": {
+    "radius": 13,
+    "base": "dirt",
+    "details": [
+      "mud",
+      "rocks",
+      "grass",
+      "wagon_tracks"
+    ]
+  },
+
+  "mesh": {
+    "vertexFormat": [
+      "POSITION",
+      "NORMAL",
+      "TANGENT",
+      "UV0"
+    ],
+
+    "subMeshes": [
+      {
+        "name": "tent_canvas",
+        "material": "canvas",
+        "generator": "canvasTent"
+      },
+      {
+        "name": "wood_frame",
+        "material": "wood",
+        "generator": "beamNetwork"
+      },
+      {
+        "name": "props",
+        "material": "wood"
+      },
+      {
+        "name": "ropes",
+        "material": "rope"
+      }
+    ]
+  },
+
+  "collision": {
+    "shape": "compound",
+    "boxes": [
+      {
+        "center": [0, 2.4, 0],
+        "size": [10.5, 5.2, 8.5]
+      },
+      {
+        "center": [5.0, 1.5, 4.2],
+        "size": [3.0, 3.0, 3.0]
+      }
+    ]
+  },
+
+  "textureAtlas": {
+    "size": 4096,
+    "channels": [
+      "albedo",
+      "normal",
+      "roughness",
+      "ao"
+    ]
+  },
+
+  "style": {
+    "theme": "fantasy_mercenary_outpost",
+    "construction": "canvas_and_logs",
+    "condition": "battle_worn",
+    "palette": {
+      "canvas": "#8A7A58",
+      "wood": "#5D4028",
+      "rope": "#9B7B4A",
+      "metal": "#505050",
+      "clothAccent": "#8C1F1F"
+    }
+  }
+}
