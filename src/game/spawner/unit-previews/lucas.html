@@ -1,0 +1,98 @@
+const MAT = {
+  materials:{
+      skin:{
+          map:"textures/lucas/skin_albedo.png",
+          normalMap:"textures/lucas/skin_normal.png",
+          roughnessMap:"textures/lucas/skin_roughness.png"
+      },
+      shirt:{
+          map:"textures/lucas/shirt_albedo.png",
+          normalMap:"textures/lucas/shirt_normal.png"
+      },
+      jeans:{
+          map:"textures/lucas/jeans_albedo.png",
+          normalMap:"textures/lucas/jeans_normal.png"
+      },
+      hair:{
+          map:"textures/lucas/hair_albedo.png"
+      },
+      shoes:{
+          map:"textures/lucas/shoes_albedo.png"
+      },
+      lightning:{
+          emissive:"#7aa7ff",
+          emissiveIntensity:5
+      }
+  }
+}
+
+
+// PURE JSON MODEL
+const lucasJSON = {
+root:{
+    pos:[0,0,0],
+    children:[
+        "pelvis",
+        "holyAura"
+    ]
+},
+pelvis:{
+    pos:[0,4,0],
+    geo:["box",2.5,1.8,1.6],
+    mat:"cloth",
+    children:[
+        "torso",
+        "leftLeg",
+        "rightLeg",
+        "tabard"
+    ]
+},
+geo:[
+    "roundedBox",
+    3.6,
+    4.2,
+    2.2,
+    0.35,     // corner radius
+    5          // subdivisions
+],
+neck:{
+    pos:[0,2.25,0],
+    geo:["cyl",0.33,0.37,0.55,16],
+    mat:"skin",
+    children:[
+        "head"
+    ]
+},
+head:{
+    pos:[0,0.65,0],
+    geo:[
+        "sphere",
+        1.25,
+        40,
+        32
+    ],
+    scale:[
+        1.00,
+        1.12,
+        0.95
+    ],
+    mat:"skin",
+    children:[
+        "face",
+        "hairBack",
+        "hairFront",
+        "hairTuft",
+        "leftEar",
+        "rightEar"
+    ]
+},
+face:{
+    pos:[0,0,1.17],
+    geo:[
+        "sphereCap",
+        1.18,
+        36
+    ],
+    mat:"face"
+}
+}
