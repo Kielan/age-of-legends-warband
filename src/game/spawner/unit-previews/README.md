@@ -8,9 +8,19 @@ root
       │     ├── head
       │     │     ├── hairFront
       │     │     ├── hairBack
-      │     │     ├── eyes
-      │     │     ├── eyebrows
+      │     │     ├── hairTuft
+      │     │     ├── leftEar
+      │     │     ├── rightEar
+      │     │     ├── face
+      │     │     ├── leftEye
+      │     │     ├── rightEye
+      │     │     ├── leftEyebrow
+      │     │     ├── rightEyebrow
       │     │     └── mouth
+      │     ├── leftShoulder
+      │     └── rightShoulder
+      ├── leftLeg
+      └── rightLeg
       │     ├── leftShoulder
       │     │     └── leftUpperArm
       │     │            └── leftLowerArm
