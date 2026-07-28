@@ -133,6 +133,25 @@ Faces: 0
  [] Symmetry pass
  [] Subdivision pass
  [] Mesh cleanup pass
+ Image
+   │
+   ▼
+SilhouetteExtractor
+   │
+   ▼
+LandmarkDetector
+   │
+   ▼
+TemplateFitter
+   │
+   ▼
+PrimitiveFactory
+   │
+   ▼
+HalfEdgeMesh
+   │
+   ▼
+Sculpt / Noise / Symmetry
  **/
 import * as THREE from "https://esm.sh/three@0.165.0";
 import {OrbitControls} from "https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js";
