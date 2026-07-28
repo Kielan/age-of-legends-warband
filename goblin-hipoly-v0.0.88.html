@@ -1066,7 +1066,151 @@ class GoblinNoise{
             );
         }
     }
-}    
+}
+class GoblinMorphGenerator{
+    constructor(mesh){
+    this.mesh = mesh;
+    this.headVertices = [];
+    this.bodyVertices = [];
+    this.armVertices = [];
+    this.legVertices = [];
+    this.noseVertices = [];
+    this.eyeVertices = [];
+    this.mouthVertices = [];
+    this.random = new SeededRandom(0);
+    }
+    applyHeadScale(){
+    for(const v of this.headVertices)
+    {
+        v.position.x *= 1.25;
+
+        v.position.z *= 1.25;
+
+        v.position.y *= 1.15;
+    }
+    }
+    applyJaw(){
+    for(const v of this.headVertices)
+    {
+        if(v.position.y<0)
+        {
+            v.position.z += .15;
+
+            v.position.x *= 1.08;
+        }
+    }
+    }
+    applyCheeks()
+    applyBrow(){
+    for(const v of this.headVertices)
+    {
+        if(v.position.y>.3)
+        {
+            v.position.z+=.08;
+        }
+    }
+    }
+applyNose()
+{
+    for(const v of this.noseVertices)
+    {
+        v.position.z += .35;
+    }
+}
+    applyNose()
+applyEyes()
+{
+    for(const v of this.eyeVertices)
+    {
+        v.position.z -= .12;
+    }
+}
+    applyEyes()
+applyMouth()
+{
+    for(const v of this.mouthVertices)
+    {
+        v.position.y -= .05;
+
+        v.position.z += .04;
+    }
+}
+    applyMouth()
+applyBody()
+{
+    for(const v of this.bodyVertices)
+    {
+        if(v.position.y>.2)
+        {
+            v.position.x*=1.15;
+        }
+
+        if(v.position.y<-.2)
+        {
+            v.position.x*=.85;
+        }
+    }
+}
+    applyBody()
+applyLegs()
+{
+    for(const v of this.legVertices)
+    {
+        v.position.y*=0.95;
+    }
+}
+    applyArms()
+
+    applyLegs()
+applyNoise()
+{
+    const noise = new ImprovedNoise();
+
+    for(const v of this.mesh.vertices)
+    {
+        const n =
+            noise.noise(
+                v.position.x*2,
+                v.position.y*2,
+                v.position.z*2
+            );
+
+        const normal =
+            this.computeVertexNormal(v);
+
+        v.position.addScaledVector(
+            normal,
+            n*.03
+        );
+    }
+}
+    applyNoise()
+
+    smooth()
+    smooth()
+{
+    const subdivider =
+        new CatmullClark(
+            this.mesh
+        );
+
+    subdivider.iterate(1);
+}
+    generate(){
+    this.applyHeadScale();
+    this.applyJaw();
+    this.applyCheeks();
+    this.applyBrow();
+    this.applyNose();
+    this.applyEyes();
+    this.applyMouth();
+    this.applyBody();
+    this.applyArms();
+    this.applyLegs();
+    this.applyNoise();
+    this.smooth();
+    }
+}
 //half edge mesh utils
 class FaceBuilder{
     constructor(mesh){
