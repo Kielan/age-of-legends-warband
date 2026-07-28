@@ -824,6 +824,98 @@ class UpdatedSilhouetteExtractor{
     }
 }
 
+ class TemplateFitter{
+    constructor(mesh){
+        this.mesh = mesh;
+        this.factory = new PrimitiveFactory(mesh);
+        this.landmarks = null;
+        this.parts = {};
+        this.options = {
+            mirror : true,
+            merge : true,
+            bodyStyle : "goblin"
+        };
+    }
+    fit(landmarks){
+    this.landmarks = landmarks;
+    this.parts = {};
+    this.buildTorso();
+    this.buildHead();
+    this.buildNeck();
+    this.buildPelvis();
+    this.buildArms();
+    this.buildLegs();
+    this.mergeBody();
+    this.finish();
+    return this.mesh;
+    }
+    clear(){}
+    buildHead(){}
+    buildNeck(){}
+    buildTorso(){
+
+    const m = this.measurements;
+
+    const torso =
+
+        this.factory.createCapsule(
+
+            m.shoulderWidth * 0.32,
+
+            m.torsoHeight,
+
+            16
+
+        );
+
+    torso.translate(
+
+        0,
+
+        this.landmarks.shoulders.centerY +
+
+        m.torsoHeight*0.5,
+
+        0
+
+    );
+
+    this.parts.torso = torso;
+
+} 
+    buildPelvis(){}
+    buildArm(side){}
+    buildLeg(side){}
+    buildArms(){}
+    buildLegs(){}
+    mergeBody(){}
+    computeMeasurements(){
+    const L = this.landmarks;
+    this.measurements = {
+        bodyHeight :
+            L.feet.centerY -
+            L.head.centerY,
+        shoulderWidth :
+            L.shoulders.right.position.x -
+            L.shoulders.left.position.x,
+        hipWidth :
+            L.hips.right.position.x -
+            L.hips.left.position.x,
+        torsoHeight :
+            L.hips.centerY -
+            L.shoulders.centerY,
+        armLength :
+            L.hands.left.position.distanceTo(
+                L.shoulders.left.position
+            ),
+        legLength :
+            L.feet.left.position.distanceTo(
+                L.hips.left.position
+            )
+    };
+} 
+    finish(){}
+}   
 class GoblinTemplate{
     constructor(mesh){
         this.mesh=mesh;
