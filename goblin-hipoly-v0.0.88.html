@@ -850,8 +850,40 @@ class UpdatedSilhouetteExtractor{
     return this.mesh;
     }
     clear(){}
-    buildHead(){}
-    buildNeck(){}
+    buildHead(){
+    const r =
+        this.landmarks.head.radius;
+    const head =
+        this.factory.createSphere(3);
+    head.scale(
+        r,
+        r,
+        r
+    );
+    head.translate(
+        this.landmarks.head.centerX,
+        this.landmarks.head.centerY,
+        0
+    );
+    this.parts.head = head;
+    } 
+    buildNeck(){
+
+    const neck =
+
+        this.factory.createCylinder(
+
+            this.measurements.shoulderWidth*0.12,
+
+            this.measurements.bodyHeight*0.08,
+
+            12
+
+        );
+
+    this.parts.neck = neck;
+
+}
     buildTorso(){
 
     const m = this.measurements;
@@ -881,9 +913,19 @@ class UpdatedSilhouetteExtractor{
     );
 
     this.parts.torso = torso;
+    } 
+    buildPelvis(){
+    const pelvis =
+        this.factory.createSphere(2);
 
-} 
-    buildPelvis(){}
+    pelvis.scale(
+        this.measurements.hipWidth*0.6,
+        this.measurements.bodyHeight*0.08,
+        this.measurements.hipWidth*0.5
+    );
+
+    this.parts.pelvis = pelvis;
+}
     buildArm(side){}
     buildLeg(side){}
     buildArms(){}
