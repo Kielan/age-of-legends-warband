@@ -868,48 +868,29 @@ class UpdatedSilhouetteExtractor{
     this.parts.head = head;
     } 
     buildNeck(){
-
     const neck =
-
         this.factory.createCylinder(
-
             this.measurements.shoulderWidth*0.12,
-
             this.measurements.bodyHeight*0.08,
-
             12
-
         );
 
     this.parts.neck = neck;
-
 }
     buildTorso(){
-
     const m = this.measurements;
-
     const torso =
-
         this.factory.createCapsule(
-
             m.shoulderWidth * 0.32,
-
             m.torsoHeight,
-
             16
-
         );
 
     torso.translate(
-
         0,
-
         this.landmarks.shoulders.centerY +
-
         m.torsoHeight*0.5,
-
         0
-
     );
 
     this.parts.torso = torso;
@@ -927,10 +908,61 @@ class UpdatedSilhouetteExtractor{
     this.parts.pelvis = pelvis;
 }
     buildArm(side){}
+    buildArm(side){
+
+    const upper =
+
+        this.factory.createCapsule(
+
+            0.16,
+
+            this.measurements.armLength*0.45,
+
+            12
+
+        );
+
+    const lower =
+
+        this.factory.createCapsule(
+
+            0.13,
+
+            this.measurements.armLength*0.42,
+
+            12
+
+        );
+
+    this.parts[side+"UpperArm"]=upper;
+
+    this.parts[side+"LowerArm"]=lower;
+
+} 
     buildLeg(side){}
-    buildArms(){}
+     
+    buildArms(){
+
+    this.buildArm("left");
+
+    this.buildArm("right");
+
+} 
     buildLegs(){}
-    mergeBody(){}
+    mergeBody(){
+    let body = this.parts.torso;
+    for(const key in this.parts){
+        if(key==="torso")
+            continue;
+        body =
+            this.factory.mergeMeshes(
+                body,
+                this.parts[key]
+            );
+    }
+
+    this.mesh = body;
+    } 
     computeMeasurements(){
     const L = this.landmarks;
     this.measurements = {
@@ -955,9 +987,24 @@ class UpdatedSilhouetteExtractor{
                 L.hips.left.position
             )
     };
-} 
-    finish(){}
-}   
+    }
+    finish(){
+    this.mesh.weldVertices();
+    this.mesh.computeNormals();
+    this.mesh.repairTwins();
+    } 
+}
+const GoblinProfile = {
+    headScale : 1.25,
+    armScale : 0.82,
+    legScale : 0.74,
+    shoulderScale : 0.92,
+    hipScale : 1.08,
+    earLength : 2.0,
+    noseLength : 1.6,
+    browScale : 1.35,
+    jawWidth : 1.25
+};
 class GoblinTemplate{
     constructor(mesh){
         this.mesh=mesh;
