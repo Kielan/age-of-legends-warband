@@ -923,15 +923,10 @@ class UpdatedSilhouetteExtractor{
         );
 
     const lower =
-
         this.factory.createCapsule(
-
             0.13,
-
             this.measurements.armLength*0.42,
-
             12
-
         );
 
     this.parts[side+"UpperArm"]=upper;
@@ -940,11 +935,8 @@ class UpdatedSilhouetteExtractor{
 
 } 
     buildLeg(side){}
-     
     buildArms(){
-
     this.buildArm("left");
-
     this.buildArm("right");
 
 } 
@@ -1043,6 +1035,21 @@ class GoblinSkeleton{
     pelvis
     leftShoulder
     rightShoulder
+}
+class GoblinAssembler {
+    constructor(mesh){
+        this.mesh = mesh;
+    }
+    build(template){
+        this.buildSkull(template);
+        this.buildJaw(template);
+        this.buildEars(template);
+        this.buildNose(template);
+        this.buildTorso(template);
+        this.buildHands(template);
+        this.buildFeet(template);
+        return this.mesh;
+    }
 }
 class GoblinNoise{
     apply(mesh){
