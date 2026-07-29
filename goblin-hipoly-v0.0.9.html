@@ -62,6 +62,9 @@ Extrude
 <button id="sculptTool">
 Sculpt
 </button>
+<button id="generateGoblinTool">
+Generate Goblin
+</button>
 <button>
 
 </button>
@@ -3516,6 +3519,46 @@ Vertices: ${topo.vertices.length}<br>
 Edges: ${topo.edges.length}<br>
 Faces: ${topo.faces.length}
 `;
+
+const fileInput =
+    document.getElementById("imageInput");
+
+document
+.getElementById("generateGoblinTool")
+
+.addEventListener("click",()=>{
+
+    if(APP.goblinGenerator.image){
+
+        APP.goblinGenerator.generate();
+
+    }
+
+    else{
+
+        fileInput.click();
+
+    }
+
+});
+    
+fileInput.addEventListener(
+
+"change",
+
+async e=>{
+
+    const file = e.target.files[0];
+
+    if(!file)
+        return;
+
+    await APP.goblinGenerator
+        .setImage(file);
+
+    APP.goblinGenerator.generate();
+
+});    
 window.addEventListener(
     "resize", ()=>{
         APP.camera.aspect = viewport.clientWidth / viewport.clientHeight;
