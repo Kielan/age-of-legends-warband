@@ -1854,6 +1854,102 @@ class VertexMaskDeformer
             );
         }
     }
+    // GET 1-RING NEIGHBORS
+    getVertexNeighbors(vertex) {
+        const neighbors = new Set();
+        for (const edge of this.mesh.edges) {
+            if (!edge)
+                continue;
+            /* edge:
+             * prev.vertex ---> edge.vertex
+             * If edge.vertex is our vertex,
+             * prev.vertex is a neighbor.*/
+            if (edge.vertex === vertex) {
+                if (edge.prev && edge.prev.vertex) {
+                    neighbors.add(edge.prev.vertex);
+                }
+            }
+            /* If prev.vertex is our vertex,
+             * edge.vertex is a neighbor.*/
+            if (edge.prev && edge.prev.vertex === vertex) {
+                if (edge.vertex) {
+                    neighbors.add(
+                        edge.vertex
+                    );
+                }
+            }
+        }
+        return [...neighbors];
+    }
+        computeVertexNormal(vertex) {
+        const normal =
+            new THREE.Vector3();
+        const faces = new Set();
+        /* Collect every face touching this vertex.
+         *
+         * This implementation deliberately scans the
+         * mesh instead of relying exclusively on
+         * vertex.edge/twin correctness.
+         *
+         * That's useful while your topology engine
+         * is still being developed.*/
+        for (const edge of this.mesh.edges) {
+            if (!edge)
+                continue;
+            const isIncident =
+                edge.vertex === vertex ||
+                (edge.prev &&edge.prev.vertex === vertex);
+            if (!isIncident)
+                continue;
+            if (edge.face) {
+                faces.add(edge.face);
+            }
+            if (edge.twin?.face) {
+                faces.add(edge.twin.face);
+            }
+        }
+        for (const face of faces) {
+            const faceNormal =
+                this.computeFaceNormal(face);
+            normal.add(faceNormal);
+        }
+        if (normal.lengthSq() < 1e-12) {
+            return new THREE.Vector3(0,1,0);
+        }
+        return normal.normalize();
+    }
+    computeFaceNormal(face) {
+        const vertices = [];
+        let edge = face.edge;
+        do {
+            vertices.push(
+                edge.vertex.position
+            );
+            edge = edge.next;
+        } while (edge &&edge !== face.edge);
+        if (vertices.length < 3) {
+            return new THREE.Vector3(
+                0,
+                1,
+                0
+            );
+        }
+        const a =
+            vertices[0];
+        const b =
+            vertices[1];
+        const c =
+            vertices[2];
+        const ab =
+            new THREE.Vector3()
+                .subVectors(b, a);
+        const ac =
+            new THREE.Vector3()
+                .subVectors(c, a);
+        return new THREE.Vector3()
+            .crossVectors(ab, ac)
+            .normalize();
+    }
 }    
 export class MaskUtilities{
     static add(vertex,mask){
@@ -2070,6 +2166,7 @@ class QuadFillBuilder {
 class DeformationGraph{
     constructor(mesh){
         this.mesh = mesh;
+        this.deformer = new VertexMaskDeformer(mesh);
         this.nodes = [];
     }
     add(node){
@@ -2135,20 +2232,25 @@ class InflateNode extends DeformationNode{
         this.amount = 0.3;
     }
     apply(mesh){
-        for(const vertex of mesh.vertices){
-            const weight =
-                vertex.weights.get(this.mask) ?? 0;
-            if(weight==0)
-                continue;
-            const normal =
-                mesh.computeVertexNormal(vertex);
-            vertex.position.addScaledVector(
-                normal,
-                this.amount *
-                weight *
-                this.strength
-            );
-        }
+        // for(const vertex of mesh.vertices){
+        //     const weight =
+        //         vertex.weights.get(this.mask) ?? 0;
+        //     if(weight==0)
+        //         continue;
+        //     const normal =
+        //         mesh.computeVertexNormal(vertex);
+        //     vertex.position.addScaledVector(
+        //         normal,
+        //         this.amount *
+        //         weight *
+        //         this.strength
+        //     );
+        // }
+        const deformer = new VertexMaskDeformer(mesh);
+        deformer.inflate(
+            this.mask,
+            this.amount * this.strength
+        );
     }
 }
 
