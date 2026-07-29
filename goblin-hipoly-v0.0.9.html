@@ -1332,17 +1332,71 @@ class GoblinMorphGenerator{
     }
     expandJaw(){
         for(const vertex of this.mesh.vertices){
-            
+        const w= vertex.weights.get(VertexMask.JAW ) ?? 0;
+        if(w===0)
+            continue;
+            vertex.position.x *= 1 + w*0.25;
+            vertex.position.y -= w*0.08;    
         }
     }
     shapeChin(){
         
     }
+    shapeChin(){
+
+    for(const vertex of this.mesh.vertices){
+
+        const w =
+            vertex.weights.get(
+                VertexMask.CHIN
+            ) ?? 0;
+
+        vertex.position.y -=
+            w*0.25;
+
+        vertex.position.z +=
+            w*0.05;
+
+    }
+
+    }
     stretchEars(){
         
     }
+    stretchEars(){
+
+    for(const vertex of this.mesh.vertices){
+
+        const left =
+            vertex.weights.get(
+                VertexMask.EAR_LEFT
+            ) ?? 0;
+
+        const right =
+            vertex.weights.get(
+                VertexMask.EAR_RIGHT
+            ) ?? 0;
+
+        vertex.position.y +=
+            0.3*(left+right);
+
+        vertex.position.x +=
+            right*0.25;
+
+        vertex.position.x -=
+            left*0.25;
+
+    }
+
+}
     bulgeSkull(){
         
+    }
+    bulgeSkull(){
+    this.moveMask(
+        VertexMask.SKULL,
+        0.12
+    );
     }
     computeFaceNormal(face) {
         const verts=[];
