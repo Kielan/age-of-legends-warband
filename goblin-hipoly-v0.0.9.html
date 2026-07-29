@@ -988,8 +988,7 @@ class UpdatedSilhouetteExtractor{
         });
     }
 }
-
- class TemplateFitter{
+class TemplateFitter{
     constructor(mesh){
         this.mesh = mesh;
         this.factory = new PrimitiveFactory(mesh);
@@ -1368,9 +1367,6 @@ class GoblinMorphGenerator{
 
     }
 
-    }
-    stretchEars(){
-        
     }
     stretchEars(){
 
@@ -3219,7 +3215,114 @@ class Selection {
         this.vertex = null;
     }
 }
+class GoblinGenerator{
 
+    constructor(app){
+
+        this.app = app;
+
+        this.image = null;
+
+    }
+
+    async setImage(file){
+
+        this.image =
+            await ImageLoader.load(file);
+
+    }
+
+    async generate(){
+
+    }
+    async generate(){
+
+    //--------------------------------------------------
+    // Stage 1
+    //--------------------------------------------------
+
+    const silhouette =
+
+        this.extractSilhouette();
+
+    //--------------------------------------------------
+    // Stage 2
+    //--------------------------------------------------
+
+    const landmarks =
+
+        this.detectLandmarks(
+
+            silhouette
+
+        );
+
+    //--------------------------------------------------
+    // Stage 3
+    //--------------------------------------------------
+
+    const template =
+
+        this.buildTemplate();
+
+    //--------------------------------------------------
+    // Stage 4
+    //--------------------------------------------------
+
+    this.fitTemplate(
+
+        template,
+
+        landmarks
+
+    );
+
+    //--------------------------------------------------
+    // Stage 5
+    //--------------------------------------------------
+
+    this.projectSurface(
+
+        template,
+
+        silhouette
+
+    );
+
+    //--------------------------------------------------
+    // Stage 6
+    //--------------------------------------------------
+
+    this.paintMasks(
+
+        template
+
+    );
+
+    //--------------------------------------------------
+    // Stage 7
+    //--------------------------------------------------
+
+    this.deform(
+
+        template
+
+    );
+
+    //--------------------------------------------------
+    // Stage 8
+    //--------------------------------------------------
+
+    this.finishMesh(
+
+        template
+
+    );
+
+}
+
+}
+    
 // MESH SYSTEM
 class MeshSystem {
     constructor(scene){
