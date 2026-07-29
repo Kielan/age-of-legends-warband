@@ -339,8 +339,85 @@ export class PrimitiveFactory {
         mesh.rebuildEdgeRegistry();
         return mesh;
     }
-    createWedge(width,height,depth){}
-    mirrorMesh(axis){}
+    createWedge(width,height,depth) {
+        const mesh = new HalfEdgeMesh();
+        const w = width * 0.5;
+        const h = height * 0.5;
+        const d = depth * 0.5;
+        const v = [
+            // FRONT
+            mesh.weldVertex(new THREE.Vector3(-w,-h,d)),
+            mesh.weldVertex(new THREE.Vector3(w,-h,d)),
+            mesh.weldVertex(new THREE.Vector3(w,h,d)),
+            mesh.weldVertex(new THREE.Vector3(-w,0,d)),
+            // BACK
+            mesh.weldVertex(new THREE.Vector3(-w,-h,-d)),
+            mesh.weldVertex(new THREE.Vector3(w,-h,-d)),
+            mesh.weldVertex(new THREE.Vector3(w,h,-d)),
+            mesh.weldVertex(new THREE.Vector3(-w,0,-d))
+        ];
+        // Front
+        mesh.createFaceFromVertices([v[0],v[1],v[2],v[3]]);
+        // Back
+        mesh.createFaceFromVertices([v[5],v[4],v[7],v[6]]);
+        // Bottom
+        mesh.createFaceFromVertices([v[0],v[4],v[5],v[1]]);
+        // Right
+        mesh.createFaceFromVertices([v[1],v[5],v[6],v[2]]);
+        // Sloped top
+        mesh.createFaceFromVertices([v[3],v[2],v[6],v[7]]);
+        // Left
+        mesh.createFaceFromVertices([v[4],v[0],v[3],v[7]]);
+        mesh.rebuildEdgeRegistry();
+        mesh.repairTwins();
+        return mesh;
+    }
+    mirrorMesh(sourceMesh,axis = "x") {
+        if (!sourceMesh) {
+            throw new Error("mirrorMesh requires a source mesh.");
+        }
+        if (axis !== "x" && axis !== "y" && axis !== "z") {
+            throw new Error("mirrorMesh axis must be x, y, or z.");
+        }
+        const result = new HalfEdgeMesh();
+        const vertexMap = new Map();
+        // DUPLICATE VERTICES
+        for (const oldVertex of sourceMesh.vertices) {
+            const p = oldVertex.position;
+            const mirrored = p.clone();
+            if (axis === "x") {
+                mirrored.x *= -1;
+            }
+            if (axis === "y") {
+                mirrored.y *= -1;
+            }
+            if (axis === "z") {
+                mirrored.z *= -1;
+            }
+            const newVertex = result.weldVertex(mirrored);
+            vertexMap.set(oldVertex,newVertex);
+        }
+        // DUPLICATE FACES
+        for (const face of sourceMesh.faces) {
+            const vertices = [];
+            let edge = face.edge;
+            do {
+                const newVertex = vertexMap.get(edge.vertex);
+                vertices.push(newVertex);
+                edge = edge.next;
+            } while (
+                edge !== face.edge
+            );
+            // Reflection reverses orientation.
+            vertices.reverse();
+            if (vertices.length >= 3) {
+                result.createFaceFromVertices(vertices);
+            }
+        }
+        result.rebuildEdgeRegistry();
+        result.repairTwins();
+        return result;
+    }
     mergeMeshes(meshA,meshB){}
     weldVertex(position) {
         for (const v of this.vertices) {
@@ -357,9 +434,7 @@ export class PrimitiveFactory {
     }
     weldSeam(loopA, loopB, epsilon = 1e-5) {
         if (!loopA || !loopB) {
-            throw new Error(
-                "weldSeam requires two loops."
-            );
+            throw new Error("weldSeam requires two loops.");
         }
         if (loopA.length !== loopB.length) {
             throw new Error(
@@ -372,9 +447,7 @@ export class PrimitiveFactory {
             const a = loopA[i];
             const b = loopB[i];
             const distance =
-                a.position.distanceTo(
-                    b.position
-                );
+                a.position.distanceTo(b.position);
             if (distance > epsilon) {
                 throw new Error(
                     `Seam vertex ${i} is too far apart: ` +
@@ -397,10 +470,7 @@ export class PrimitiveFactory {
                 if (edge.vertex === from) {
                     edge.vertex = to;
                 }
-                if (
-                    edge.prev &&
-                    edge.prev.vertex === from
-                ) {
+                if (edge.prev && edge.prev.vertex === from) {
                     edge.prev.vertex = to;
                 }
             }
@@ -409,8 +479,7 @@ export class PrimitiveFactory {
         // Remove welded vertices from vertex list
         for (const pair of mapping) {
             const from = pair.from;
-            const index =
-                mesh.vertices.indexOf(from);
+            const index = mesh.vertices.indexOf(from);
 
             if (index !== -1) {
                 mesh.vertices.splice(index, 1);
@@ -422,9 +491,7 @@ export class PrimitiveFactory {
     }
     connectLoops(loopA, loopB) {
         if (!loopA || !loopB) {
-            throw new Error(
-                "connectLoops requires two loops."
-            );
+            throw new Error("connectLoops requires two loops.");
         }
         if (loopA.length !== loopB.length) {
             throw new Error(
@@ -449,9 +516,7 @@ export class PrimitiveFactory {
             epsilon = 1e-5
         } = options;
         if (!loopA || !loopB) {
-            throw new Error(
-                "bridgeLoops requires two loops."
-            );
+            throw new Error("bridgeLoops requires two loops.");
         }
         if (loopA.length !== loopB.length) {
             throw new Error(
@@ -461,13 +526,9 @@ export class PrimitiveFactory {
         if (weld) {
             this.weldSeam(loopA,loopB,epsilon);
         }
-
-        const faces =
-            this.createQuadStrip(loopA,loopB,closed);
-
+        const faces =this.createQuadStrip(loopA,loopB,closed);
         this.mesh.rebuildEdgeRegistry();
         this.mesh.repairTwins();
-
         return faces;
     }
     buildFace(vertices) {
@@ -477,8 +538,7 @@ export class PrimitiveFactory {
         // Remove consecutive duplicate vertices
         const clean = [];
         for (const v of vertices) {
-            if (clean.length === 0 || clean[clean.length - 1]
-            !== v) {
+            if (clean.length === 0 || clean[clean.length - 1] !== v) {
                 clean.push(v);
             }
         }
@@ -487,17 +547,13 @@ export class PrimitiveFactory {
             clean.pop();
         }
         if (clean.length < 3) {
-            throw new Error(
-                "buildFace produced fewer than 3 unique vertices."
-            );
+            throw new Error("buildFace produced fewer than 3 unique vertices.");
         }
         return this.mesh.createFaceFromVertices(clean);
     }
     createQuadStrip(loopA, loopB, closed = true) {
         if (!loopA || !loopB) {
-            throw new Error(
-                "createQuadStrip requires two loops."
-            );
+            throw new Error("createQuadStrip requires two loops.");
         }
         if (loopA.length !== loopB.length) {
             throw new Error(
@@ -623,11 +679,7 @@ class LandmarkDetector{
     }
     sampleWidths(step=2){
         const samples=[];
-        for(
-            let y=this.bounds.minY;
-            y<=this.bounds.maxY;
-            y+=step
-        ){
+        for(let y=this.bounds.minY;y<=this.bounds.maxY;y+=step){
             let left=Infinity;
             let right=-Infinity;
             for(const p of this.outline){
@@ -653,11 +705,7 @@ class LandmarkDetector{
         let widest=0;
         let index=0;
         const limit=Math.floor(rows.length*0.25);
-        for(
-            let i=0;
-            i<limit;
-            i++
-        ){
+        for(let i=0;i<limit;i++){
             if(rows[i].width>widest){
                 widest=rows[i].width;
                 index=i;
@@ -673,15 +721,9 @@ class LandmarkDetector{
         const rows=this.sampleWidths();
         let best=0;
         let smallest=Infinity;
-        const start=
-            Math.floor(rows.length*.1);
-        const end=
-            Math.floor(rows.length*.35);
-        for(
-            let i=start;
-            i<end;
-            i++
-        ){
+        const start=Math.floor(rows.length*.1);
+        const end=Math.floor(rows.length*.35);
+        for(let i=start;i<end;i++){
             if(rows[i].width<smallest){
                 smallest=rows[i].width;
                 best=i;
@@ -693,11 +735,7 @@ class LandmarkDetector{
         const rows=this.sampleWidths();
         let best=0;
         let slope=-Infinity;
-        for(
-            let i=1;
-            i<rows.length;
-            i++
-        ){
+        for(let i=1;i<rows.length;i++){
             const d=rows[i].width-rows[i-1].width;
             if(d>slope){
                 slope=d;
@@ -780,32 +818,15 @@ class UpdatedSilhouetteExtractor{
         });
     }
     extract(options={}){
-        const threshold =
-            options.threshold ?? 128;
-        const simplify =
-            options.simplify ?? 2;
-        const image =
-            this.ctx.getImageData(
-                0,
-                0,
-                this.canvas.width,
-                this.canvas.height
-            );
-        const binary =
-            this.makeBinary(
-                image,
-                threshold
-            );
-        const contours =
-            this.traceContours(binary);
+        const threshold = options.threshold ?? 128;
+        const simplify = options.simplify ?? 2;
+        const image = this.ctx.getImageData(
+                0,0,this.canvas.width,this.canvas.height);
+        const binary = this.makeBinary(image,threshold);
+        const contours = this.traceContours(binary);
         const simplified=[];
         for(const c of contours){
-            simplified.push(
-                this.simplifyContour(
-                    c,
-                    simplify
-                )
-            );
+            simplified.push(this.simplifyContour(c,simplify));
         }
         return simplified;
     }
@@ -834,21 +855,12 @@ class UpdatedSilhouetteExtractor{
     // marching squares
     traceContours(binary){
         const contours=[];
-        const visited=new Uint8Array(
-            binary.width*
-            binary.height
-        );
+        const visited=new Uint8Array(binary.width*binary.height);
         for(let y=1;y<binary.height-1;y++){
             for(let x=1;x<binary.width-1;x++){
                 const i=x+y*binary.width;
                 if(binary.data[i]===1 &&!visited[i]){
-                    const contour=
-                        this.followContour(
-                            binary,
-                            x,
-                            y,
-                            visited
-                        );
+                    const contour=this.followContour(binary,x,y,visited);
                     if(contour.length>10){
                         contours.push(
                             contour
@@ -860,12 +872,7 @@ class UpdatedSilhouetteExtractor{
         return contours;
     }
     // Moore Neighbor tracing
-    followContour(
-        binary,
-        sx,
-        sy,
-        visited
-    ){
+    followContour(binary,sx,sy,visited){
         const contour=[];
         const dirs=[
             [1,0],
@@ -883,23 +890,13 @@ class UpdatedSilhouetteExtractor{
         let x=sx;
         let y=sy;
         while(true){
-            contour.push({
-                x,
-                y
-            });
-            visited[
-                x+y*binary.width
-            ]=1;
+            contour.push({x,y});
+            visited[x+y*binary.width]=1;
             let found=false;
             for(const d of dirs){
                 const nx=x+d[0];
                 const ny=y+d[1];
-                if(
-                    nx<0||
-                    ny<0||
-                    nx>=binary.width||
-                    ny>=binary.height
-                )
+                if(nx<0||ny<0||nx>=binary.width||ny>=binary.height)
                 continue;
                 const index=nx+ny*binary.width;
                 if(binary.data[index] &&!visited[index]){
@@ -1010,10 +1007,8 @@ class UpdatedSilhouetteExtractor{
     }
     clear(){}
     buildHead(){
-        const r =
-            this.landmarks.head.radius;
-        const head =
-            this.factory.createSphere(3);
+        const r = this.landmarks.head.radius;
+        const head = this.factory.createSphere(3);
         head.scale(
             r,
             r,
