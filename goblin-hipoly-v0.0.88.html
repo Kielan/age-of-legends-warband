@@ -1615,7 +1615,385 @@ class QuadFillBuilder {
     this.createCenterPatch(current);
     } 
 }
+class DeformationGraph{
+
+    constructor(mesh){
+
+        this.mesh = mesh;
+
+        this.nodes = [];
+
+    }
+
+    add(node){
+
+        this.nodes.push(node);
+
+    }
+
+    remove(node){
+
+        const i = this.nodes.indexOf(node);
+
+        if(i !== -1)
+            this.nodes.splice(i,1);
+
+    }
+
+    clear(){
+
+        this.nodes.length = 0;
+
+    }
+
+    evaluate(){
+
+        for(const node of this.nodes){
+
+            node.apply(this.mesh);
+
+        }
+
+    }
+
+}
+class DeformationNode{
+    constructor(){
+        this.enabled = true;
+        this.strength = 1.0;
+    }
+    apply(mesh){}
+}
+class NoiseNode extends DeformationNode{
+
+    constructor(mask){
+
+        super();
+
+        this.mask = mask;
+
+        this.scale = 2;
+
+        this.amplitude = 0.2;
+
+    }
+
+    apply(mesh){
+
+        for(const vertex of mesh.vertices){
+
+            const weight =
+                vertex.weights.get(this.mask) ?? 0;
+
+            if(weight==0)
+                continue;
+
+            const p = vertex.position;
+
+            const n = mesh.computeVertexNormal(vertex);
+
+            const value =
+                noise3D(
+                    p.x*this.scale,
+                    p.y*this.scale,
+                    p.z*this.scale
+                );
+
+            p.addScaledVector(
+                n,
+                value *
+                this.amplitude *
+                weight *
+                this.strength
+            );
+
+        }
+
+    }
+
+}
     
+class InflateNode extends DeformationNode{
+
+    constructor(mask){
+
+        super();
+
+        this.mask = mask;
+
+        this.amount = 0.3;
+
+    }
+
+    apply(mesh){
+
+        for(const vertex of mesh.vertices){
+
+            const weight =
+                vertex.weights.get(this.mask) ?? 0;
+
+            if(weight==0)
+                continue;
+
+            const normal =
+                mesh.computeVertexNormal(vertex);
+
+            vertex.position.addScaledVector(
+
+                normal,
+
+                this.amount *
+
+                weight *
+
+                this.strength
+
+            );
+
+        }
+
+    }
+
+}
+
+class ScaleNode extends DeformationNode{
+
+    constructor(mask){
+
+        super();
+
+        this.mask = mask;
+
+        this.scale = 1.2;
+
+        this.center =
+            new THREE.Vector3();
+
+    }
+
+    apply(mesh){
+
+        for(const vertex of mesh.vertices){
+
+            const weight =
+                vertex.weights.get(this.mask) ?? 0;
+
+            if(weight==0)
+                continue;
+
+            const p =
+                vertex.position
+                .clone()
+                .sub(this.center);
+
+            p.multiplyScalar(
+
+                1 +
+
+                (this.scale-1)
+
+                *
+
+                weight
+
+                *
+
+                this.strength
+
+            );
+
+            vertex.position.copy(
+
+                this.center.clone().add(p)
+
+            );
+
+        }
+
+    }
+
+}
+
+class TwistNode extends DeformationNode{
+
+    constructor(mask){
+
+        super();
+
+        this.mask = mask;
+
+        this.angle = 0;
+
+    }
+
+    apply(mesh){
+
+        for(const vertex of mesh.vertices){
+
+            const w =
+                vertex.weights.get(this.mask) ?? 0;
+
+            if(w==0)
+                continue;
+
+            const theta =
+                this.angle *
+                w *
+                this.strength;
+
+            const x =
+                vertex.position.x;
+
+            const z =
+                vertex.position.z;
+
+            vertex.position.x =
+                x*Math.cos(theta)
+                -
+                z*Math.sin(theta);
+
+            vertex.position.z =
+                x*Math.sin(theta)
+                +
+                z*Math.cos(theta);
+
+        }
+
+    }
+
+}
+
+class MoveNode extends DeformationNode{
+
+    constructor(mask){
+
+        super();
+
+        this.mask = mask;
+
+        this.offset =
+            new THREE.Vector3();
+
+    }
+
+    apply(mesh){
+
+        for(const vertex of mesh.vertices){
+
+            const w =
+                vertex.weights.get(this.mask) ?? 0;
+
+            if(w==0)
+                continue;
+
+            vertex.position.addScaledVector(
+
+                this.offset,
+
+                w*this.strength
+
+            );
+
+        }
+
+    }
+
+}
+
+class SmoothNode extends DeformationNode{
+
+    constructor(mask){
+
+        super();
+
+        this.mask = mask;
+
+        this.iterations = 1;
+
+    }
+
+    apply(mesh){
+
+        for(let i=0;i<this.iterations;i++){
+
+            mesh.laplacianSmoothMask(
+
+                this.mask,
+
+                this.strength
+
+            );
+
+        }
+
+    }
+
+}
+
+const graph =
+    new DeformationGraph(mesh);
+
+graph.add(
+
+    new InflateNode(
+
+        VertexMask.CHEEK_LEFT
+
+    )
+
+);
+
+graph.add(
+
+    new InflateNode(
+
+        VertexMask.CHEEK_RIGHT
+
+    )
+
+);
+
+graph.add(
+
+    new NoiseNode(
+
+        VertexMask.NOSE
+
+    )
+
+);
+
+graph.add(
+
+    new ScaleNode(
+
+        VertexMask.EAR_LEFT
+
+    )
+
+);
+
+graph.add(
+
+    new ScaleNode(
+
+        VertexMask.EAR_RIGHT
+
+    )
+
+);
+
+graph.evaluate();
+
+ generator.build(graph, {
+    skullWidth: 1.25,
+    noseLength: 0.40,
+    earSize: 1.6,
+    jawWidth: 1.15,
+    cheekInflation: 0.25,
+    asymmetry: 0.08
+});   
+
 // TOPOLOGY
 class HEVertex {
     constructor(x,y,z){
