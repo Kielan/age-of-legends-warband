@@ -1056,15 +1056,39 @@ class GoblinMorphGenerator{
         }
     }
     applyJaw(){
-        for(const v of this.headVertices){
-            if(v.position.y<0)
-            {
-                v.position.z += .15;
-                v.position.x *= 1.08;
-            }
-        }
+        // for(const v of this.headVertices){
+        //     if(v.position.y<0)
+        //     {
+        //         v.position.z += .15;
+        //         v.position.x *= 1.08;
+        //     }
+        // }
+        this.deformer.translate(
+            VertexMask.JAW,
+            new THREE.Vector3(0.-1,1),
+            0.2
+        );
     }
-    applyCheeks(){}
+    applyCheeks(){
+        // for(const vertex of this.mesh.vertices){
+        //     const influence = vertex.weights.get(VertexMask.CHEEK_LEFT) ?? 0;
+        //     if(influence===0)
+        //         continue;
+        //     const normal = this.computeVertexNormal(vertex);
+        //     vertex.position.addScaledVector(
+        //         normal,
+        //         influence * 0.15
+        //     );
+        // }
+        this.deformer.inflate(
+            VertexMask.CHEEK_LEFT,
+            0.15
+        );
+        this.deformer.inflate(
+            VertexMask.CHEEK_RIGHT,
+            0.15
+        );
+    }
     applyBrow(){
         for(const v of this.headVertices){
             if(v.position.y>.3){
@@ -1073,11 +1097,16 @@ class GoblinMorphGenerator{
         }
     }
     applyNose(){
-        for(const v of this.noseVertices){
-            v.position.z += .35;
+        // for(const v of this.noseVertices){
+        //     v.position.z += .35;
+        // }
+        for(const vertex of this.mesh.vertices){
+            const influence = vertex.weights.get(VertexMask.NOSE) ?? 0;
+            if(influence===0)
+                continue;
+            vertex.position.z += influence * 0.35;
         }
     }
-    applyNose()
     applyEyes(){
         for(const v of this.eyeVertices){
             v.position.z -= .12;
@@ -1117,6 +1146,80 @@ class GoblinMorphGenerator{
                 normal,
                 n*.03
             );
+        }
+    }
+    inflateCheecks(){
+        this.moveMask(VertexMask.CHEEK_LEFT,0.18);
+        this.moveMask(vERTEXmASK.CHEECK_RIGHT.0.18)
+    }
+    raiseBrow(){
+        for(const vertex of this.mesh.vertices){
+            const w = vertex.weights.get(VertexMask.BROW) ?? 0;
+            vertex.position.y += 0.12*w;
+        }
+    }
+    lengthenNose(){
+        for(const vertex of this.mesh.vertices){
+            const w = vertex.weights.get(VertexMask.NOSE) ?? 0;
+            vertex.position.z += 0.35*w;
+        }
+    }
+    expandJaw(){
+        for(const vertex of this.mesh.vertices){
+            
+        }
+    }
+    shapeChin(){
+        
+    }
+    stretchEars(){
+        
+    }
+    bulgeSkull(){
+        
+    }
+    computeFaceNormal(face) {
+        const verts=[];
+        let e=face.edge;
+        do{
+            verts.push(e.vertex.position);
+            e=e.next;
+        } while (e!==face.edge);
+        const ab=new THREE.Vector3()
+            .subVector(verts[1],verts[0]);
+        const ac=new THREE.Vector3()
+            .subVector(verts[2],verts[0]);
+        return new THREE.Vector3()
+            .crossVectors(ab,ac)
+            .normalize();
+    }
+    computeVertexNormal(vertex) {
+        const normal = new THREE.Vector3();
+        let edge = vertex.edge;
+        if(!edge)
+            return normal.set(0,1,0);
+        const visited = new Set();
+        while(edge){
+            if(visited.has(edge))
+                break;
+            visited.add(edge);
+            if(edge.face){
+                normal.add(this.computeFaceNormal(edge.face));
+            }
+            if(!edge.twin)
+                break;
+            edge = edge.twin.next;
+            if(edge===vertex.edge)
+                break;
+        }
+    }
+    moveMask(mask, distance){
+        for(const vertex of this.mesh.vertices){
+            const weight= vertex.weights.get(mask);
+            if(weight<=0)
+                continue;
+            const normal = this.computeVertexNormal(vertex);
+            vertex.position.addScaledVector(normal, distance*weight);
         }
     }
     smooth(){
@@ -1185,7 +1288,6 @@ class FaceBuilder{
         this.mesh.validateFaceLoops();
     }
 }
-    
 class MeshEuler {
     constructor(mesh){
         this.mesh = mesh;
@@ -1198,45 +1300,45 @@ class MeshEuler {
         return e;
     }
     makeFace(vertices){
-    if(vertices.length < 3){
-        console.warn(
-            "makeFace requires at least 3 vertices."
-        );
-        return null;
-    }
-    // Create face
-    const face = new HEFace();
-    this.faces.push(face);
-    // Create edges
-    const edges = [];
-    for(let i=0;i<vertices.length;i++){
-        const e = this.createEdge();
-        e.vertex = vertices[i];
-        e.face = face;
-        edges.push(e);
-    }
-    // Build circular loop
-    const n = edges.length;
-    for(let i=0;i<n;i++){
-        edges[i].next = edges[(i+1)%n];
-        edges[i].prev = edges[(i-1+n)%n];
-    }
-    // Assign representative pointers
-    face.edge = edges[0];
-    for(let i=0;i<n;i++){
-        if(!vertices[i].edge){
-            vertices[i].edge = edges[i];
+        if(vertices.length < 3){
+            console.warn(
+                "makeFace requires at least 3 vertices."
+            );
+            return null;
         }
-    }
-    // Register edges
-    for(const e of edges){
-        this.registerEdge(e);
-    }
-    // Connect twins immediately
-    for(const e of edges){
-        this.registerTwin(e);
-    }
-    return face;
+        // Create face
+        const face = new HEFace();
+        this.faces.push(face);
+        // Create edges
+        const edges = [];
+        for(let i=0;i<vertices.length;i++){
+            const e = this.createEdge();
+            e.vertex = vertices[i];
+            e.face = face;
+            edges.push(e);
+        }
+        // Build circular loop
+        const n = edges.length;
+        for(let i=0;i<n;i++){
+            edges[i].next = edges[(i+1)%n];
+            edges[i].prev = edges[(i-1+n)%n];
+        }
+        // Assign representative pointers
+        face.edge = edges[0];
+        for(let i=0;i<n;i++){
+            if(!vertices[i].edge){
+                vertices[i].edge = edges[i];
+            }
+        }
+        // Register edges
+        for(const e of edges){
+            this.registerEdge(e);
+        }
+        // Connect twins immediately
+        for(const e of edges){
+            this.registerTwin(e);
+        }
+        return face;
     }
     killFace(face){
         if(!face)
@@ -1283,9 +1385,7 @@ class MeshEuler {
 
         }while(e !== faceA.edge);
         if(!shared){
-            console.warn(
-                "Faces are not adjacent."
-            );
+            console.warn("Faces are not adjacent.");
             return null;
         }
         // Collect loop from Face A
@@ -1394,7 +1494,17 @@ export const VertexMask={
 };
 class VertexMaskDeformer
 {
-    constructor(mesh){}
+    constructor(mesh){
+        this.mesh = mesh;
+    }
+    deform(){
+        this.inflateCheeks();
+        this.expandJaw();
+        this.raiseBrow();
+        this.lengthenNose();
+        this.shapeChin();
+        this.randomNoise
+    }
     inflate(mask, amount){}
     translate(mask, direction, amount){}
     scale(mask, center, scale){}
