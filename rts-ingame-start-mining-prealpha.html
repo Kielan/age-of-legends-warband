@@ -760,6 +760,20 @@ function depositGold(){
         data.goldmine.position.clone();
 }
 // MOVEMENT
+function isNearTarget(target, distance){
+    const dx =
+        peasant.position.x -
+        target.x;
+    const dz =
+        peasant.position.z -
+        target.z;
+    const dist =
+        Math.sqrt(
+            dx * dx +
+            dz * dz
+        );
+    return dist <= distance;
+}
 function moveToward(target){
     const dir =
         new THREE.Vector3()
@@ -803,7 +817,7 @@ function movePeasant(delta){
     }
     // MINING
     if(data.state === "mining"){
-        updateMining();
+        updateMining(delta);
         return;
     }
     // MOVING TO TOWN HALL
