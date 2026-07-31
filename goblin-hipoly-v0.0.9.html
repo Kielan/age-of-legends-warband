@@ -893,7 +893,6 @@ class UpdatedSilhouetteExtractor{
             [-1,-1],
             [0,-1],
             [1,-1]
-
         ];
 
         let x=sx;
@@ -1394,9 +1393,6 @@ class GoblinMorphGenerator{
     }
 
 }
-    bulgeSkull(){
-        
-    }
     bulgeSkull(){
     this.moveMask(
         VertexMask.SKULL,
@@ -3254,7 +3250,7 @@ class GoblinGenerator{
     );
     //--------------------------------------------------
     // Stage 5
-    //--------------------------------------------------
+    //-------------------------------------------------
 
     this.projectSurface(
         template,
@@ -3420,6 +3416,26 @@ class EdgeHandle{
         );
     }
 }
+class SelectionManager{
+    constructor(){
+        this.selectedVertices = [];
+        this.selectedEdges = [];
+        this.selectedFaces = [];
+        this.selectedLandmarks = [];
+
+    }
+
+    selectVertex(vertex){}
+
+    selectEdge(edge){}
+
+    selectFace(face){}
+
+    selectLandmark(point){}
+
+    clear(){}
+
+}    
 // APP
 class EditorApp{
     constructor(){
