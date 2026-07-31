@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>RTS HUD Prototype</title>
+
+<style>
+
+html,body{
+    margin:0;
+    overflow:hidden;
+    background:#111;
+    font-family:Arial,sans-serif;
+}
+
+canvas{
+    display:block;
+}
+
+#hud{
+    position:absolute;
+    left:0;
+    right:0;
+    bottom:0;
+    height:220px;
+    background:
+        linear-gradient(to bottom,#171717,#050505);
+    border-top:4px solid #444;
+    display:flex;
+    z-index:20;
+    color:white;
+}
+
+/* LEFT MINIMAP */
+
+#leftHUD{
+    width:240px;
+    border-right:2px solid #333;
+    padding:10px;
+    background:#0c0c0c;
+}
+
+#minimapWrap{
+    width:200px;
+    height:200px;
+    border:3px solid #666;
+    background:#111;
+    position:relative;
+}
+
+#minimap{
+    width:100%;
+    height:100%;
+}
+
+/* MIDDLE UNIT */
+
+#middleHUD{
+    width:320px;
+    border-right:2px solid #333;
+    padding:12px;
+    display:flex;
+    gap:12px;
+    background:#101010;
+}
+
+#portrait{
+    width:128px;
+    height:128px;
+    border:2px solid #777;
+    background:#222;
+    position:relative;
+}
+
+#portrait::before{
+    content:"";
+    position:absolute;
+    left:42px;
+    top:30px;
+    width:40px;
+    height:58px;
+    background:#c9b07d;
+}
+
+#portrait::after{
+    content:"";
+    position:absolute;
+    left:30px;
+    top:8px;
+    width:65px;
+    height:40px;
+    background:#775533;
+    clip-path:polygon(50% 0%,100% 100%,0% 100%);
+}
+
+#unitInfo{
+    flex:1;
+    font-size:13px;
+    line-height:1.6;
+}
+
+.healthBar{
+    width:100%;
+    height:18px;
+    background:#330000;
+    border:1px solid #777;
+    margin-top:6px;
+}
+
+.healthFill{
+    width:100%;
+    height:100%;
+    background:#1cff4e;
+}
+
+#cancelBtn{
+    margin-top:12px;
+    width:100%;
+    padding:8px;
+    background:#441111;
+    color:white;
+    border:1px solid #aa5555;
+    cursor:pointer;
+}
+
+/* RIGHT HUD */
+
+#rightHUD{
+    flex:1;
+    display:flex;
+    gap:20px;
+    padding:12px;
+}
+
+/* INVENTORY */
+
+.inventoryGrid{
+    width:180px;
+    display:grid;
+    grid-template-columns:repeat(2,1fr);
+    grid-template-rows:repeat(3,1fr);
+    gap:6px;
+}
+
+.inventorySlot{
+    background:#1d1d1d;
+    border:2px solid #444;
+    height:54px;
+}
+
+/* BUILD MENU */
+
+.commandGrid{
+    display:grid;
+    grid-template-columns:repeat(4,72px);
+    grid-template-rows:repeat(3,72px);
+    gap:6px;
+}
+
+.commandBtn{
+    background:#1d1d1d;
+    border:2px solid #666;
+    color:white;
+    position:relative;
+    cursor:pointer;
+    font-size:28px;
+}
+
+.commandBtn:hover{
+    background:#444;
+    border-color:#aaa;
+}
+
+.commandBtn span{
+    position:absolute;
+    right:4px;
+    bottom:2px;
+    font-size:10px;
+    color:#ddd;
+}
+
+.tooltip{
+    position:absolute;
+    bottom:78px;
+    left:0;
+    background:#000;
+    border:1px solid #888;
+    padding:6px;
+    font-size:11px;
+    width:120px;
+    display:none;
+    z-index:100;
+}
+
+.commandBtn:hover .tooltip{
+    display:block;
+}
+
+.emptyGrid{
+    display:grid;
+    grid-template-columns:repeat(4,72px);
+    grid-template-rows:repeat(3,72px);
+    gap:6px;
+}
+
+.emptySlot{
+    background:#111;
+    border:2px solid #222;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="hud">
+
+    <div id="leftHUD">
+        <div id="minimapWrap">
+            <canvas id="minimap" width="200" height="200"></canvas>
+        </div>
+    </div>
+
+    <div id="middleHUD"></div>
+
+    <div id="rightHUD"></div>
+
+</div>
+
+<script type="module">
+
+import * as THREE from 'https://esm.sh/three@0.165.0';
+import { OrbitControls } from 'https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js';
+
+///////////////////////////////////////////////////////////
+// SCENE
+///////////////////////////////////////////////////////////
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+
+const camera = new THREE.PerspectiveCamera(
+    60,
+    window.innerWidth/window.innerHeight,
+    0.1,
+    1000
+);
+
+camera.position.set(28,32,28);
+
+const renderer = new THREE.WebGLRenderer({
+    antialias:true
+});
+
+renderer.setSize(
+    window.innerWidth,
+    window.innerHeight
+);
+
+renderer.shadowMap.enabled = true;
+
+document.body.appendChild(renderer.domElement);
+
+const controls =
+    new OrbitControls(
+        camera,
+        renderer.domElement
+    );
+
+controls.target.set(0,0,0);
+controls.update();
+
+///////////////////////////////////////////////////////////
+// LIGHT
+///////////////////////////////////////////////////////////
+
+const sun = new THREE.DirectionalLight(
+    0xffffff,
+    2
+);
+
+sun.position.set(20,40,20);
+sun.castShadow = true;
+
+scene.add(sun);
+
+scene.add(
+    new THREE.AmbientLight(
+        0xffffff,
+        0.4
+    )
+);
+
+///////////////////////////////////////////////////////////
+// WORLD
+///////////////////////////////////////////////////////////
+
+const WORLD_SIZE = 64;
+
+const ground = new THREE.Mesh(
+
+    new THREE.PlaneGeometry(
+        WORLD_SIZE,
+        WORLD_SIZE,
+        40,
+        40
+    ),
+
+    new THREE.MeshStandardMaterial({
+        color:0x467a46
+    })
+);
+
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+
+scene.add(ground);
+
+///////////////////////////////////////////////////////////
+// TREES
+///////////////////////////////////////////////////////////
+
+const trees = [];
+
+function spawnTree(x,z){
+
+    const g = new THREE.Group();
+
+    const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.2,0.3,2),
+        new THREE.MeshStandardMaterial({
+            color:0x6b4423
+        })
+    );
+
+    trunk.position.y = 1;
+
+    const leaves = new THREE.Mesh(
+        new THREE.ConeGeometry(1.2,3,8),
+        new THREE.MeshStandardMaterial({
+            color:0x228833
+        })
+    );
+
+    leaves.position.y = 3;
+
+    g.add(trunk);
+    g.add(leaves);
+
+    g.position.set(x,0,z);
+
+    scene.add(g);
+
+    trees.push(g);
+}
+
+for(let i=0;i<40;i++){
+
+    spawnTree(
+        Math.random()*50-25,
+        Math.random()*50-25
+    );
+}
+
+// TOWN HALL
+let townHall;
+
+function createTownHall(){
+    const g = new THREE.Group();
+    const base = new THREE.Mesh(
+        new THREE.BoxGeometry(7, 4, 7),
+        new THREE.MeshStandardMaterial({
+            color: 0x6b4a32
+        })
+    );
+    base.position.y = 2;
+    const roof = new THREE.Mesh(
+        new THREE.ConeGeometry(5.5, 3, 4),
+        new THREE.MeshStandardMaterial({
+            color: 0x552211
+        })
+    );
+    roof.position.y = 5;
+    roof.rotation.y = Math.PI / 4;
+    g.add(base);
+    g.add(roof);
+    g.position.set(-8, 0, -16);
+    g.userData = {
+        type: "townhall",
+        gold: 0
+    };
+    scene.add(g);
+    return g;
+}
+
+townHall = createTownHall();
+
+// PEASANT
+let selectedObject = null;
+const workers = [];
+
+function createPeasant(){
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(
+        new THREE.BoxGeometry(1,1.8,1),
+        new THREE.MeshStandardMaterial({
+            color:0xc9b07d
+        })
+    );
+    body.position.y = 1.2;
+    const head = new THREE.Mesh(
+        new THREE.BoxGeometry(0.8,0.8,0.8),
+        new THREE.MeshStandardMaterial({
+            color:0xe0c090
+        })
+    );
+    head.position.y = 2.4;
+    g.add(body);
+    g.add(head);
+    g.position.set(-8,0,-8);
+    g.userData = {
+        type:"peasant",
+        hp:230,
+        maxHp:230,
+        target:null,
+        speed:0.035,
+        state: "idle",
+        carriedGold: 0,
+        carryCapacity: 10,
+        miningTimer: 0,
+        miningDuration: 5,
+        goldmine: null,
+        townHall: null
+    };
+
+    const ring = new THREE.Mesh(
+        new THREE.RingGeometry(1.2,1.45,32),
+        new THREE.MeshBasicMaterial({
+            color:0x00ff00,
+            side:THREE.DoubleSide
+        })
+    );
+
+    ring.rotation.x = -Math.PI/2;
+    ring.visible = false;
+    g.add(ring);
+    g.selectionRing = ring;
+    scene.add(g);
+    workers.push(g);
+    return g;
+}
+
+const peasant = createPeasant();
+
+// GOLDMINE
+
+
+let goldmine;
+
+function clearTreesNear(x,z,radius){
+
+    for(let i=trees.length-1;i>=0;i--){
+
+        const t = trees[i];
+
+        const dx = t.position.x - x;
+        const dz = t.position.z - z;
+
+        if(Math.sqrt(dx*dx+dz*dz) < radius){
+
+            scene.remove(t);
+
+            trees.splice(i,1);
+        }
+    }
+}
+
+function createGoldmine(){
+
+    const x = 18;
+    const z = 18;
+
+    clearTreesNear(x,z,8);
+
+    const g = new THREE.Group();
+
+    const base = new THREE.Mesh(
+        new THREE.CylinderGeometry(5,6,4,8),
+        new THREE.MeshStandardMaterial({
+            color:0x7c6f55
+        })
+    );
+
+    base.position.y = 2;
+
+    const gold = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(2),
+        new THREE.MeshStandardMaterial({
+            color:0xffcc22,
+            emissive:0xaa7700
+        })
+    );
+
+    gold.position.y = 5;
+
+    g.add(base);
+    g.add(gold);
+
+    g.position.set(x,0,z);
+
+    g.userData = {
+        type:"goldmine",
+        gold:18000
+    };
+
+    const ring = new THREE.Mesh(
+        new THREE.RingGeometry(5.8,6.2,48),
+        new THREE.MeshBasicMaterial({
+            color:0xffff00,
+            side:THREE.DoubleSide
+        })
+    );
+
+    ring.rotation.x = -Math.PI/2;
+    ring.visible = false;
+
+    g.add(ring);
+
+    g.selectionRing = ring;
+
+    scene.add(g);
+
+    return g;
+}
+
+goldmine = createGoldmine();
+
+///////////////////////////////////////////////////////////
+// HUD
+///////////////////////////////////////////////////////////
+
+const middleHUD =
+    document.getElementById("middleHUD");
+
+const rightHUD =
+    document.getElementById("rightHUD");
+
+function renderEmptyHUD(){
+
+    middleHUD.innerHTML = "";
+
+    rightHUD.innerHTML = `
+
+        <div class="inventoryGrid">
+            ${Array(6).fill(
+                '<div class="inventorySlot"></div>'
+            ).join("")}
+        </div>
+
+        <div class="emptyGrid">
+            ${Array(12).fill(
+                '<div class="emptySlot"></div>'
+            ).join("")}
+        </div>
+    `;
+}
+
+function renderPeasantHUD(){
+
+    middleHUD.innerHTML = `
+
+        <div id="portrait"></div>
+
+        <div id="unitInfo">
+            <b>Peasant</b><br>
+            HP: 230 / 230<br>
+            Damage: 4 - 5<br>
+            Armor: 0<br>
+            Carry: None
+
+            <div class="healthBar">
+                <div class="healthFill"></div>
+            </div>
+
+            <button id="cancelBtn">
+                X Cancel
+            </button>
+        </div>
+    `;
+
+    document.getElementById("cancelBtn")
+    .onclick = deselectAll;
+
+    rightHUD.innerHTML = `
+
+        <div class="inventoryGrid">
+            ${Array(6).fill(
+                '<div class="inventorySlot"></div>'
+            ).join("")}
+        </div>
+
+        <div class="commandGrid">
+
+            <button class="commandBtn">
+                🏠
+                <span>Q</span>
+                <div class="tooltip">
+                    Build House
+                </div>
+            </button>
+
+            <button class="commandBtn">
+                🌾
+                <span>W</span>
+                <div class="tooltip">
+                    Build Farm
+                </div>
+            </button>
+
+            <button class="commandBtn">
+                🪓
+                <span>E</span>
+                <div class="tooltip">
+                    Chop Wood
+                </div>
+            </button>
+
+            <button class="commandBtn">
+                ⛏️
+                <span>R</span>
+                <div class="tooltip">
+                    Mine Gold
+                </div>
+            </button>
+
+            ${Array(8).fill(
+                '<div class="emptySlot"></div>'
+            ).join("")}
+
+        </div>
+    `;
+}
+
+function renderGoldmineHUD(){
+
+    middleHUD.innerHTML = `
+
+        <div id="portrait"
+             style="background:#4a3b15;">
+        </div>
+
+        <div id="unitInfo">
+            <b>Gold Mine</b><br>
+            Gold: 18000<br>
+            Armor: Invincible<br>
+            Workers: 0 / 5
+
+            <div class="healthBar">
+                <div class="healthFill"
+                     style="background:#ffcc22;">
+                </div>
+            </div>
+        </div>
+    `;
+
+    rightHUD.innerHTML = `
+
+        <div class="inventoryGrid">
+            ${Array(6).fill(
+                '<div class="inventorySlot"></div>'
+            ).join("")}
+        </div>
+
+        <div class="emptyGrid">
+            ${Array(12).fill(
+                '<div class="emptySlot"></div>'
+            ).join("")}
+        </div>
+    `;
+}
+
+renderEmptyHUD();
+
+///////////////////////////////////////////////////////////
+// SELECT / DESELECT
+///////////////////////////////////////////////////////////
+
+function deselectAll(){
+
+    selectedObject = null;
+
+    peasant.selectionRing.visible = false;
+    goldmine.selectionRing.visible = false;
+
+    renderEmptyHUD();
+}
+
+window.addEventListener("keydown",(e)=>{
+
+    if(e.key === "Escape"){
+
+        deselectAll();
+    }
+});
+
+//MINING WORKFLOW
+const MINE_INTERACTION_DISTANCE = 7;
+const TOWNHALL_INTERACTION_DISTANCE = 6;
+function startMining(){
+    const data =
+        peasant.userData;
+    data.state =
+        "mining";
+    data.miningTimer =
+        0;
+}
+function updateMining(delta){
+    const data =
+        peasant.userData;
+    data.miningTimer += delta;
+    if(
+        data.miningTimer >=
+        data.miningDuration
+    ){
+        finishMining();
+    }
+}
+function finishMining(){
+    const data =
+        peasant.userData;
+    const mine =
+        data.goldmine;
+    if(mine.userData.gold < 10){
+        data.state = "idle";
+        return;
+    }
+    mine.userData.gold -= 10;
+    data.carriedGold =
+        data.carryCapacity;
+    data.state =
+        "movingToTownHall";
+    data.target =
+        data.townHall.position.clone();
+}
+function depositGold(){
+    const data =
+        peasant.userData;
+    const amount =
+        data.carriedGold;
+    if(amount <= 0){
+        data.state = "idle";
+        return;
+    }
+    data.townHall.userData.gold += amount;
+    data.carriedGold = 0;
+    data.state =
+        "movingToMine";
+    data.target =
+        data.goldmine.position.clone();
+}
+// MOVEMENT
+function moveToward(target){
+    const dir =
+        new THREE.Vector3()
+        .subVectors(
+            target,
+            peasant.position
+        );
+    dir.y = 0;
+    const dist =
+        dir.length();
+
+    if(dist <= 0.001){
+        return;
+    }
+    dir.normalize();
+    peasant.position.add(
+        dir.multiplyScalar(
+            peasant.userData.speed
+        )
+    );
+}
+function movePeasant(delta){
+    const data =
+        peasant.userData;
+    // MOVING TO GOLD MINE
+    if(data.state === "movingToMine"){
+        if(
+            isNearTarget(
+                data.goldmine.position,
+                MINE_INTERACTION_DISTANCE
+            )
+        ){
+            data.target = null;
+            startMining();
+            return;
+        }
+        moveToward(
+            data.goldmine.position
+        );
+        return;
+    }
+    // MINING
+    if(data.state === "mining"){
+        updateMining();
+        return;
+    }
+    // MOVING TO TOWN HALL
+    if(data.state === "movingToTownHall"){
+        if(
+            isNearTarget(
+                data.townHall.position,
+                TOWNHALL_INTERACTION_DISTANCE
+            )
+        ){
+            data.target = null;
+            depositGold();
+            return;
+        }
+        moveToward(
+            data.townHall.position
+        );
+        return;
+    }
+    // NORMAL MOVEMENT
+    if(data.state === "moving"){
+        if(data.target){
+            if(
+                isNearTarget(
+                    data.target,
+                    0.1
+                )
+            ){
+                data.target = null;
+                data.state = "idle";
+                return;
+            }
+            moveToward(
+                data.target
+            );
+        }
+    }
+}
+// PEASANT COMMANDS
+function commandPeasantToMine(mine){
+    const data =
+        peasant.userData;
+    data.goldmine = mine;
+    data.townHall = townHall;
+    data.state =
+        "movingToMine";
+    data.target =
+        mine.position.clone();
+}
+function commandPeasantToTownHall(building){
+    const data =
+        peasant.userData;
+    data.townHall = building;
+    data.state =
+        "movingToTownHall";
+    data.target =
+        building.position.clone();
+}
+// INPUT
+const raycaster =
+    new THREE.Raycaster();
+
+const mouse =
+    new THREE.Vector2();
+
+window.addEventListener(
+    "mousedown",
+    e=>{
+
+    mouse.x =
+        (e.clientX/window.innerWidth)*2-1;
+
+    mouse.y =
+        -(e.clientY/window.innerHeight)*2+1;
+
+    raycaster.setFromCamera(
+        mouse,
+        camera
+    );
+
+    // LEFT CLICK
+    if(e.button === 0){
+
+        const hits =
+            raycaster.intersectObjects(
+                scene.children,
+                true
+            );
+
+        if(hits.length){
+
+            let obj =
+                hits[0].object;
+
+            while(
+                obj.parent &&
+                !obj.userData.type
+            ){
+                obj = obj.parent;
+            }
+
+            if(
+                obj.userData.type ===
+                "peasant"
+            ){
+
+                deselectAll();
+
+                selectedObject = peasant;
+
+                peasant.selectionRing
+                .visible = true;
+
+                renderPeasantHUD();
+
+                return;
+            }
+
+            if(
+                obj.userData.type ===
+                "goldmine"
+            ){
+
+                deselectAll();
+
+                selectedObject = goldmine;
+
+                goldmine.selectionRing
+                .visible = true;
+
+                renderGoldmineHUD();
+
+                return;
+            }
+        }
+
+        deselectAll();
+    }
+    // RIGHT CLICK COMMAND
+    if(
+        e.button === 2 &&
+        selectedObject === peasant
+    ){
+        e.preventDefault();
+        // 1. CHECK GOLD MINE
+        const mineHits =
+            raycaster.intersectObject(
+                goldmine,
+                true
+            );
+        if(mineHits.length){
+            commandPeasantToMine(
+                goldmine
+            );
+            return;
+        }
+        // 2. CHECK TOWN HALL
+        const townHallHits =
+            raycaster.intersectObject(
+                townHall,
+                true
+            );
+        if(townHallHits.length){
+            commandPeasantToTownHall(
+                townHall
+            );
+
+            return;
+        }
+        // 3. OTHERWISE MOVE TO GROUND
+        const groundHit =
+            raycaster.intersectObject(
+                ground
+            );
+        if(groundHit.length){
+            peasant.userData.target =
+                groundHit[0].point.clone();
+
+            peasant.userData.state =
+                "moving";
+        }
+    }
+});
+
+window.addEventListener(
+    "contextmenu",
+    e=>e.preventDefault()
+);
+
+// MINIMAP
+const minimap =
+    document.getElementById("minimap");
+
+const mini =
+    minimap.getContext("2d");
+
+function mapToMini(v){
+
+    return {
+        x:(v.x/WORLD_SIZE)*200 + 100,
+        y:(v.z/WORLD_SIZE)*200 + 100
+    };
+}
+
+function updateMinimap(){
+
+    mini.fillStyle = "#111";
+
+    mini.fillRect(0,0,200,200);
+
+    mini.strokeStyle = "#355a2c";
+
+    mini.strokeRect(0,0,200,200);
+
+    trees.forEach(t=>{
+
+        const p =
+            mapToMini(t.position);
+
+        mini.fillStyle = "#228833";
+
+        mini.fillRect(
+            p.x,
+            p.y,
+            2,
+            2
+        );
+    });
+
+    const g =
+        mapToMini(goldmine.position);
+
+    mini.fillStyle = "#ffcc22";
+
+    mini.beginPath();
+
+    mini.arc(
+        g.x,
+        g.y,
+        5,
+        0,
+        Math.PI*2
+    );
+
+    mini.fill();
+
+    workers.forEach(w=>{
+
+        const p =
+            mapToMini(w.position);
+
+        mini.fillStyle =
+            selectedObject === w
+            ? "#00ff66"
+            : "#44aaff";
+
+        mini.beginPath();
+
+        mini.arc(
+            p.x,
+            p.y,
+            3,
+            0,
+            Math.PI*2
+        );
+
+        mini.fill();
+    });
+}
+
+const clock = new THREE.Clock();
+// LOOP
+function animate(){
+    requestAnimationFrame(animate);
+    const delta = clock.getDelta();
+    movePeasant(delta);
+    updateMinimap();
+    renderer.render(
+        scene,
+        camera
+    );
+}
+
+animate();
+
+// RESIZE
+window.addEventListener(
+    "resize",
+    ()=>{
+
+    camera.aspect =
+        window.innerWidth/
+        window.innerHeight;
+
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(
+        window.innerWidth,
+        window.innerHeight
+    );
+});
+
+</script>
+</body>
+</html>
