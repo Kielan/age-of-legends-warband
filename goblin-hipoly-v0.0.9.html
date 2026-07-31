@@ -3721,11 +3721,8 @@ document
 .getElementById("generateGoblinTool")
 
 .addEventListener("click",()=>{
-
     if(APP.goblinGenerator.image){
-
         APP.goblinGenerator.generate();
-
     }
 
     else{
@@ -3737,22 +3734,87 @@ document
 });
     
 fileInput.addEventListener(
-
 "change",
-
 async e=>{
-
     const file = e.target.files[0];
-
     if(!file)
         return;
-
     await APP.goblinGenerator
         .setImage(file);
-
     APP.goblinGenerator.generate();
+});
+this.renderer.domElement.addEventListener(
+    "pointerdown",
+    (event)=>{
+        const ctrl =
+            event.ctrlKey ||
+            event.metaKey;
+        if(!ctrl){
+            APP.selection.clear();
+        }
+        const rect =
+            this.renderer.domElement.getBoundingClientRect();
+        this.mouse.x =
+            ((event.clientX-rect.left)/rect.width)*2-1;
+        this.mouse.y =
+            -((event.clientY-rect.top)/rect.height)*2+1;
+        this.raycaster.setFromCamera(
+            this.mouse,
+            this.camera
+        );
+        //-----------------------------------
+        // Vertex mode
+        //-----------------------------------
+        if(APP.mode==="vertex"){
 
-});    
+            const vertex =
+                this.pickVertex(this.raycaster.ray);
+
+            APP.selection.selectVertex(vertex);
+
+            return;
+
+        }
+
+        //-----------------------------------
+        // Edge mode
+        //-----------------------------------
+
+        if(APP.mode==="edge"){
+
+            const edge =
+                this.pickEdge(this.raycaster.ray);
+
+            APP.selection.selectEdge(edge);
+
+            return;
+
+        }
+
+        //-----------------------------------
+        // Face mode
+        //-----------------------------------
+
+        const hits =
+            this.raycaster.intersectObject(
+                this.meshSystem.mesh
+            );
+
+        if(!hits.length)
+            return;
+
+        const hit = hits[0];
+
+        const face =
+            this.meshSystem.geometry
+            .userData.faceMap[
+                hit.faceIndex
+            ];
+
+        APP.selection.selectFace(face);
+
+    }
+);
 window.addEventListener(
     "resize", ()=>{
         APP.camera.aspect = viewport.clientWidth / viewport.clientHeight;
