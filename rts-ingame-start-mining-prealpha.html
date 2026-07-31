@@ -6,18 +6,15 @@
 <title>RTS HUD/Mining/Construction Placement Prototype</title>
 
 <style>
-
 html,body{
     margin:0;
     overflow:hidden;
     background:#111;
     font-family:Arial,sans-serif;
 }
-
 canvas{
     display:block;
 }
-
 #hud{
     position:absolute;
     left:0;
@@ -33,14 +30,12 @@ canvas{
 }
 
 /* LEFT MINIMAP */
-
 #leftHUD{
     width:240px;
     border-right:2px solid #333;
     padding:10px;
     background:#0c0c0c;
 }
-
 #minimapWrap{
     width:200px;
     height:200px;
@@ -48,14 +43,11 @@ canvas{
     background:#111;
     position:relative;
 }
-
 #minimap{
     width:100%;
     height:100%;
 }
-
 /* MIDDLE UNIT */
-
 #middleHUD{
     width:320px;
     border-right:2px solid #333;
@@ -64,7 +56,6 @@ canvas{
     gap:12px;
     background:#101010;
 }
-
 #portrait{
     width:128px;
     height:128px;
@@ -72,7 +63,6 @@ canvas{
     background:#222;
     position:relative;
 }
-
 #portrait::before{
     content:"";
     position:absolute;
@@ -82,7 +72,6 @@ canvas{
     height:58px;
     background:#c9b07d;
 }
-
 #portrait::after{
     content:"";
     position:absolute;
@@ -93,13 +82,11 @@ canvas{
     background:#775533;
     clip-path:polygon(50% 0%,100% 100%,0% 100%);
 }
-
 #unitInfo{
     flex:1;
     font-size:13px;
     line-height:1.6;
 }
-
 .healthBar{
     width:100%;
     height:18px;
@@ -107,13 +94,11 @@ canvas{
     border:1px solid #777;
     margin-top:6px;
 }
-
 .healthFill{
     width:100%;
     height:100%;
     background:#1cff4e;
 }
-
 #cancelBtn{
     margin-top:12px;
     width:100%;
@@ -123,7 +108,6 @@ canvas{
     border:1px solid #aa5555;
     cursor:pointer;
 }
-
 /* RIGHT HUD */
 #rightHUD{
     flex:1;
@@ -211,104 +195,87 @@ canvas{
 <body>
 
 <div id="hud">
-
     <div id="leftHUD">
         <div id="minimapWrap">
             <canvas id="minimap" width="200" height="200"></canvas>
         </div>
     </div>
-
     <div id="middleHUD"></div>
-
     <div id="rightHUD"></div>
-
 </div>
 
 <script type="module">
-
 import * as THREE from 'https://esm.sh/three@0.165.0';
 import { OrbitControls } from 'https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js';
 
 //BUILD COMMANDS
 const buildCommands = [
-
     {
         icon:"🏠",
         name:"Farm",
         hotkey:"Q",
         desc:"Produces food."
     },
-
     {
         icon:"⚒️",
         name:"Barracks",
         hotkey:"W",
         desc:"Trains soldiers."
     },
-
     {
         icon:"🏰",
         name:"Town Hall",
         hotkey:"E",
         desc:"Main base."
     },
-
     {
         icon:"🪓",
         name:"Lumber Mill",
         hotkey:"R",
         desc:"Wood upgrades."
     },
-
     {
         icon:"⛪",
         name:"Temple",
         hotkey:"A",
         desc:"Magic building."
     },
-
     {
         icon:"🏹",
         name:"Tower",
         hotkey:"S",
         desc:"Defense tower."
     },
-
     {
         icon:"⚔️",
         name:"Blacksmith",
         hotkey:"D",
         desc:"Weapon upgrades."
     },
-
     {
         icon:"🐎",
         name:"Stable",
         hotkey:"F",
         desc:"Mounted units."
     },
-
     {
         icon:"🧱",
         name:"Workshop",
         hotkey:"Z",
         desc:"Siege weapons."
     },
-
     {
         icon:"🛡️",
         name:"Guard Tower",
         hotkey:"X",
         desc:"Defensive tower."
     },
-
     {
         icon:"🔥",
         name:"Forge",
         hotkey:"C",
         desc:"Armor upgrades."
     },
-
     {
         icon:"❌",
         name:"Cancel",
@@ -803,41 +770,29 @@ const peasant = createPeasant();
 let goldmine;
 
 function clearTreesNear(x,z,radius){
-
     for(let i=trees.length-1;i>=0;i--){
-
         const t = trees[i];
-
         const dx = t.position.x - x;
         const dz = t.position.z - z;
-
         if(Math.sqrt(dx*dx+dz*dz) < radius){
-
             scene.remove(t);
-
             trees.splice(i,1);
         }
     }
 }
 
 function createGoldmine(){
-
     const x = 18;
     const z = 18;
-
     clearTreesNear(x,z,8);
-
     const g = new THREE.Group();
-
     const base = new THREE.Mesh(
         new THREE.CylinderGeometry(5,6,4,8),
         new THREE.MeshStandardMaterial({
             color:0x7c6f55
         })
     );
-
     base.position.y = 2;
-
     const gold = new THREE.Mesh(
         new THREE.DodecahedronGeometry(2),
         new THREE.MeshStandardMaterial({
@@ -845,19 +800,14 @@ function createGoldmine(){
             emissive:0xaa7700
         })
     );
-
     gold.position.y = 5;
-
     g.add(base);
     g.add(gold);
-
     g.position.set(x,0,z);
-
     g.userData = {
         type:"goldmine",
         gold:18000
     };
-
     const ring = new THREE.Mesh(
         new THREE.RingGeometry(5.8,6.2,48),
         new THREE.MeshBasicMaterial({
@@ -865,25 +815,17 @@ function createGoldmine(){
             side:THREE.DoubleSide
         })
     );
-
     ring.rotation.x = -Math.PI/2;
     ring.visible = false;
-
     g.add(ring);
-
     g.selectionRing = ring;
-
     scene.add(g);
-
     return g;
 }
 
 goldmine = createGoldmine();
 
-///////////////////////////////////////////////////////////
 // HUD
-///////////////////////////////////////////////////////////
-
 const middleHUD =
     document.getElementById("middleHUD");
 
@@ -891,11 +833,8 @@ const rightHUD =
     document.getElementById("rightHUD");
 
 function renderEmptyHUD(){
-
     middleHUD.innerHTML = "";
-
     rightHUD.innerHTML = `
-
         <div class="inventoryGrid">
             ${Array(6).fill(
                 '<div class="inventorySlot"></div>'
@@ -995,9 +934,7 @@ function renderPeasantHUD(){
 }
 
 function renderGoldmineHUD(){
-
     middleHUD.innerHTML = `
-
         <div id="portrait"
              style="background:#4a3b15;">
         </div>
@@ -1017,7 +954,6 @@ function renderGoldmineHUD(){
     `;
 
     rightHUD.innerHTML = `
-
         <div class="inventoryGrid">
             ${Array(6).fill(
                 '<div class="inventorySlot"></div>'
@@ -1034,24 +970,17 @@ function renderGoldmineHUD(){
 
 renderEmptyHUD();
 
-///////////////////////////////////////////////////////////
 // SELECT / DESELECT
-///////////////////////////////////////////////////////////
-
 function deselectAll(){
-
     selectedObject = null;
-
     peasant.selectionRing.visible = false;
     goldmine.selectionRing.visible = false;
-
+    townhall.selectionRing.visible = false;
     renderEmptyHUD();
 }
 
 window.addEventListener("keydown",(e)=>{
-
     if(e.key === "Escape"){
-
         deselectAll();
     }
 });
@@ -1184,19 +1113,13 @@ function movePeasant(delta){
             depositGold();
             return;
         }
-        moveToward(
-            data.townHall.position
-        );
+        moveToward(data.townHall.position);
         return;
     }
     // NORMAL MOVEMENT
     if(data.state === "moving"){
         if(data.target){
-            if(
-                isNearTarget(
-                    data.target,
-                    0.1
-                )
+            if(isNearTarget(data.target,0.1)
             ){
                 data.target = null;
                 data.state = "idle";
@@ -1210,8 +1133,7 @@ function movePeasant(delta){
 }
 // PEASANT COMMANDS
 function commandPeasantToMine(mine){
-    const data =
-        peasant.userData;
+    const data = peasant.userData;
     data.goldmine = mine;
     data.townHall = townHall;
     data.state =
@@ -1220,8 +1142,7 @@ function commandPeasantToMine(mine){
         mine.position.clone();
 }
 function commandPeasantToTownHall(building){
-    const data =
-        peasant.userData;
+    const data = peasant.userData;
     data.townHall = building;
     data.state =
         "movingToTownHall";
@@ -1238,13 +1159,10 @@ const mouse =
 window.addEventListener(
     "mousedown",
     e=>{
-
     mouse.x =
         (e.clientX/window.innerWidth)*2-1;
-
     mouse.y =
         -(e.clientY/window.innerHeight)*2+1;
-
     raycaster.setFromCamera(
         mouse,
         camera
@@ -1252,56 +1170,39 @@ window.addEventListener(
 
     // LEFT CLICK
     if(e.button === 0){
-
         const hits =
             raycaster.intersectObjects(
                 scene.children,
                 true
             );
-
         if(hits.length){
-
-            let obj =
-                hits[0].object;
-
-            while(
-                obj.parent &&
-                !obj.userData.type
-            ){
+            let obj = hits[0].object;
+            while(obj.parent && !obj.userData.type){
                 obj = obj.parent;
             }
 
-            if(
-                obj.userData.type ===
-                "peasant"
-            ){
-
+            if(obj.userData.type ==="peasant"){
                 deselectAll();
-
                 selectedObject = peasant;
-
                 peasant.selectionRing
                 .visible = true;
-
                 renderPeasantHUD();
-
                 return;
             }
 
-            if(
-                obj.userData.type ===
-                "goldmine"
-            ){
-
+            if(obj.userData.type ==="goldmine"){
                 deselectAll();
-
                 selectedObject = goldmine;
-
-                goldmine.selectionRing
-                .visible = true;
-
+                goldmine.selectionRing.visible = true;
                 renderGoldmineHUD();
+                return;
+            }
 
+            if(obj.userData.type ==="townhall"){
+                deselectAll();
+                selectedObject = townhall;
+                townhall.selectionRing.visible = true;
+                renderTownhallHUD();
                 return;
             }
         }
