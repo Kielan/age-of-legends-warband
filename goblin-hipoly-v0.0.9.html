@@ -3424,17 +3424,105 @@ class SelectionManager{
         this.selectedLandmarks = [];
 
     }
+selectVertex(vertex){
 
-    selectVertex(vertex){}
+        if(!vertex) return;
 
-    selectEdge(edge){}
+        this.vertices.add(vertex);
 
-    selectFace(face){}
+        vertex.selected = true;
 
-    selectLandmark(point){}
+        return vertex;
 
-    clear(){}
+    }
 
+    //--------------------------------------------------------
+
+    // Edge
+
+    //--------------------------------------------------------
+
+    selectEdge(edge){
+
+        if(!edge) return;
+
+        this.edges.add(edge);
+
+        edge.selected = true;
+
+        return edge;
+
+    }
+
+    //--------------------------------------------------------
+
+    // Face
+
+    //--------------------------------------------------------
+
+    selectFace(face){
+
+        if(!face) return;
+
+        this.faces.add(face);
+
+        face.selected = true;
+
+        return face;
+
+    }
+
+    //--------------------------------------------------------
+
+    // Landmark
+
+    //--------------------------------------------------------
+
+    selectLandmark(point){
+
+        if(!point) return;
+
+        this.landmarks.add(point);
+
+        point.selected = true;
+
+        return point;
+
+    }
+
+    //--------------------------------------------------------
+
+    // Clear everything
+
+    //--------------------------------------------------------
+
+    clear(){
+
+        for(const v of this.vertices)
+
+            v.selected = false;
+
+        for(const e of this.edges)
+
+            e.selected = false;
+
+        for(const f of this.faces)
+
+            f.selected = false;
+
+        for(const l of this.landmarks)
+
+            l.selected = false;
+
+        this.vertices.clear();
+
+        this.edges.clear();
+
+        this.faces.clear();
+
+        this.landmarks.clear();
+
+    }
 }    
 // APP
 class EditorApp{
