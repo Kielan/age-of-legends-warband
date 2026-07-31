@@ -613,7 +613,13 @@ scene.add(
 
 // WORLD
 const WORLD_SIZE = 64;
-
+const occupancyGrid = new Set();
+const biomes = new ChunkBiomes(64);
+const worldGen = new WorldGenerator(biomes);
+const gridManager = new GridManager();
+const spawner = new ObjectSpawner(scene, occupancyGrid);
+const draftPlacement = new DraftConstructionPlacement(scene, spawner);
+    
 const ground = new THREE.Mesh(
 
     new THREE.PlaneGeometry(
@@ -885,22 +891,19 @@ function renderPeasantHUD(){
                 ).join("")}
             </div>
         </div>
-
         <div class="commandSection">
             <div class="panelTitle">
                 BUILD MENU
             </div>
         </div>
         <div class="commandGrid">
-
-            <button class="commandBtn">
+            <button class="commandBtn" id="buildHouseBtn">
                 🏠
                 <span>Q</span>
                 <div class="tooltip">
                     Build House
                 </div>
             </button>
-
             <button class="commandBtn">
                 🌾
                 <span>W</span>
@@ -908,7 +911,6 @@ function renderPeasantHUD(){
                     Build Farm
                 </div>
             </button>
-
             <button class="commandBtn">
                 🪓
                 <span>E</span>
@@ -916,7 +918,6 @@ function renderPeasantHUD(){
                     Chop Wood
                 </div>
             </button>
-
             <button class="commandBtn">
                 ⛏️
                 <span>R</span>
@@ -924,11 +925,9 @@ function renderPeasantHUD(){
                     Mine Gold
                 </div>
             </button>
-
             ${Array(8).fill(
                 '<div class="emptySlot"></div>'
             ).join("")}
-
         </div>
     `;
 }
@@ -1260,6 +1259,12 @@ window.addEventListener(
     e=>e.preventDefault()
 );
 
+document.getElementById('buildHouseBtn')
+.addEventListener('click', () => {
+    draftPlacement.start();
+});
+
+    
 // MINIMAP
 const minimap =
     document.getElementById("minimap");
@@ -1276,22 +1281,14 @@ function mapToMini(v){
 }
 
 function updateMinimap(){
-
     mini.fillStyle = "#111";
-
     mini.fillRect(0,0,200,200);
-
     mini.strokeStyle = "#355a2c";
-
     mini.strokeRect(0,0,200,200);
-
     trees.forEach(t=>{
-
         const p =
             mapToMini(t.position);
-
         mini.fillStyle = "#228833";
-
         mini.fillRect(
             p.x,
             p.y,
@@ -1299,14 +1296,10 @@ function updateMinimap(){
             2
         );
     });
-
     const g =
         mapToMini(goldmine.position);
-
     mini.fillStyle = "#ffcc22";
-
     mini.beginPath();
-
     mini.arc(
         g.x,
         g.y,
@@ -1314,21 +1307,14 @@ function updateMinimap(){
         0,
         Math.PI*2
     );
-
     mini.fill();
-
     workers.forEach(w=>{
-
-        const p =
-            mapToMini(w.position);
-
+        const p = mapToMini(w.position);
         mini.fillStyle =
             selectedObject === w
             ? "#00ff66"
             : "#44aaff";
-
         mini.beginPath();
-
         mini.arc(
             p.x,
             p.y,
@@ -1336,7 +1322,6 @@ function updateMinimap(){
             0,
             Math.PI*2
         );
-
         mini.fill();
     });
 }
@@ -1360,13 +1345,10 @@ animate();
 window.addEventListener(
     "resize",
     ()=>{
-
     camera.aspect =
         window.innerWidth/
         window.innerHeight;
-
     camera.updateProjectionMatrix();
-
     renderer.setSize(
         window.innerWidth,
         window.innerHeight
