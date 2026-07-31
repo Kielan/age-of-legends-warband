@@ -3226,13 +3226,8 @@ class GoblinGenerator{
     }
 
     async setImage(file){
-
         this.image =
             await ImageLoader.load(file);
-
-    }
-
-    async generate(){
 
     }
     async generate(){
@@ -3242,7 +3237,6 @@ class GoblinGenerator{
     //--------------------------------------------------
 
     const silhouette =
-
         this.extractSilhouette();
 
     //--------------------------------------------------
@@ -3250,53 +3244,35 @@ class GoblinGenerator{
     //--------------------------------------------------
 
     const landmarks =
-
         this.detectLandmarks(
-
             silhouette
-
         );
-
     //--------------------------------------------------
     // Stage 3
-    //--------------------------------------------------
-
+    //-------------------------------------------------
     const template =
-
         this.buildTemplate();
-
     //--------------------------------------------------
     // Stage 4
     //--------------------------------------------------
-
     this.fitTemplate(
-
         template,
-
         landmarks
-
     );
-
     //--------------------------------------------------
     // Stage 5
     //--------------------------------------------------
 
     this.projectSurface(
-
         template,
-
         silhouette
-
     );
-
     //--------------------------------------------------
     // Stage 6
     //--------------------------------------------------
 
     this.paintMasks(
-
         template
-
     );
 
     //--------------------------------------------------
@@ -3304,9 +3280,7 @@ class GoblinGenerator{
     //--------------------------------------------------
 
     this.deform(
-
         template
-
     );
 
     //--------------------------------------------------
@@ -3314,11 +3288,8 @@ class GoblinGenerator{
     //--------------------------------------------------
 
     this.finishMesh(
-
         template
-
     );
-
 }
 
 }
@@ -3439,6 +3410,18 @@ class MeshSystem {
     }
 }
 
+class VertexHandle{
+    constructor(vertex){
+        this.vertex = vertex;
+        this.mesh =
+            new THREE.Mesh(
+                new THREE.SphereGeometry(0.03),
+                new THREE.MeshBasicMaterial({
+                    color:0xffffff
+                })
+            );
+    }
+}
 // APP
 class EditorApp{
     constructor(){
