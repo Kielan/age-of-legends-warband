@@ -3218,31 +3218,24 @@ class Selection {
 class GoblinGenerator{
 
     constructor(app){
-
         this.app = app;
-
         this.image = null;
-
     }
 
     async setImage(file){
         this.image =
             await ImageLoader.load(file);
-
     }
     async generate(){
 
     //--------------------------------------------------
     // Stage 1
     //--------------------------------------------------
-
     const silhouette =
         this.extractSilhouette();
-
     //--------------------------------------------------
     // Stage 2
     //--------------------------------------------------
-
     const landmarks =
         this.detectLandmarks(
             silhouette
@@ -3270,7 +3263,6 @@ class GoblinGenerator{
     //--------------------------------------------------
     // Stage 6
     //--------------------------------------------------
-
     this.paintMasks(
         template
     );
@@ -3278,15 +3270,12 @@ class GoblinGenerator{
     //--------------------------------------------------
     // Stage 7
     //--------------------------------------------------
-
     this.deform(
         template
     );
-
     //--------------------------------------------------
     // Stage 8
     //--------------------------------------------------
-
     this.finishMesh(
         template
     );
@@ -3420,6 +3409,15 @@ class VertexHandle{
                     color:0xffffff
                 })
             );
+    }
+}
+class EdgeHandle{
+    constructor(edge){
+        this.edge=edge;
+        this.line=new THREE.Line(
+            geometry,
+            material
+        );
     }
 }
 // APP
