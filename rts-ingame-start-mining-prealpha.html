@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-<title>RTS HUD Prototype</title>
+<title>RTS HUD/Mining/Construction Placement Prototype</title>
 
 <style>
 
@@ -125,16 +125,19 @@ canvas{
 }
 
 /* RIGHT HUD */
-
 #rightHUD{
     flex:1;
     display:flex;
     gap:20px;
     padding:12px;
 }
-
+.panelTitle{
+    font-size:13px;
+    margin-bottom:8px;
+    color:#aaa;
+    letter-spacing:1px;
+}
 /* INVENTORY */
-
 .inventoryGrid{
     width:180px;
     display:grid;
@@ -142,22 +145,22 @@ canvas{
     grid-template-rows:repeat(3,1fr);
     gap:6px;
 }
-
 .inventorySlot{
     background:#1d1d1d;
     border:2px solid #444;
     height:54px;
 }
-
 /* BUILD MENU */
-
+.commandSection{
+    display:flex;
+    flex-direction:column;
+}
 .commandGrid{
     display:grid;
     grid-template-columns:repeat(4,72px);
     grid-template-rows:repeat(3,72px);
     gap:6px;
 }
-
 .commandBtn{
     background:#1d1d1d;
     border:2px solid #666;
@@ -166,12 +169,10 @@ canvas{
     cursor:pointer;
     font-size:28px;
 }
-
 .commandBtn:hover{
     background:#444;
     border-color:#aaa;
 }
-
 .commandBtn span{
     position:absolute;
     right:4px;
@@ -179,7 +180,6 @@ canvas{
     font-size:10px;
     color:#ddd;
 }
-
 .tooltip{
     position:absolute;
     bottom:78px;
@@ -192,23 +192,19 @@ canvas{
     display:none;
     z-index:100;
 }
-
 .commandBtn:hover .tooltip{
     display:block;
 }
-
 .emptyGrid{
     display:grid;
     grid-template-columns:repeat(4,72px);
     grid-template-rows:repeat(3,72px);
     gap:6px;
 }
-
 .emptySlot{
     background:#111;
     border:2px solid #222;
 }
-
 </style>
 </head>
 
@@ -233,10 +229,154 @@ canvas{
 import * as THREE from 'https://esm.sh/three@0.165.0';
 import { OrbitControls } from 'https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js';
 
-///////////////////////////////////////////////////////////
-// SCENE
-///////////////////////////////////////////////////////////
+//BUILD COMMANDS
+const buildCommands = [
 
+    {
+        icon:"🏠",
+        name:"Farm",
+        hotkey:"Q",
+        desc:"Produces food."
+    },
+
+    {
+        icon:"⚒️",
+        name:"Barracks",
+        hotkey:"W",
+        desc:"Trains soldiers."
+    },
+
+    {
+        icon:"🏰",
+        name:"Town Hall",
+        hotkey:"E",
+        desc:"Main base."
+    },
+
+    {
+        icon:"🪓",
+        name:"Lumber Mill",
+        hotkey:"R",
+        desc:"Wood upgrades."
+    },
+
+    {
+        icon:"⛪",
+        name:"Temple",
+        hotkey:"A",
+        desc:"Magic building."
+    },
+
+    {
+        icon:"🏹",
+        name:"Tower",
+        hotkey:"S",
+        desc:"Defense tower."
+    },
+
+    {
+        icon:"⚔️",
+        name:"Blacksmith",
+        hotkey:"D",
+        desc:"Weapon upgrades."
+    },
+
+    {
+        icon:"🐎",
+        name:"Stable",
+        hotkey:"F",
+        desc:"Mounted units."
+    },
+
+    {
+        icon:"🧱",
+        name:"Workshop",
+        hotkey:"Z",
+        desc:"Siege weapons."
+    },
+
+    {
+        icon:"🛡️",
+        name:"Guard Tower",
+        hotkey:"X",
+        desc:"Defensive tower."
+    },
+
+    {
+        icon:"🔥",
+        name:"Forge",
+        hotkey:"C",
+        desc:"Armor upgrades."
+    },
+
+    {
+        icon:"❌",
+        name:"Cancel",
+        hotkey:"V",
+        desc:"Cancel build."
+    }
+];
+
+/**
+const gridEl =
+    document.getElementById(
+        "commandGrid"
+    );
+
+const tooltip =
+    document.getElementById(
+        "tooltip"
+    );
+
+buildCommands.forEach(cmd=>{
+
+    const btn =
+        document.createElement(
+            "button"
+        );
+
+    btn.className =
+        "commandBtn";
+
+    btn.innerHTML = `
+        ${cmd.icon}
+        <span>${cmd.hotkey}</span>
+    `;
+
+    btn.addEventListener(
+        "mousemove",
+        e=>{
+
+            tooltip.style.display =
+                "block";
+
+            tooltip.style.left =
+                e.clientX + 14 + "px";
+
+            tooltip.style.top =
+                e.clientY + 14 + "px";
+
+            tooltip.innerHTML = `
+                <b>${cmd.name}</b><br>
+                ${cmd.desc}<br>
+                Hotkey: ${cmd.hotkey}
+            `;
+        }
+    );
+
+    btn.addEventListener(
+        "mouseleave",
+        ()=>{
+
+            tooltip.style.display =
+                "none";
+        }
+    );
+
+    gridEl.appendChild(btn);
+});
+ **/
+// SCENE
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
 
@@ -271,10 +411,7 @@ const controls =
 controls.target.set(0,0,0);
 controls.update();
 
-///////////////////////////////////////////////////////////
 // LIGHT
-///////////////////////////////////////////////////////////
-
 const sun = new THREE.DirectionalLight(
     0xffffff,
     2
@@ -292,10 +429,7 @@ scene.add(
     )
 );
 
-///////////////////////////////////////////////////////////
 // WORLD
-///////////////////////////////////////////////////////////
-
 const WORLD_SIZE = 64;
 
 const ground = new THREE.Mesh(
@@ -317,10 +451,7 @@ ground.receiveShadow = true;
 
 scene.add(ground);
 
-///////////////////////////////////////////////////////////
 // TREES
-///////////////////////////////////////////////////////////
-
 const trees = [];
 
 function spawnTree(x,z){
@@ -454,8 +585,6 @@ function createPeasant(){
 const peasant = createPeasant();
 
 // GOLDMINE
-
-
 let goldmine;
 
 function clearTreesNear(x,z,radius){
@@ -569,7 +698,6 @@ function renderEmptyHUD(){
 function renderPeasantHUD(){
 
     middleHUD.innerHTML = `
-
         <div id="portrait"></div>
 
         <div id="unitInfo">
@@ -593,13 +721,22 @@ function renderPeasantHUD(){
     .onclick = deselectAll;
 
     rightHUD.innerHTML = `
-
-        <div class="inventoryGrid">
-            ${Array(6).fill(
-                '<div class="inventorySlot"></div>'
-            ).join("")}
+        <div>
+            <div class="panelTitle">
+                INVENTORY
+            </div>
+            <div class="inventoryGrid">
+                ${Array(6).fill(
+                    '<div class="inventorySlot"></div>'
+                ).join("")}
+            </div>
         </div>
 
+        <div class="commandSection">
+            <div class="panelTitle">
+                BUILD MENU
+            </div>
+        </div>
         <div class="commandGrid">
 
             <button class="commandBtn">
