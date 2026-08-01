@@ -1236,7 +1236,7 @@ class GoblinMorphGenerator{
         // }
         this.deformer.translate(
             VertexMask.JAW,
-            new THREE.Vector3(0.-1,1),
+            new THREE.Vector3(0,-1,1),
             0.2
         );
     }
@@ -2539,10 +2539,14 @@ class HalfEdgeMesh {
             twin.twin = edge;
         }
     }
-    createEdge(){
-        const e = new HEEdge();
-        this.edges.push(e);
-        return e;
+    createEdge(start, end, face) {
+        const edge = new HEEdge();
+        edge.vertex = end;
+        edge.face   = face;
+        // optional
+        end.edge ??= edge;
+        this.edges.push(edge);
+        return edge;
     }
     getNextLoopEdge(edge){
         if(!edge.twin)
