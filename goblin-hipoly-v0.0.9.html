@@ -3453,23 +3453,16 @@ class SelectionManager{
         return face;
 
     }
-
     //--------------------------------------------------------
 
     // Landmark
-
     //--------------------------------------------------------
-
     selectLandmark(point){
 
         if(!point) return;
-
         this.landmarks.add(point);
-
         point.selected = true;
-
         return point;
-
     }
 toggleVertex(vertex){
 
@@ -3522,6 +3515,7 @@ class EditorApp{
     this.initHelpers();
     this.goblinGenerator = new GoblinGenerator(
         this.meshSystem.topology)
+    this.initInput();
     this.animate();
     // window.mesh = this.topology;
     }
@@ -3660,6 +3654,78 @@ class EditorApp{
         this.meshSystem.createCube(1);
         console.warn("initHelpers called.");
      }
+    initInput(){
+        this.renderer.domElement.addEventListener(
+            "pointerdown",
+            (event)=>{
+        const ctrl =
+            event.ctrlKey ||
+            event.metaKey;
+        if(!ctrl){
+            APP.selection.clear();
+        }
+        const rect =
+            this.renderer.domElement.getBoundingClientRect();
+        this.mouse.x =
+            ((event.clientX-rect.left)/rect.width)*2-1;
+        this.mouse.y =
+            -((event.clientY-rect.top)/rect.height)*2+1;
+        this.raycaster.setFromCamera(
+            this.mouse,
+            this.camera
+        );
+        //-----------------------------------
+        // Vertex mode
+        //-----------------------------------
+        if(APP.mode==="vertex"){
+
+            const vertex =
+                this.pickVertex(this.raycaster.ray);
+
+            APP.selection.selectVertex(vertex);
+
+            return;
+
+        }
+
+        //-----------------------------------
+        // Edge mode
+        //-----------------------------------
+
+        if(APP.mode==="edge"){
+
+            const edge =
+                this.pickEdge(this.raycaster.ray);
+
+            APP.selection.selectEdge(edge);
+
+            return;
+
+        }
+
+        //-----------------------------------
+        // Face mode
+        //-----------------------------------
+
+        const hits =
+            this.raycaster.intersectObject(
+                this.meshSystem.mesh
+            );
+
+        if(!hits.length)
+            return;
+
+        const hit = hits[0];
+
+        const face =
+            this.meshSystem.geometry
+            .userData.faceMap[
+                hit.faceIndex
+            ];
+
+        APP.selection.selectFace(face);
+    )
+    }
     updateSelectionVisual(){
         this.meshSystem.updateSelectedVertex(this.selection.vertex)
         if(!this.meshSystem ||
