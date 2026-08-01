@@ -3209,18 +3209,15 @@ class Selection {
     }
 }
 class GoblinGenerator{
-
     constructor(app){
         this.app = app;
         this.image = null;
     }
-
     async setImage(file){
         this.image =
             await ImageLoader.load(file);
     }
     async generate(){
-
     //--------------------------------------------------
     // Stage 1
     //--------------------------------------------------
@@ -3248,7 +3245,6 @@ class GoblinGenerator{
     //--------------------------------------------------
     // Stage 5
     //-------------------------------------------------
-
     this.projectSurface(
         template,
         silhouette
@@ -3421,26 +3417,16 @@ class SelectionManager{
         this.selectedLandmarks = [];
 
     }
-selectVertex(vertex){
-
+    selectVertex(vertex){
         if(!vertex) return;
-
         this.vertices.add(vertex);
-
         vertex.selected = true;
-
         return vertex;
-
     }
-
     //--------------------------------------------------------
-
     // Edge
-
     //--------------------------------------------------------
-
     selectEdge(edge){
-
         if(!edge) return;
 
         this.edges.add(edge);
@@ -3456,7 +3442,6 @@ selectVertex(vertex){
     // Face
 
     //--------------------------------------------------------
-
     selectFace(face){
 
         if(!face) return;
@@ -3507,33 +3492,23 @@ toggleVertex(vertex){
     //--------------------------------------------------------
 
     // Clear everything
-
     //--------------------------------------------------------
-
     clear(){
 
         for(const v of this.vertices)
-
             v.selected = false;
-
         for(const e of this.edges)
-
             e.selected = false;
 
         for(const f of this.faces)
-
             f.selected = false;
 
         for(const l of this.landmarks)
-
             l.selected = false;
 
         this.vertices.clear();
-
         this.edges.clear();
-
         this.faces.clear();
-
         this.landmarks.clear();
 
     }
@@ -3545,6 +3520,8 @@ class EditorApp{
     this.selection = new Selection();
     this.initScene();
     this.initHelpers();
+    this.goblinGenerator = new GoblinGenerator(
+        this.meshSystem.topology)
     this.animate();
     // window.mesh = this.topology;
     }
@@ -3581,7 +3558,7 @@ class EditorApp{
                 new THREE.Vector3()
             );
             const d = closest.distanceTo(p);
-            if(d < 0.12 && d << bestDistance) {
+            if(d < 0.12 && d < bestDistance) {
                 bestDistance = d;
                 best = v;
             }
