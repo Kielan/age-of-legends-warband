@@ -144,6 +144,60 @@ Offscreen silhouette renderer and overlay scoring
 Iterative constrained solver
 Goblin style priors
 Mesh cleanup, merge, smoothing, retopology
+Concrete tuning targets for sample image to 3d mesh
+Parameter	Suggested bias
+Head width	increase 20% to 35%
+Head height	decrease 10% to 20%
+Head depth	keep moderate, not spherical
+Ear base width	increase 30%
+Ear tip flare	increase strongly
+Shoulder width	slightly widen
+Torso lower width	increase
+Waist pinch	reduce
+Arm radius taper	stronger toward wrist
+Hand width	increase 25% to 40%
+Leg length	shorten 10% to 15%
+Foot length	increase 20%
+Foot height	flatten
+Symmetry weight	high
+Silhouette IoU weight	very high
+
+biggest functional gap is
+A dense silhouette-driven cross-section and width-profile extractor feeding an iterative silhouette-fit optimizer.
+convert from mostly circles to::
+head: wide, squarish oval
+ears: thin tapering wedges
+torso: barrel/belly profile
+hands: blocky rounded box
+feet: flattened wedge
+// image-analysis/
+maskExtractor.ts
+contourTracer.ts
+distanceTransform.ts
+partSegmenter.ts
+landmarkDetector.ts
+featurePointRefiner.ts
+symmetryAnalyzer.ts
+poseEstimator.ts
+silhouetteMetrics.ts
+// shape-fit/
+segmentSampler.ts
+crossSectionFitter.ts
+radiusProfileExtractor.ts
+widthProfileSmoother.ts
+depthHeuristics.ts
+sectionRegularizer.ts
+// mesh-gen/
+primitiveLibrary.ts
+capsuleBuilder.ts
+loftBuilder.ts
+earBuilder.ts
+handBuilder.ts
+footBuilder.ts
+jointBlendBuilder.ts
+meshMerger.ts
+voxelizer.ts
+retopology.ts
 *****/
 
 /************************************************************
