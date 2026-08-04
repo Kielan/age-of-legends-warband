@@ -108,9 +108,7 @@ const stats =
 
 /**********************************************************************
  * MeshParameterPipeline.js
- *
  * Intermediate pipeline between image analysis and mesh generation.
- *
  * Image
  *   ↓
  * BodyParameters
@@ -126,20 +124,24 @@ const stats =
  * HalfEdgeMesh
  *   ↓
  * ConstraintSolver
- *
  *********************************************************************/
 
+/**********
+visual debug view for every stage.
+1. Landmarks: Draw all detected joints and feature points over the source image, with confidence values and labels.
+2. Feature Graph: Render the graph as colored spheres and connecting bones in the Three.js scene so you can verify hierarchy and transforms before any mesh exists.
+3. Cross Sections: For each body segment, draw sampled radius discs along its length to confirm the profile matches the intended silhouette.
+4. Primitive Generation: Render each primitive in a different color before merging. This makes it easy to spot incorrect sizes, rotations, or attachment points.
+5. Constraint Solver: Display per-constraint error values (head width, shoulder width, ear angle, etc.) and graph them over iterations to verify convergence.
+6. Silhouette Fit: Render the generated silhouette and overlay it on the reference image with false colors—green where they agree, red where the mesh extends outside, blue where the reference extends beyond the mesh.
+*****/
 
 /************************************************************
  * BODY PARAMETERS
  ************************************************************/
-
 export class BodyParameters{
-
     constructor(){
-
         this.height = 1.0;
-
         this.head = {
             width:0.32,
             depth:0.30,
@@ -175,31 +177,24 @@ export class BodyParameters{
             shinLength:0.29,
             footLength:0.17
         };
-
     }
-
 }
 
 
 /************************************************************
  * POSE PARAMETERS
  ************************************************************/
-
 export class PoseParameters{
-
     constructor(){
-
         this.head={
             yaw:0,
             pitch:0,
             roll:0
         };
-
         this.spine={
             bend:0,
             twist:0
         };
-
         this.leftArm={
             shoulderYaw:0,
             shoulderPitch:0,
@@ -210,9 +205,7 @@ export class PoseParameters{
             wristYaw:0,
             wristRoll:0
         };
-
         this.rightArm=JSON.parse(JSON.stringify(this.leftArm));
-
         this.leftLeg={
             hipYaw:0,
             hipPitch:0,
@@ -221,104 +214,63 @@ export class PoseParameters{
 
             anklePitch:0
         };
-
         this.rightLeg=JSON.parse(JSON.stringify(this.leftLeg));
-
     }
-
 }
-
 
 /************************************************************
  * CROSS SECTION PROFILE
  ************************************************************/
-
 export class RadiusProfile{
-
     constructor(sampleCount=8){
-
         this.samples=[];
-
         for(let i=0;i<sampleCount;i++)
             this.samples.push(1.0);
-
     }
-
     radius(t){
-
         const f=t*(this.samples.length-1);
-
         const i=Math.floor(f);
-
         const j=Math.min(i+1,this.samples.length-1);
-
         const a=f-i;
-
         return this.samples[i]*(1-a)+this.samples[j]*a;
-
     }
-
 }
 
 
 /************************************************************
  * CROSS SECTION DATABASE
  ************************************************************/
-
 export class CrossSectionProfiles{
-
     constructor(){
-
         this.head=new RadiusProfile(10);
-
         this.neck=new RadiusProfile(5);
-
         this.torso=new RadiusProfile(16);
-
         this.pelvis=new RadiusProfile(8);
-
         this.upperArm=new RadiusProfile(10);
-
         this.lowerArm=new RadiusProfile(10);
-
         this.hand=new RadiusProfile(4);
-
         this.thigh=new RadiusProfile(10);
-
         this.shin=new RadiusProfile(10);
-
         this.foot=new RadiusProfile(6);
-
     }
-
 }
-
 
 /************************************************************
  * TOPOLOGY LOOP
  ************************************************************/
-
 export class EdgeLoop{
-
     constructor(name,t){
-
         this.name=name;
-
         this.t=t;
-
     }
-
 }
 
 
 /************************************************************
  * TOPOLOGY BLUEPRINT
  ************************************************************/
-
 export class TopologyBlueprint{
-
     constructor(){
-
         this.headLoops=[
             new EdgeLoop("chin",0.02),
             new EdgeLoop("mouth",0.18),
@@ -326,13 +278,11 @@ export class TopologyBlueprint{
             new EdgeLoop("eyes",0.55),
             new EdgeLoop("forehead",0.80)
         ];
-
         this.neckLoops=[
             new EdgeLoop("base",0.05),
             new EdgeLoop("middle",0.50),
             new EdgeLoop("top",0.90)
         ];
-
         this.armLoops=[
             new EdgeLoop("shoulder",0.0),
             new EdgeLoop("bicep",0.25),
@@ -340,7 +290,6 @@ export class TopologyBlueprint{
             new EdgeLoop("forearm",0.72),
             new EdgeLoop("wrist",1.0)
         ];
-
         this.legLoops=[
             new EdgeLoop("hip",0.0),
             new EdgeLoop("thigh",0.22),
@@ -348,18 +297,14 @@ export class TopologyBlueprint{
             new EdgeLoop("calf",0.75),
             new EdgeLoop("ankle",1.0)
         ];
-
     }
-
 }
 
 
 /************************************************************
  * SEMANTIC REGION
  ************************************************************/
-
 export const Region={
-
     HEAD:0,
     FACE:1,
     LEFT_EAR:2,
@@ -393,125 +338,69 @@ export const Region={
 /************************************************************
  * SEMANTIC VERTEX MAP
  ************************************************************/
-
 export class SemanticRegionMap{
-
     constructor(){
-
         this.vertexRegions=new Map();
-
     }
-
     assign(vertex,region){
-
         this.vertexRegions.set(vertex,region);
-
     }
-
     getRegion(vertex){
-
         return this.vertexRegions.get(vertex);
-
     }
-
 }
-
 
 /************************************************************
  * CONSTRAINT
  ************************************************************/
-
 export class Constraint{
-
     constructor(weight=1){
-
         this.weight=weight;
-
     }
-
     evaluate(mesh){
-
         return 0;
-
     }
-
     solve(mesh){
-
     }
 
 }
-
-
 /************************************************************
  * HEAD WIDTH
  ************************************************************/
-
 export class HeadWidthConstraint extends Constraint{
-
     constructor(target){
-
         super(5);
-
         this.target=target;
-
     }
-
     evaluate(mesh){
-
         return mesh.measureHeadWidth()-this.target;
-
     }
-
     solve(mesh){
-
         const error=this.evaluate(mesh);
-
         mesh.scaleHead(1-error*0.2);
-
     }
-
 }
-
-
 /************************************************************
  * EAR ANGLE
  ************************************************************/
-
 export class EarAngleConstraint extends Constraint{
-
     constructor(target){
-
         super(3);
-
         this.target=target;
-
     }
-
     solve(mesh){
-
         const e=mesh.measureEarAngle()-this.target;
-
         mesh.rotateEars(-e*0.25);
-
     }
-
 }
-
-
 /************************************************************
  * ARM LENGTH
  ************************************************************/
-
 export class ArmLengthConstraint extends Constraint{
-
     constructor(target){
-
         super(2);
-
         this.target=target;
-
     }
-
     solve(mesh){
 
         const e=mesh.measureArmLength()-this.target;
@@ -519,51 +408,30 @@ export class ArmLengthConstraint extends Constraint{
         mesh.scaleArms(1-e*0.15);
 
     }
-
 }
-
-
 /************************************************************
  * SHOULDER WIDTH
  ************************************************************/
-
 export class ShoulderWidthConstraint extends Constraint{
-
     constructor(target){
-
         super(4);
-
         this.target=target;
-
     }
-
     solve(mesh){
-
         const e=mesh.measureShoulderWidth()-this.target;
-
         mesh.scaleShoulders(1-e*0.15);
-
     }
-
 }
-
 
 /************************************************************
  * SILHOUETTE MATCH
  ************************************************************/
-
 export class SilhouetteConstraint extends Constraint{
-
     constructor(mask){
-
         super(10);
-
         this.mask=mask;
-
     }
-
     solve(mesh){
-
         /*
          Render mesh to offscreen buffer.
 
@@ -585,186 +453,114 @@ export class SilhouetteConstraint extends Constraint{
  ************************************************************/
 
 export class ConstraintSolver{
-
     constructor(){
-
         this.constraints=[];
-
         this.maxIterations=30;
-
     }
-
     add(c){
-
         this.constraints.push(c);
-
     }
-
     solve(mesh){
-
         for(let iteration=0;
             iteration<this.maxIterations;
             iteration++){
-
             for(const c of this.constraints){
-
                 c.solve(mesh);
-
             }
-
             mesh.rebuildNormals();
-
             mesh.recalculateBounds();
-
         }
-
     }
-
 }
 
 
 /************************************************************
  * PIPELINE
  ************************************************************/
-
 export class MeshParameterPipeline{
-
     constructor(){
-
         this.body=new BodyParameters();
-
         this.pose=new PoseParameters();
-
         this.crossSections=new CrossSectionProfiles();
-
         this.topology=new TopologyBlueprint();
-
         this.semanticRegions=new SemanticRegionMap();
-
         this.constraintSolver=new ConstraintSolver();
-
     }
-
     process(image){
-
         /*
          Image
             ↓
          BodyParameters
-
             ↓
          PoseParameters
-
             ↓
          CrossSectionProfiles
-
             ↓
          TopologyBlueprint
-
             ↓
          PrimitiveFactory
-
             ↓
          HalfEdgeMesh
-
             ↓
          ConstraintSolver
-
          */
-
     }
 
 }
 
     export class FeatureNode{
-
     constructor(name){
-
         this.name = name;
-
         this.parent = null;
         this.children = [];
-
         // Local transform
         this.position = new THREE.Vector3();
         this.rotation = new THREE.Euler();
         this.scale    = new THREE.Vector3(1,1,1);
-
         // Semantic measurements
         this.parameters = {};
-
         // Radius profile
         this.profile = null;
-
         // Edge loops that belong here
         this.edgeLoops = [];
-
         // Generated mesh section
         this.mesh = null;
-
         // Optimization constraints
         this.constraints = [];
-
         // Optional landmark
         this.landmark = null;
-
     }
-
     addChild(node){
-
         node.parent=this;
         this.children.push(node);
-
     }
-
 }
 
 export class FeatureGraph{
-
     constructor(){
-
         this.nodes=new Map();
-
     }
-
     add(name){
-
         const node=new FeatureNode(name);
-
         this.nodes.set(name,node);
-
         return node;
-
     }
-
     get(name){
-
         return this.nodes.get(name);
-
     }
-
 }
 
 const graph=new FeatureGraph();
 
 const pelvis=graph.add("pelvis");
-
 const torso=graph.add("torso");
-
 const neck=graph.add("neck");
-
 const head=graph.add("head");
-
 const leftEar=graph.add("leftEar");
-
 const rightEar=graph.add("rightEar");
-
 const leftArm=graph.add("leftUpperArm");
-
 const leftForearm=graph.add("leftForearm");
-
 const leftHand=graph.add("leftHand");
-
 const rightArm=graph.add("rightUpperArm");
 
 //...
