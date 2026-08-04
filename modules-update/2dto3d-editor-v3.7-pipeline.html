@@ -1,0 +1,2383 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Goblin Editor</title>
+<style>
+
+html,
+body{
+    margin:0;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:#1a1a1a;
+}
+#root{
+    width:100%;
+    height:100%;
+    display:flex;
+    flex-direction:column;
+}
+#toolbar{
+    height:40px;
+    background:#2d2d2d;
+    border-bottom:1px solid #444;
+    display:flex;
+    align-items:center;
+    padding-left:10px;
+    color:white;
+    font-family:monospace;
+}
+#content{
+    flex:1;
+    display:flex;
+}
+#viewport{
+    flex:1;
+    position:relative;
+}
+#inspector{
+    width:280px;
+    background:#252525;
+    border-left:1px solid #444;
+    color:white;
+    font-family:monospace;
+    padding:10px;
+}
+button{
+    margin-right:5px;
+}
+</style>
+</head>
+<body>
+<div id="root">
+<div id="toolbar">
+<button id="selectTool">
+Select
+</button>
+<button id="extrudeTool">
+Extrude
+</button>
+<button id="sculptTool">
+Sculpt
+</button>
+<button id="generateGoblinTool">
+Generate Goblin
+</button>
+<button id="generateGoblinToolV2">
+Generate Goblin V2
+</button>
+<input
+    id="imageInput"
+    type="file"
+    accept="image/*"
+    hidden
+/>
+<button id="loadImg">
+Load Image
+</button>
+<input
+    id="imageLoader"
+    type="file"
+    accept="image/*"
+    hidden
+/>
+</div>
+
+<div id="content">
+<div id="viewport"></div>
+<div id="inspector">
+<h3>Inspector</h3>
+<div id="stats">
+Vertices: 0<br>
+Edges: 0<br>
+Faces: 0
+</div>
+<h3>Silhouette</h3>
+<canvas id="silhouettePreview" width="260" height="200" style="background:#111;border:1px solid #444;width:100%;height:auto;"></canvas>
+<div id="landmarkReadout" style="margin-top:8px;font-size:11px;line-height:1.4;white-space:pre-wrap;"></div>
+</div>
+</div>
+</div>
+<script type="module">
+import * as THREE from "https://esm.sh/three@0.165.0";
+import {OrbitControls} from "https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js";
+
+// --- New pipeline modules (image-analysis/ -> shape-fit/ -> mesh-gen/) ---
+// NOTE: these are real ES module files on disk next to this HTML file, so
+// this page must be served over http(s) (a local static server, or GitHub
+// Pages) rather than opened directly as a file:// URL — browsers block
+// module-to-module fetches under file://.
+import { extractByBrightness, cleanMask, largestComponent } from "./image-analysis/maskExtractor.js";
+import { detectLandmarks, sampleWidths } from "./image-analysis/landmarkDetector.js";
+import { refineLandmarks } from "./image-analysis/featurePointRefiner.js";
+import { estimatePose } from "./image-analysis/poseEstimator.js";
+import { segmentParts } from "./image-analysis/partSegmenter.js";
+import { computeIoU } from "./image-analysis/silhouetteMetrics.js";
+
+import { extractRadiusProfile } from "./shape-fit/radiusProfileExtractor.js";
+import { regularizeProfile } from "./shape-fit/sectionRegularizer.js";
+import { estimateDepth, biasedWidth, DEPTH_RATIOS } from "./shape-fit/depthHeuristics.js";
+import { squarishRingFn } from "./shape-fit/crossSectionFitter.js";
+
+import * as Prim from "./mesh-gen/primitiveLibrary.js";
+import { buildProfiledCapsule } from "./mesh-gen/capsuleBuilder.js";
+import { buildEar } from "./mesh-gen/earBuilder.js";
+import { buildHand } from "./mesh-gen/handBuilder.js";
+import { buildFoot } from "./mesh-gen/footBuilder.js";
+import { buildBlendRing } from "./mesh-gen/jointBlendBuilder.js";
+import { mergeMeshes, toHalfEdgeMesh } from "./mesh-gen/meshMerger.js";
+
+const viewport =
+    document.getElementById("viewport");
+const stats =
+    document.getElementById("stats");
+
+/**********************************************************************
+ * MeshParameterPipeline.js
+ * Intermediate pipeline between image analysis and mesh generation.
+ * Image
+ *   ↓
+ * BodyParameters
+ *   ↓
+ * PoseParameters
+ *   ↓
+ * CrossSectionProfiles
+ *   ↓
+ * TopologyBlueprint
+ *   ↓
+ * PrimitiveFactory
+ *   ↓
+ * HalfEdgeMesh
+ *   ↓
+ * ConstraintSolver
+ *********************************************************************/
+
+/**********
+visual debug view for every stage.
+1. Landmarks: Draw all detected joints and feature points over the source image, with confidence values and labels.
+2. Feature Graph: Render the graph as colored spheres and connecting bones in the Three.js scene so you can verify hierarchy and transforms before any mesh exists.
+3. Cross Sections: For each body segment, draw sampled radius discs along its length to confirm the profile matches the intended silhouette.
+4. Primitive Generation: Render each primitive in a different color before merging. This makes it easy to spot incorrect sizes, rotations, or attachment points.
+5. Constraint Solver: Display per-constraint error values (head width, shoulder width, ear angle, etc.) and graph them over iterations to verify convergence.
+6. Silhouette Fit: Render the generated silhouette and overlay it on the reference image with false colors—green where they agree, red where the mesh extends outside, blue where the reference extends beyond the mesh.
+TODO
+Binary mask + contour extraction
+Per-part segmentation
+Segment width-profile sampling
+Elliptical/stylized cross-sections
+Part-specific primitive library
+Offscreen silhouette renderer and overlay scoring
+Iterative constrained solver
+Goblin style priors
+Mesh cleanup, merge, smoothing, retopology
+Concrete tuning targets for sample image to 3d mesh
+Parameter	Suggested bias
+Head width	increase 20% to 35%
+Head height	decrease 10% to 20%
+Head depth	keep moderate, not spherical
+Ear base width	increase 30%
+Ear tip flare	increase strongly
+Shoulder width	slightly widen
+Torso lower width	increase
+Waist pinch	reduce
+Arm radius taper	stronger toward wrist
+Hand width	increase 25% to 40%
+Leg length	shorten 10% to 15%
+Foot length	increase 20%
+Foot height	flatten
+Symmetry weight	high
+Silhouette IoU weight	very high
+
+biggest functional gap is
+A dense silhouette-driven cross-section and width-profile extractor feeding an iterative silhouette-fit optimizer.
+convert from mostly circles to::
+head: wide, squarish oval
+ears: thin tapering wedges
+torso: barrel/belly profile
+hands: blocky rounded box
+feet: flattened wedge
+// image-analysis/
+maskExtractor.ts
+contourTracer.ts
+distanceTransform.ts
+partSegmenter.ts
+landmarkDetector.ts
+featurePointRefiner.ts
+symmetryAnalyzer.ts
+poseEstimator.ts
+silhouetteMetrics.ts
+// shape-fit/
+segmentSampler.ts
+crossSectionFitter.ts
+radiusProfileExtractor.ts
+widthProfileSmoother.ts
+depthHeuristics.ts
+sectionRegularizer.ts
+// mesh-gen/
+primitiveLibrary.ts
+capsuleBuilder.ts
+loftBuilder.ts
+earBuilder.ts
+handBuilder.ts
+footBuilder.ts
+jointBlendBuilder.ts
+meshMerger.ts
+voxelizer.ts
+retopology.ts
+*****/
+
+/************************************************************
+ * BODY PARAMETERS
+ ************************************************************/
+export class BodyParameters{
+    constructor(){
+        this.height = 1.0;
+        this.head = {
+            width:0.32,
+            depth:0.30,
+            height:0.34,
+            jawWidth:0.24,
+            foreheadWidth:0.28,
+            chinWidth:0.16
+        };
+
+        this.neck={
+            radius:0.07,
+            length:0.08
+        };
+
+        this.torso={
+            shoulderWidth:0.42,
+            chestWidth:0.39,
+            chestDepth:0.28,
+            waistWidth:0.32,
+            waistDepth:0.24,
+            pelvisWidth:0.36,
+            pelvisDepth:0.26
+        };
+
+        this.arm={
+            upperLength:0.31,
+            lowerLength:0.29,
+            handLength:0.15
+        };
+
+        this.leg={
+            thighLength:0.32,
+            shinLength:0.29,
+            footLength:0.17
+        };
+    }
+}
+
+
+/************************************************************
+ * POSE PARAMETERS
+ ************************************************************/
+export class PoseParameters{
+    constructor(){
+        this.head={
+            yaw:0,
+            pitch:0,
+            roll:0
+        };
+        this.spine={
+            bend:0,
+            twist:0
+        };
+        this.leftArm={
+            shoulderYaw:0,
+            shoulderPitch:0,
+            shoulderRoll:0,
+
+            elbow:0,
+
+            wristYaw:0,
+            wristRoll:0
+        };
+        this.rightArm=JSON.parse(JSON.stringify(this.leftArm));
+        this.leftLeg={
+            hipYaw:0,
+            hipPitch:0,
+
+            knee:0,
+
+            anklePitch:0
+        };
+        this.rightLeg=JSON.parse(JSON.stringify(this.leftLeg));
+    }
+}
+
+/************************************************************
+ * CROSS SECTION PROFILE
+ ************************************************************/
+export class RadiusProfile{
+    constructor(sampleCount=8){
+        this.samples=[];
+        for(let i=0;i<sampleCount;i++)
+            this.samples.push(1.0);
+    }
+    radius(t){
+        const f=t*(this.samples.length-1);
+        const i=Math.floor(f);
+        const j=Math.min(i+1,this.samples.length-1);
+        const a=f-i;
+        return this.samples[i]*(1-a)+this.samples[j]*a;
+    }
+}
+
+
+/************************************************************
+ * CROSS SECTION DATABASE
+ ************************************************************/
+export class CrossSectionProfiles{
+    constructor(){
+        this.head=new RadiusProfile(10);
+        this.neck=new RadiusProfile(5);
+        this.torso=new RadiusProfile(16);
+        this.pelvis=new RadiusProfile(8);
+        this.upperArm=new RadiusProfile(10);
+        this.lowerArm=new RadiusProfile(10);
+        this.hand=new RadiusProfile(4);
+        this.thigh=new RadiusProfile(10);
+        this.shin=new RadiusProfile(10);
+        this.foot=new RadiusProfile(6);
+    }
+}
+
+/************************************************************
+ * TOPOLOGY LOOP
+ ************************************************************/
+export class EdgeLoop{
+    constructor(name,t){
+        this.name=name;
+        this.t=t;
+    }
+}
+
+
+/************************************************************
+ * TOPOLOGY BLUEPRINT
+ ************************************************************/
+export class TopologyBlueprint{
+    constructor(){
+        this.headLoops=[
+            new EdgeLoop("chin",0.02),
+            new EdgeLoop("mouth",0.18),
+            new EdgeLoop("nose",0.35),
+            new EdgeLoop("eyes",0.55),
+            new EdgeLoop("forehead",0.80)
+        ];
+        this.neckLoops=[
+            new EdgeLoop("base",0.05),
+            new EdgeLoop("middle",0.50),
+            new EdgeLoop("top",0.90)
+        ];
+        this.armLoops=[
+            new EdgeLoop("shoulder",0.0),
+            new EdgeLoop("bicep",0.25),
+            new EdgeLoop("elbow",0.50),
+            new EdgeLoop("forearm",0.72),
+            new EdgeLoop("wrist",1.0)
+        ];
+        this.legLoops=[
+            new EdgeLoop("hip",0.0),
+            new EdgeLoop("thigh",0.22),
+            new EdgeLoop("knee",0.50),
+            new EdgeLoop("calf",0.75),
+            new EdgeLoop("ankle",1.0)
+        ];
+    }
+}
+
+
+/************************************************************
+ * SEMANTIC REGION
+ ************************************************************/
+export const Region={
+    HEAD:0,
+    FACE:1,
+    LEFT_EAR:2,
+    RIGHT_EAR:3,
+
+    NECK:4,
+
+    CHEST:5,
+    BELLY:6,
+    PELVIS:7,
+
+    LEFT_BICEP:8,
+    LEFT_FOREARM:9,
+    LEFT_HAND:10,
+
+    RIGHT_BICEP:11,
+    RIGHT_FOREARM:12,
+    RIGHT_HAND:13,
+
+    LEFT_THIGH:14,
+    LEFT_SHIN:15,
+    LEFT_FOOT:16,
+
+    RIGHT_THIGH:17,
+    RIGHT_SHIN:18,
+    RIGHT_FOOT:19
+
+};
+
+
+/************************************************************
+ * SEMANTIC VERTEX MAP
+ ************************************************************/
+export class SemanticRegionMap{
+    constructor(){
+        this.vertexRegions=new Map();
+    }
+    assign(vertex,region){
+        this.vertexRegions.set(vertex,region);
+    }
+    getRegion(vertex){
+        return this.vertexRegions.get(vertex);
+    }
+}
+
+/************************************************************
+ * CONSTRAINT
+ ************************************************************/
+export class Constraint{
+    constructor(weight=1){
+        this.weight=weight;
+    }
+    evaluate(mesh){
+        return 0;
+    }
+    solve(mesh){
+    }
+
+}
+/************************************************************
+ * HEAD WIDTH
+ ************************************************************/
+export class HeadWidthConstraint extends Constraint{
+    constructor(target){
+        super(5);
+        this.target=target;
+    }
+    evaluate(mesh){
+        return mesh.measureHeadWidth()-this.target;
+    }
+    solve(mesh){
+        const error=this.evaluate(mesh);
+        mesh.scaleHead(1-error*0.2);
+    }
+}
+/************************************************************
+ * EAR ANGLE
+ ************************************************************/
+export class EarAngleConstraint extends Constraint{
+    constructor(target){
+        super(3);
+        this.target=target;
+    }
+    solve(mesh){
+        const e=mesh.measureEarAngle()-this.target;
+        mesh.rotateEars(-e*0.25);
+    }
+}
+/************************************************************
+ * ARM LENGTH
+ ************************************************************/
+export class ArmLengthConstraint extends Constraint{
+    constructor(target){
+        super(2);
+        this.target=target;
+    }
+    solve(mesh){
+
+        const e=mesh.measureArmLength()-this.target;
+
+        mesh.scaleArms(1-e*0.15);
+
+    }
+}
+/************************************************************
+ * SHOULDER WIDTH
+ ************************************************************/
+export class ShoulderWidthConstraint extends Constraint{
+    constructor(target){
+        super(4);
+        this.target=target;
+    }
+    solve(mesh){
+        const e=mesh.measureShoulderWidth()-this.target;
+        mesh.scaleShoulders(1-e*0.15);
+    }
+}
+
+/************************************************************
+ * SILHOUETTE MATCH
+ ************************************************************/
+export class SilhouetteConstraint extends Constraint{
+    constructor(mask){
+        super(10);
+        this.mask=mask;
+    }
+    solve(mesh){
+        /*
+         Render mesh to offscreen buffer.
+
+         Compare with silhouette.
+
+         Compute distance transform.
+
+         Push vertices toward image.
+
+         */
+
+    }
+
+}
+
+
+/************************************************************
+ * CONSTRAINT SOLVER
+ ************************************************************/
+
+export class ConstraintSolver{
+    constructor(){
+        this.constraints=[];
+        this.maxIterations=30;
+    }
+    add(c){
+        this.constraints.push(c);
+    }
+    solve(mesh){
+        for(let iteration=0;
+            iteration<this.maxIterations;
+            iteration++){
+            for(const c of this.constraints){
+                c.solve(mesh);
+            }
+            mesh.rebuildNormals();
+            mesh.recalculateBounds();
+        }
+    }
+}
+
+
+/************************************************************
+ * PIPELINE
+ ************************************************************/
+export class MeshParameterPipeline{
+    constructor(){
+        this.body=new BodyParameters();
+        this.pose=new PoseParameters();
+        this.crossSections=new CrossSectionProfiles();
+        this.topology=new TopologyBlueprint();
+        this.semanticRegions=new SemanticRegionMap();
+        this.constraintSolver=new ConstraintSolver();
+    }
+    process(image){
+        /*
+         Image
+            ↓
+         BodyParameters
+            ↓
+         PoseParameters
+            ↓
+         CrossSectionProfiles
+            ↓
+         TopologyBlueprint
+            ↓
+         PrimitiveFactory
+            ↓
+         HalfEdgeMesh
+            ↓
+         ConstraintSolver
+         */
+    }
+
+}
+
+    export class FeatureNode{
+    constructor(name){
+        this.name = name;
+        this.parent = null;
+        this.children = [];
+        // Local transform
+        this.position = new THREE.Vector3();
+        this.rotation = new THREE.Euler();
+        this.scale    = new THREE.Vector3(1,1,1);
+        // Semantic measurements
+        this.parameters = {};
+        // Radius profile
+        this.profile = null;
+        // Edge loops that belong here
+        this.edgeLoops = [];
+        // Generated mesh section
+        this.mesh = null;
+        // Optimization constraints
+        this.constraints = [];
+        // Optional landmark
+        this.landmark = null;
+    }
+    addChild(node){
+        node.parent=this;
+        this.children.push(node);
+    }
+}
+
+export class FeatureGraph{
+    constructor(){
+        this.nodes=new Map();
+    }
+    add(name){
+        const node=new FeatureNode(name);
+        this.nodes.set(name,node);
+        return node;
+    }
+    get(name){
+        return this.nodes.get(name);
+    }
+}
+
+const graph=new FeatureGraph();
+
+const pelvis=graph.add("pelvis");
+const torso=graph.add("torso");
+const neck=graph.add("neck");
+const head=graph.add("head");
+const leftEar=graph.add("leftEar");
+const rightEar=graph.add("rightEar");
+const leftArm=graph.add("leftUpperArm");
+const leftForearm=graph.add("leftForearm");
+const leftHand=graph.add("leftHand");
+const rightArm=graph.add("rightUpperArm");
+
+//...
+
+pelvis.addChild(torso);
+
+torso.addChild(neck);
+
+neck.addChild(head);
+
+head.addChild(leftEar);
+
+head.addChild(rightEar);
+
+torso.addChild(leftArm);
+
+leftArm.addChild(leftForearm);
+
+leftForearm.addChild(leftHand);
+
+// TOPOLOGY
+class HEVertex {
+    constructor(x,y,z){
+        this.position = new THREE.Vector3(x,y,z);
+        this.edge = null;
+        this.id = HEVertex._id++;
+        this.mask = 0;
+        this.weights = new Map();
+    }
+}
+HEVertex._id = 0;
+
+class HEFace {
+    constructor(){
+        this.edge = null;
+        this.id = HEFace._id++;
+    }
+}
+HEFace._id = 0;
+
+class HEEdge {
+    constructor(){
+        this.vertex = null;
+        this.face = null;
+        this.next = null;
+        this.prev = null;
+        this.twin = null;
+    }
+}
+
+class HalfEdgeMesh {
+    constructor(){
+        this.vertices = [];
+        this.faces = [];
+        this.edges = [];
+        this.edgeRegistry = new Map();
+    }
+    makeDirectedKey(a,b){
+        return `${a.id}_${b.id}`;
+    }
+    makeUndirectedKey(a,b){
+        const ia = a.id;
+        const ib = b.id;
+        return ia < ib ? `${ia}_${ib}` : `${ib}_${ia}`;
+    }
+    registerEdge(edge){
+        const start = edge.prev.vertex;
+        const end = edge.vertex;
+        const key = this.makeDirectedKey(start,end);
+        this.edgeRegistry.set(key,edge);
+    }
+    unregisterEdge(edge){
+        const start = edge.prev.vertex;
+        const end = edge.vertex;
+        const key = this.makeDirectedKey(start, end);
+        this.edgeRegistry.delete(key);
+    }
+    rebuildEdgeRegistry(){
+        this.edgeRegistry.clear();
+        for(const e of this.edges){
+            e.twin = null;
+        }
+        for(const e of this.edges){
+            if(e.prev.vertex === e.vertex) continue;
+            this.registerEdge(e);
+        }
+        for(const e of this.edges){
+            if(e.prev.vertex === e.vertex) continue;
+            this.registerTwin(e);
+        }
+    }
+    registerTwin(edge){
+        const start = edge.prev.vertex;
+        const end = edge.vertex;
+        const twinKey = this.makeDirectedKey(end,start);
+        const twin = this.edgeRegistry.get(twinKey);
+        if(twin){
+            edge.twin = twin;
+            twin.twin = edge;
+        }
+    }
+    createEdge(start, end, face){
+        const edge = new HEEdge();
+        edge.vertex = end;
+        edge.face = face;
+        edge.start = start;
+        if(!end.edge) end.edge = edge;
+        this.edges.push(edge);
+        return edge;
+    }
+    createFaceFromVertices(vertices){
+        const face = new HEFace();
+        this.faces.push(face);
+        const edges = [];
+        const count = vertices.length;
+        for(let i=0;i<count;i++){
+            const start = vertices[i];
+            const end = vertices[(i+1)%count];
+            const edge = this.createEdge(start,end,face);
+            edges.push(edge);
+        }
+        for(let i=0;i<count;i++){
+            const edge = edges[i];
+            edge.next = edges[(i+1)%count];
+            edge.prev = edges[(i-1+count)%count];
+        }
+        face.edge = edges[0];
+        for(const edge of edges){
+            this.registerEdge(edge);
+        }
+        for(const edge of edges){
+            this.registerTwin(edge);
+        }
+        return face;
+    }
+    weldVertex(position){
+        for(const v of this.vertices){
+            if(v.position.distanceTo(position) < 1e-6){
+                return v;
+            }
+        }
+        const nv = new HEVertex(position.x, position.y, position.z);
+        this.vertices.push(nv);
+        return nv;
+    }
+    findEdge(a,b){
+        return this.edgeRegistry.get(this.makeDirectedKey(a,b));
+    }
+    computeFaceNormal(face){
+        const verts = [];
+        let e = face.edge;
+        do {
+            verts.push(e.vertex.position);
+            e = e.next;
+        } while (e !== face.edge);
+        const ab = new THREE.Vector3().subVectors(verts[1], verts[0]);
+        const ac = new THREE.Vector3().subVectors(verts[2], verts[0]);
+        return new THREE.Vector3().crossVectors(ab, ac).normalize();
+    }
+    computeVertexNormal(vertex){
+        const normal = new THREE.Vector3();
+        const faces = new Set();
+        for(const edge of this.edges){
+            const isIncident = edge.vertex === vertex || (edge.prev && edge.prev.vertex === vertex);
+            if(!isIncident) continue;
+            if(edge.face) faces.add(edge.face);
+            if(edge.twin && edge.twin.face) faces.add(edge.twin.face);
+        }
+        for(const face of faces){
+            normal.add(this.computeFaceNormal(face));
+        }
+        if(normal.lengthSq() < 1e-12) return new THREE.Vector3(0,1,0);
+        return normal.normalize();
+    }
+    repairTwins(){
+        const map = new Map();
+        const canonicalKey = (a, b) => a < b ? `${a}_${b}` : `${b}_${a}`;
+        for (const e of this.edges) e.twin = null;
+        for (const e of this.edges) {
+            const a = e.prev.vertex.id;
+            const b = e.vertex.id;
+            const key = canonicalKey(a, b);
+            if (!map.has(key)) map.set(key, []);
+            map.get(key).push(e);
+        }
+        for (const [key, list] of map.entries()) {
+            if (list.length === 2) {
+                list[0].twin = list[1];
+                list[1].twin = list[0];
+            } else if (list.length > 2) {
+                console.warn("Non-manifold edge detected:", key, list.length);
+            }
+        }
+    }
+    validateFaceLoops(){
+        for(const face of this.faces){
+            let count = 0;
+            let e = face.edge;
+            do{
+                count++;
+                if(count > 100){
+                    console.error("Broken face loop", face.id);
+                    break;
+                }
+                e = e.next;
+            } while(e !== face.edge);
+        }
+    }
+    getFaceEdgeLoop(face){
+        const loop = [];
+        let start = face.edge;
+        let e = start;
+        do {
+            loop.push(e);
+            e = e.next;
+        } while (e !== start);
+        return loop;
+    }
+    enforceConsistentWinding(){
+        if (!this.faces.length) return;
+        const visited = new Set();
+        const stack = [];
+        const seed = this.faces[0];
+        stack.push(seed);
+        visited.add(seed);
+        while (stack.length) {
+            const face = stack.pop();
+            let e = face.edge;
+            do {
+                const twin = e.twin;
+                if (twin && twin.face && !visited.has(twin.face)) {
+                    const currentN = this.computeFaceNormal(face);
+                    const neighborN = this.computeFaceNormal(twin.face);
+                    if (currentN.dot(neighborN) < 0) {
+                        this.flipFaceWinding(twin.face);
+                    }
+                    visited.add(twin.face);
+                    stack.push(twin.face);
+                }
+                e = e.next;
+            } while (e !== face.edge);
+        }
+    }
+    flipFaceWinding(face){
+        const edges = [];
+        let e = face.edge;
+        do { edges.push(e); e = e.next; } while (e !== face.edge);
+        edges.reverse();
+        for (let i = 0; i < edges.length; i++) {
+            const curr = edges[i];
+            const next = edges[(i + 1) % edges.length];
+            const prev = edges[(i - 1 + edges.length) % edges.length];
+            curr.next = next;
+            curr.prev = prev;
+        }
+        face.edge = edges[0];
+    }
+    killFace(face){
+        if(!face) return;
+        const edges = [];
+        let e = face.edge;
+        do { edges.push(e); e = e.next; } while (e !== face.edge);
+        for (const edge of edges) {
+            if (edge.twin) {
+                edge.twin.twin = null;
+                edge.twin = null;
+            }
+        }
+        for (const edge of edges) this.unregisterEdge(edge);
+        this.edges = this.edges.filter(edge => !edges.includes(edge));
+        const index = this.faces.indexOf(face);
+        if (index !== -1) this.faces.splice(index, 1);
+    }
+    extrudeFace(face){
+        if (!face || !face.edge) return;
+        const baseRing = this.getFaceEdgeLoop(face);
+        const orderedVerts = baseRing.map(e => e.vertex);
+        const normal = this.computeFaceNormal(face);
+        const offset = normal.clone().multiplyScalar(0.8);
+        const dupVerts = orderedVerts.map(v => {
+            const nv = new HEVertex(
+                v.position.x + offset.x,
+                v.position.y + offset.y,
+                v.position.z + offset.z
+            );
+            this.vertices.push(nv);
+            nv.original = v;
+            return nv;
+        });
+        this.createFaceFromVertices(dupVerts);
+        const n = dupVerts.length;
+        for(let i=0;i<n;i++){
+            const v0 = orderedVerts[i];
+            const v1 = orderedVerts[(i+1)%n];
+            const v2 = dupVerts[(i+1)%n];
+            const v3 = dupVerts[i];
+            this.createFaceFromVertices([v0, v1, v2, v3]);
+        }
+        const idx = this.faces.indexOf(face);
+        if(idx !== -1) this.faces.splice(idx, 1);
+        this.repairTwins();
+    }
+    buildGeometry(){
+        const faceMap = [];
+        const positions = [];
+        for(const face of this.faces){
+            const verts = [];
+            let edge = face.edge;
+            do {
+                verts.push(edge.vertex.position);
+                edge = edge.next;
+            } while(edge !== face.edge);
+
+            if(verts.length === 4){
+                faceMap.push(face);
+                faceMap.push(face);
+                positions.push(
+                    verts[0].x, verts[0].y, verts[0].z,
+                    verts[1].x, verts[1].y, verts[1].z,
+                    verts[2].x, verts[2].y, verts[2].z
+                );
+                positions.push(
+                    verts[0].x, verts[0].y, verts[0].z,
+                    verts[2].x, verts[2].y, verts[2].z,
+                    verts[3].x, verts[3].y, verts[3].z
+                );
+            } else if(verts.length === 3){
+                faceMap.push(face);
+                positions.push(
+                    verts[0].x, verts[0].y, verts[0].z,
+                    verts[1].x, verts[1].y, verts[1].z,
+                    verts[2].x, verts[2].y, verts[2].z
+                );
+            } else if(verts.length > 4){
+                // fan triangulate n-gons
+                for(let i=1;i<verts.length-1;i++){
+                    faceMap.push(face);
+                    positions.push(
+                        verts[0].x, verts[0].y, verts[0].z,
+                        verts[i].x, verts[i].y, verts[i].z,
+                        verts[i+1].x, verts[i+1].y, verts[i+1].z
+                    );
+                }
+            } else {
+                console.warn("Degenerate face skipped", face.id, verts.length);
+            }
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute(positions, 3)
+        );
+        geometry.userData = { faceMap };
+        geometry.computeVertexNormals();
+        return geometry;
+    }
+    scale(sx, sy, sz){
+        for(const v of this.vertices){
+            v.position.x *= sx;
+            v.position.y *= sy;
+            v.position.z *= sz;
+        }
+        return this;
+    }
+    translate(tx, ty, tz){
+        for(const v of this.vertices){
+            v.position.x += tx;
+            v.position.y += ty;
+            v.position.z += tz;
+        }
+        return this;
+    }
+}
+
+// PRIMITIVE FACTORY
+class PrimitiveFactory {
+    createCube(size=1){
+        const mesh = new HalfEdgeMesh();
+        const s = size * 0.5;
+        const v = [
+            mesh.weldVertex(new THREE.Vector3(-s,-s,-s)),
+            mesh.weldVertex(new THREE.Vector3( s,-s,-s)),
+            mesh.weldVertex(new THREE.Vector3( s, s,-s)),
+            mesh.weldVertex(new THREE.Vector3(-s, s,-s)),
+            mesh.weldVertex(new THREE.Vector3(-s,-s, s)),
+            mesh.weldVertex(new THREE.Vector3( s,-s, s)),
+            mesh.weldVertex(new THREE.Vector3( s, s, s)),
+            mesh.weldVertex(new THREE.Vector3(-s, s, s))
+        ];
+        mesh.createFaceFromVertices([v[0],v[1],v[2],v[3]]); // back
+        mesh.createFaceFromVertices([v[5],v[4],v[7],v[6]]); // front
+        mesh.createFaceFromVertices([v[4],v[0],v[3],v[7]]); // left
+        mesh.createFaceFromVertices([v[1],v[5],v[6],v[2]]); // right
+        mesh.createFaceFromVertices([v[3],v[2],v[6],v[7]]); // top
+        mesh.createFaceFromVertices([v[4],v[5],v[1],v[0]]); // bottom
+        mesh.rebuildEdgeRegistry();
+        mesh.repairTwins();
+        mesh.enforceConsistentWinding();
+        return mesh;
+    }
+    createCylinder(radius, height, sides = 16){
+        const mesh = new HalfEdgeMesh();
+        const top = [];
+        const bottom = [];
+        const h = height * 0.5;
+        for(let i=0;i<sides;i++){
+            const a = i / sides * Math.PI * 2;
+            const x = Math.cos(a) * radius;
+            const z = Math.sin(a) * radius;
+            bottom.push(mesh.weldVertex(new THREE.Vector3(x, -h, z)));
+            top.push(mesh.weldVertex(new THREE.Vector3(x, h, z)));
+        }
+        for(let i=0;i<sides;i++){
+            const n = (i+1)%sides;
+            mesh.createFaceFromVertices([bottom[i], bottom[n], top[n], top[i]]);
+        }
+        const bottomCenter = mesh.weldVertex(new THREE.Vector3(0, -h, 0));
+        for(let i=0;i<sides;i++){
+            const n=(i+1)%sides;
+            mesh.createFaceFromVertices([bottomCenter, bottom[n], bottom[i]]);
+        }
+        const topCenter = mesh.weldVertex(new THREE.Vector3(0, h, 0));
+        for(let i=0;i<sides;i++){
+            const n=(i+1)%sides;
+            mesh.createFaceFromVertices([topCenter, top[i], top[n]]);
+        }
+        mesh.rebuildEdgeRegistry();
+        mesh.repairTwins();
+        return mesh;
+    }
+    createCone(radius,height,sides=16){
+        const mesh = new HalfEdgeMesh();
+        const ring=[];
+        const h=height*0.5;
+        for(let i=0;i<sides;i++){
+            const a=i/sides*Math.PI*2;
+            ring.push(mesh.weldVertex(new THREE.Vector3(Math.cos(a)*radius, -h, Math.sin(a)*radius)));
+        }
+        const apex = mesh.weldVertex(new THREE.Vector3(0,h,0));
+        for(let i=0;i<sides;i++){
+            const n=(i+1)%sides;
+            mesh.createFaceFromVertices([ring[i], ring[n], apex]);
+        }
+        const center = mesh.weldVertex(new THREE.Vector3(0, -h, 0));
+        for(let i=0;i<sides;i++){
+            const n=(i+1)%sides;
+            mesh.createFaceFromVertices([center, ring[n], ring[i]]);
+        }
+        mesh.rebuildEdgeRegistry();
+        mesh.repairTwins();
+        return mesh;
+    }
+    createSphere(radius=1, widthSegments=12, heightSegments=8){
+        const mesh = new HalfEdgeMesh();
+        const grid = [];
+        for(let iy=0; iy<=heightSegments; iy++){
+            const row = [];
+            const v = iy / heightSegments;
+            const phi = v * Math.PI; // 0..PI
+            for(let ix=0; ix<=widthSegments; ix++){
+                const u = ix / widthSegments;
+                const theta = u * Math.PI * 2; // 0..2PI
+                const x = -radius * Math.cos(theta) * Math.sin(phi);
+                const y = radius * Math.cos(phi);
+                const z = radius * Math.sin(theta) * Math.sin(phi);
+                row.push(mesh.weldVertex(new THREE.Vector3(x,y,z)));
+            }
+            grid.push(row);
+        }
+        for(let iy=0; iy<heightSegments; iy++){
+            for(let ix=0; ix<widthSegments; ix++){
+                const a = grid[iy][ix];
+                const b = grid[iy][ix+1];
+                const c = grid[iy+1][ix+1];
+                const d = grid[iy+1][ix];
+                // skip degenerate triangles at poles
+                if(iy === 0){
+                    mesh.createFaceFromVertices([a,c,d]);
+                } else if(iy === heightSegments-1){
+                    mesh.createFaceFromVertices([a,b,c]);
+                } else {
+                    mesh.createFaceFromVertices([a,b,c,d]);
+                }
+            }
+        }
+        mesh.rebuildEdgeRegistry();
+        mesh.repairTwins();
+        return mesh;
+    }
+    createCapsule(radius,height,sides=16){
+        const cylHeight = Math.max(height - radius*2, 0.001);
+        const body = this.createCylinder(radius, cylHeight, sides);
+        const top = this.createSphere(radius, sides, Math.max(4, Math.floor(sides/2)));
+        const bottom = this.createSphere(radius, sides, Math.max(4, Math.floor(sides/2)));
+        for(const v of top.vertices){
+            if(v.position.y < 0) continue;
+            v.position.y += cylHeight * 0.5;
+        }
+        for(const v of bottom.vertices){
+            if(v.position.y > 0) continue;
+            v.position.y -= cylHeight * 0.5;
+        }
+        return this.mergeMeshes(this.mergeMeshes(body, top), bottom);
+    }
+    mergeMeshes(meshA, meshB){
+        const result = new HalfEdgeMesh();
+        const vertexMap = new Map();
+        const addMeshVerts = (mesh) => {
+            for(const v of mesh.vertices){
+                const nv = result.weldVertex(v.position.clone());
+                vertexMap.set(v, nv);
+            }
+        };
+        addMeshVerts(meshA);
+        addMeshVerts(meshB);
+        const addMeshFaces = (mesh) => {
+            for(const face of mesh.faces){
+                const verts = [];
+                let e = face.edge;
+                do {
+                    verts.push(vertexMap.get(e.vertex));
+                    e = e.next;
+                } while(e !== face.edge);
+                result.createFaceFromVertices(verts);
+            }
+        };
+        addMeshFaces(meshA);
+        addMeshFaces(meshB);
+        result.rebuildEdgeRegistry();
+        result.repairTwins();
+        return result;
+    }
+}
+
+// IMAGE -> SILHOUETTE -> LANDMARKS PIPELINE
+
+class ImageReader {
+    constructor(){
+        this.canvas = document.createElement("canvas");
+        this.ctx = this.canvas.getContext("2d");
+    }
+    // Loads a URL (or object URL) into an internal canvas, downscaled so the
+    // pixel-scan passes below stay fast regardless of the source photo size.
+    async load(url, maxDim = 400){
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+            img.src = url;
+        });
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        this.canvas.width = w;
+        this.canvas.height = h;
+        this.ctx.drawImage(img, 0, 0, w, h);
+        return { width: w, height: h };
+    }
+    read(){
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        const data = this.ctx.getImageData(0, 0, w, h);
+        return { width: w, height: h, pixels: data.data };
+    }
+}
+
+// Simple brightness-threshold silhouette: assumes a reasonably plain
+// background and a darker (or distinctly-colored) subject. This is a
+// deliberately simple stand-in for real background removal — swap in a
+// proper matting step later if source photos are noisy.
+class SilhouetteExtractor {
+    extract(image, threshold = 200){
+        const { width, height, pixels } = image;
+        const mask = new Uint8Array(width * height);
+        for(let y = 0; y < height; y++){
+            for(let x = 0; x < width; x++){
+                const i = (y * width + x) * 4;
+                const r = pixels[i], g = pixels[i+1], b = pixels[i+2], a = pixels[i+3];
+                const brightness = (r + g + b) / 3;
+                mask[y * width + x] = (a > 10 && brightness < threshold) ? 1 : 0;
+            }
+        }
+        return { width, height, data: mask };
+    }
+    // Draws the mask into a preview <canvas> so you can see what the
+    // detector actually saw — invaluable for debugging bad thresholds.
+    drawPreview(mask, canvas){
+        canvas.width = mask.width;
+        canvas.height = mask.height;
+        const ctx = canvas.getContext("2d");
+        const imgData = ctx.createImageData(mask.width, mask.height);
+        for(let i = 0; i < mask.data.length; i++){
+            const v = mask.data[i] ? 255 : 30;
+            imgData.data[i*4] = v;
+            imgData.data[i*4+1] = v;
+            imgData.data[i*4+2] = v;
+            imgData.data[i*4+3] = 255;
+        }
+        ctx.putImageData(imgData, 0, 0);
+    }
+}
+
+// Scans the binary mask row-by-row to get a width profile, then reads
+// head / neck / shoulders / waist / hips / feet off that profile.
+class LandmarkDetector {
+    detect(mask){
+        const rows = this.sampleWidths(mask);
+        const nonEmpty = rows.filter(r => r.width > 0);
+        if(nonEmpty.length < 8){
+            // Not enough silhouette to work with (blank/near-blank image) —
+            // signal the caller to fall back to default proportions.
+            return null;
+        }
+        const minY = nonEmpty[0].y;
+        const maxY = nonEmpty[nonEmpty.length - 1].y;
+        const head = this.findWidestInRange(nonEmpty, 0, 0.25);
+        const neck = this.findNarrowestInRange(nonEmpty, 0.10, 0.35);
+        const shoulders = this.findSteepestWidening(nonEmpty, 0.15, 0.45);
+        const waist = this.findNarrowestInRange(nonEmpty, 0.35, 0.68);
+        const hips = this.findWidestInRange(nonEmpty, 0.55, 0.82);
+        const feet = nonEmpty[nonEmpty.length - 1];
+        return {
+            bounds: { minY, maxY, height: maxY - minY, width: mask.width },
+            head, neck, shoulders, waist, hips, feet
+        };
+    }
+    sampleWidths(mask){
+        const { width, height, data } = mask;
+        const rows = [];
+        for(let y = 0; y < height; y++){
+            let left = -1, right = -1;
+            for(let x = 0; x < width; x++){
+                if(data[y * width + x]){
+                    if(left === -1) left = x;
+                    right = x;
+                }
+            }
+            rows.push({
+                y,
+                left: left === -1 ? 0 : left,
+                right: right === -1 ? 0 : right,
+                width: left === -1 ? 0 : (right - left)
+            });
+        }
+        return rows;
+    }
+    slice(rows, fromFrac, toFrac){
+        const n = rows.length;
+        const start = Math.max(0, Math.floor(n * fromFrac));
+        const end = Math.min(n, Math.ceil(n * toFrac));
+        return rows.slice(start, end);
+    }
+    findWidestInRange(rows, fromFrac, toFrac){
+        const slice = this.slice(rows, fromFrac, toFrac);
+        if(!slice.length) return rows[0];
+        let best = slice[0];
+        for(const r of slice){
+            if(r.width > best.width) best = r;
+        }
+        return best;
+    }
+    findNarrowestInRange(rows, fromFrac, toFrac){
+        const slice = this.slice(rows, fromFrac, toFrac);
+        if(!slice.length) return rows[0];
+        let best = slice[0];
+        for(const r of slice){
+            if(r.width < best.width) best = r;
+        }
+        return best;
+    }
+    findSteepestWidening(rows, fromFrac, toFrac){
+        const slice = this.slice(rows, fromFrac, toFrac);
+        if(slice.length < 2) return slice[0] || rows[0];
+        let best = slice[1];
+        let bestDelta = -Infinity;
+        for(let i = 1; i < slice.length; i++){
+            const delta = slice[i].width - slice[i-1].width;
+            if(delta > bestDelta){
+                bestDelta = delta;
+                best = slice[i];
+            }
+        }
+        return best;
+    }
+}
+
+// OVERLAY DETECTION PIPELINE
+// Extracts a color-keyed wireframe overlay (matching MeshSystem's own
+// 0xff66aa edge color) from a reference image, reconstructs it into
+// closed face loops, classifies each face by limb, and measures
+// per-limb dimensions for use in GoblinGenerator.buildFromProportions.
+
+class OverlayExtractor {
+    // target: the wireframe color as [r,g,b]; tolerance: max channel distance
+    extract(image, target = [255, 102, 170], tolerance = 40){
+        const { width, height, pixels } = image;
+        const mask = new Uint8Array(width * height);
+        for(let y = 0; y < height; y++){
+            for(let x = 0; x < width; x++){
+                const i = (y * width + x) * 4;
+                const r = pixels[i], g = pixels[i+1], b = pixels[i+2], a = pixels[i+3];
+                if(a < 10) continue;
+                const d = Math.abs(r-target[0]) + Math.abs(g-target[1]) + Math.abs(b-target[2]);
+                mask[y * width + x] = d < tolerance ? 1 : 0;
+            }
+        }
+        return { width, height, data: mask };
+    }
+}
+
+class TopologyGraphBuilder {
+    // Vertex markers: connected components of the overlay mask small
+    // enough to be dots (not long thin edge strokes).
+    findVertices(mask, maxBlobSize = 30){
+        const { width, height, data } = mask;
+        const visited = new Uint8Array(width * height);
+        const verts = [];
+        for(let y = 0; y < height; y++){
+            for(let x = 0; x < width; x++){
+                const idx = y * width + x;
+                if(!data[idx] || visited[idx]) continue;
+                const blob = this.floodFill(mask, visited, x, y);
+                if(blob.pixels.length > 0 && blob.pixels.length <= maxBlobSize){
+                    verts.push({ x: blob.cx, y: blob.cy, id: verts.length });
+                }
+            }
+        }
+        return verts;
+    }
+    floodFill(mask, visited, sx, sy){
+        const { width, height, data } = mask;
+        const stack = [[sx, sy]];
+        const pixels = [];
+        let sumX = 0, sumY = 0;
+        while(stack.length){
+            const [x, y] = stack.pop();
+            if(x < 0 || y < 0 || x >= width || y >= height) continue;
+            const idx = y * width + x;
+            if(!data[idx] || visited[idx]) continue;
+            visited[idx] = 1;
+            pixels.push(idx);
+            sumX += x; sumY += y;
+            stack.push([x+1,y],[x-1,y],[x,y+1],[x,y-1]);
+        }
+        return { pixels, cx: pixels.length ? sumX/pixels.length : sx, cy: pixels.length ? sumY/pixels.length : sy };
+    }
+    // Connect two vertices if a sampled line between them stays "on"
+    // the overlay mask for most of its length.
+    findEdges(mask, verts, occupancyThreshold = 0.85, maxDist = 120){
+        const edges = [];
+        for(let i = 0; i < verts.length; i++){
+            for(let j = i+1; j < verts.length; j++){
+                const a = verts[i], b = verts[j];
+                const dist = Math.hypot(a.x-b.x, a.y-b.y);
+                if(dist > maxDist || dist < 1) continue;
+                if(this.lineOccupancy(mask, a, b) > occupancyThreshold){
+                    edges.push({ a: a.id, b: b.id });
+                }
+            }
+        }
+        return edges;
+    }
+    lineOccupancy(mask, a, b){
+        const steps = Math.max(4, Math.round(Math.hypot(a.x-b.x, a.y-b.y)));
+        let hits = 0;
+        for(let s = 1; s < steps; s++){ // skip endpoints (vertex blobs)
+            const t = s / steps;
+            const x = Math.round(a.x + (b.x-a.x)*t);
+            const y = Math.round(a.y + (b.y-a.y)*t);
+            if(x < 0 || y < 0 || x >= mask.width || y >= mask.height) continue;
+            if(mask.data[y * mask.width + x]) hits++;
+        }
+        return hits / Math.max(1, steps - 1);
+    }
+    // Turn the undirected vertex/edge graph into closed face loops by
+    // walking directed edges, always turning to the next neighbor
+    // clockwise from the one we arrived from. Drops the outer boundary
+    // loop (largest absolute signed area) since it isn't a real face.
+    buildFaces(verts, edges){
+        const vertMap = new Map(verts.map(v => [v.id, v]));
+
+        const adjacency = new Map();
+        for(const v of verts) adjacency.set(v.id, []);
+        for(const e of edges){
+            adjacency.get(e.a).push(e.b);
+            adjacency.get(e.b).push(e.a);
+        }
+
+        const angleOrder = new Map();
+        for(const [vid, neighbors] of adjacency){
+            const v = vertMap.get(vid);
+            const sorted = [...neighbors].sort((a, b) => {
+                const va = vertMap.get(a), vb = vertMap.get(b);
+                const angA = Math.atan2(va.y - v.y, va.x - v.x);
+                const angB = Math.atan2(vb.y - v.y, vb.x - v.x);
+                return angA - angB;
+            });
+            angleOrder.set(vid, sorted);
+        }
+
+        const nextDirectedEdge = (u, v) => {
+            const order = angleOrder.get(v);
+            if(!order || order.length === 0) return null;
+            const idx = order.indexOf(u);
+            if(idx === -1) return null;
+            const prevIdx = (idx - 1 + order.length) % order.length;
+            return { u: v, v: order[prevIdx] };
+        };
+
+        const key = (u, v) => `${u}_${v}`;
+        const visited = new Set();
+        const loops = [];
+        for(const e of edges){
+            for(const [u0, v0] of [[e.a, e.b], [e.b, e.a]]){
+                if(visited.has(key(u0, v0))) continue;
+                const loop = [];
+                let u = u0, v = v0, guard = 0;
+                do {
+                    visited.add(key(u, v));
+                    loop.push(v);
+                    const nxt = nextDirectedEdge(u, v);
+                    if(!nxt) break;
+                    ({ u, v } = nxt);
+                    guard++;
+                } while(!(u === u0 && v === v0) && guard < verts.length * 2);
+                if(loop.length >= 3) loops.push(loop);
+            }
+        }
+
+        const signedArea = (loopIds) => {
+            let area = 0;
+            for(let i = 0; i < loopIds.length; i++){
+                const a = vertMap.get(loopIds[i]);
+                const b = vertMap.get(loopIds[(i+1) % loopIds.length]);
+                area += a.x * b.y - b.x * a.y;
+            }
+            return area / 2;
+        };
+        let outerIdx = -1, maxAbsArea = -Infinity;
+        loops.forEach((loop, i) => {
+            const a = Math.abs(signedArea(loop));
+            if(a > maxAbsArea){ maxAbsArea = a; outerIdx = i; }
+        });
+
+        return loops.filter((_, i) => i !== outerIdx); // real faces only
+    }
+    // Rebuilds a real HalfEdgeMesh from image-space vertices + face loops,
+    // so downstream code can use the app's own HEFace/HEVertex machinery.
+    facesToHalfEdgeMesh(verts, innerFaces){
+        const he = new HalfEdgeMesh();
+        const vertMap = new Map(
+            verts.map(v => [v.id, he.weldVertex(new THREE.Vector3(v.x, -v.y, 0))])
+        );
+        for(const loop of innerFaces){
+            he.createFaceFromVertices(loop.map(id => vertMap.get(id)));
+        }
+        he.rebuildEdgeRegistry();
+        he.repairTwins();
+        return he;
+    }
+}
+
+class LimbClassifier {
+    // centroid: {x, y} in pixel space; bounds: overlay bbox
+    classify(centroid, bounds){
+        const nx = bounds.width ? (centroid.x - bounds.minX) / bounds.width : 0.5;
+        const ny = bounds.height ? (centroid.y - bounds.minY) / bounds.height : 0.5;
+        const side = nx < 0.5 ? "L" : "R";
+
+        if(ny < 0.20) return nx < 0.35 || nx > 0.75 ? `ear${side}` : "head";
+        if(ny < 0.30) return nx < 0.20 || nx > 0.80 ? `wing${side}` : "head";
+        if(ny < 0.40) return "torsoUpper";
+        if(ny < 0.60){
+            if(nx < 0.25 || nx > 0.75) return `upperArm${side}`;
+            return "torsoLower";
+        }
+        if(ny < 0.75){
+            if(nx < 0.20 || nx > 0.80) return `lowerArm${side}`;
+            return "pelvis";
+        }
+        if(ny < 0.85) return nx < 0.20 || nx > 0.80 ? `hand${side}` : `upperLeg${side}`;
+        return `lowerLeg_or_foot${side}`;
+    }
+}
+
+class PoseAngleEstimator {
+    // Returns estimated yaw in degrees (0 = front-on) via symmetry search
+    // over the silhouette mask about candidate vertical axes.
+    estimate(mask){
+        const { width, height, data } = mask;
+        let bestAxis = width / 2, bestScore = -Infinity;
+        for(let axis = width*0.3; axis <= width*0.7; axis += 2){
+            let score = 0, total = 0;
+            for(let y = 0; y < height; y++){
+                for(let x = 0; x < width; x++){
+                    const mirrored = Math.round(2*axis - x);
+                    if(mirrored < 0 || mirrored >= width) continue;
+                    const v = data[y*width + x];
+                    const mv = data[y*width + mirrored];
+                    if(v || mv){ total++; if(v === mv) score++; }
+                }
+            }
+            const norm = total ? score/total : 0;
+            if(norm > bestScore){ bestScore = norm; bestAxis = axis; }
+        }
+        const yawEstimate = (1 - Math.max(0, bestScore)) * 90; // 0..90 degrees, coarse
+        return { axisX: bestAxis, symmetry: Math.max(0, bestScore), yawDeg: yawEstimate };
+    }
+}
+
+class LimbDimensionMeasurer {
+    // limbFaces: [{x, y, limb}] centroids tagged by LimbClassifier.
+    // scale: pixels -> world units (same factor computeProportions uses).
+    measure(limbFaces, scale, yawDeg = 0){
+        const groups = new Map();
+        for(const f of limbFaces){
+            if(!groups.has(f.limb)) groups.set(f.limb, []);
+            groups.get(f.limb).push(f);
+        }
+        const yawCorrection = 1 / Math.max(0.2, Math.cos(yawDeg * Math.PI / 180));
+
+        const dims = {};
+        for(const [limb, points] of groups){
+            if(points.length < 2) continue; // not enough signal to trust
+            const xs = points.map(p => p.x);
+            const ys = points.map(p => p.y);
+            const pixelWidth = Math.max(...xs) - Math.min(...xs);
+            const pixelLength = Math.max(...ys) - Math.min(...ys);
+            dims[limb] = {
+                radius: (pixelWidth * 0.5) * scale * yawCorrection,
+                length: pixelLength * scale,
+                sampleCount: points.length
+            };
+        }
+        return dims;
+    }
+}
+
+function sanitizeDim(measured, fallback, minRatio = 0.3, maxRatio = 3){
+    if(measured == null || !isFinite(measured) || measured <= 0) return fallback;
+    return Math.min(fallback * maxRatio, Math.max(fallback * minRatio, measured));
+}
+
+// SELECTION
+class Selection {
+    constructor(){
+        this.mode = "face";
+        this.face = null;
+        this.edge = null;
+        this.vertex = null;
+    }
+    clear(){
+        this.face = null;
+        this.edge = null;
+        this.vertex = null;
+    }
+}
+
+// GOBLIN GENERATOR
+// Pipeline: Image -> SilhouetteExtractor -> LandmarkDetector -> proportions
+// -> primitives assembled with PrimitiveFactory.
+//
+// Note on scope: this maps the 2D silhouette's proportions (head size,
+// shoulder/hip width, body height) onto a primitive-based goblin rig. It
+// does NOT do true mesh-to-outline conforming (bending the mesh surface to
+// match the photo's contour) — that's a much bigger project (non-rigid
+// fitting / silhouette-constrained deformation) and belongs in its own
+// pass. This gets you a goblin whose build is actually driven by the photo
+// instead of hard-coded numbers.
+class GoblinGenerator {
+    constructor(topology, ui = {}){
+        this.topology = topology;
+        this.image = null;
+        this.factory = new PrimitiveFactory();
+        this.reader = new ImageReader();
+        this.extractor = new SilhouetteExtractor();
+        this.detector = new LandmarkDetector();
+        this.overlayExtractor = new OverlayExtractor();
+        this.graphBuilder = new TopologyGraphBuilder();
+        this.limbClassifier = new LimbClassifier();
+        this.poseEstimator = new PoseAngleEstimator();
+        this.dimensionMeasurer = new LimbDimensionMeasurer();
+        this.previewCanvas = ui.previewCanvas || null;
+        this.readoutEl = ui.readoutEl || null;
+        this.lastLandmarks = null;
+        this.lastLimbDims = null;
+        this.lastPose = null;
+    }
+    computeVertBounds(verts){
+        const xs = verts.map(v => v.x), ys = verts.map(v => v.y);
+        const minX = Math.min(...xs), maxX = Math.max(...xs);
+        const minY = Math.min(...ys), maxY = Math.max(...ys);
+        return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
+    }
+    // Runs the overlay -> graph -> face-loop -> limb-classify -> measure
+    // pipeline. Returns null (not an error) whenever there just isn't a
+    // usable wireframe overlay in the image — callers fall back to the
+    // existing scalar constants in that case.
+    detectLimbDimensions(imageData, landmarks, pose){
+        if(!landmarks) return null;
+        const overlayMask = this.overlayExtractor.extract(imageData);
+        const verts = this.graphBuilder.findVertices(overlayMask);
+        if(verts.length < 4) return null;
+
+        const edges = this.graphBuilder.findEdges(overlayMask, verts);
+        const innerFaces = this.graphBuilder.buildFaces(verts, edges);
+        if(!innerFaces.length) return null;
+
+        const vertMap = new Map(verts.map(v => [v.id, v]));
+        const bounds = this.computeVertBounds(verts);
+
+        const limbFaces = innerFaces.map(loop => {
+            const pts = loop.map(id => vertMap.get(id));
+            const cx = pts.reduce((s, v) => s + v.x, 0) / pts.length;
+            const cy = pts.reduce((s, v) => s + v.y, 0) / pts.length;
+            const centroid = { x: cx, y: cy };
+            return { ...centroid, limb: this.limbClassifier.classify(centroid, bounds) };
+        });
+
+        // same modelHeight/pixelHeight ratio computeProportions() uses,
+        // so measured units line up with the rest of the rig
+        const scale = 3.4 / Math.max(1, landmarks.bounds.height);
+        return this.dimensionMeasurer.measure(limbFaces, scale, pose ? pose.yawDeg : 0);
+    }
+    async setImage(file){
+        this.image = file;
+        const url = URL.createObjectURL(file);
+        try {
+            await this.reader.load(url);
+        } finally {
+            URL.revokeObjectURL(url);
+        }
+    }
+    // Converts pixel-space landmarks (y grows downward) into a set of
+    // normalized body proportions in world space (y grows upward, feet at
+    // y = 0), independent of the source photo's resolution.
+    computeProportions(landmarks, modelHeight = 3.4){
+        if(!landmarks){
+            // Default humanoid-ish proportions, used when there's no image
+            // or the silhouette didn't yield enough signal.
+            return {
+                modelHeight,
+                headCenterY: modelHeight * 0.92,
+                headRadius: modelHeight * 0.10,
+                neckY: modelHeight * 0.82,
+                shoulderY: modelHeight * 0.78,
+                shoulderHalfWidth: modelHeight * 0.19,
+                waistY: modelHeight * 0.55,
+                hipY: modelHeight * 0.48,
+                hipHalfWidth: modelHeight * 0.16,
+                feetY: 0
+            };
+        }
+        const { bounds, head, neck, shoulders, waist, hips } = landmarks;
+        const scale = modelHeight / Math.max(1, bounds.height);
+        const worldY = (y) => (bounds.maxY - y) * scale;
+        return {
+            modelHeight,
+            headCenterY: worldY(head.y),
+            headRadius: Math.max(0.08, (head.width * 0.5) * scale),
+            neckY: worldY(neck.y),
+            shoulderY: worldY(shoulders.y),
+            shoulderHalfWidth: Math.max(0.12, (shoulders.right - shoulders.left) * 0.5 * scale),
+            waistY: worldY(waist.y),
+            hipY: worldY(hips.y),
+            hipHalfWidth: Math.max(0.10, (hips.right - hips.left) * 0.5 * scale),
+            feetY: 0
+        };
+    }
+    buildFromProportions(p, limbDims = null){
+        const factory = this.factory;
+        const parts = [];
+
+        // Head (scaled slightly wide/forward for a goblin brow+jaw silhouette)
+        const head = factory.createSphere(p.headRadius, 12, 8);
+        head.scale(1.1, 1.0, 1.15);
+        head.translate(0, p.headCenterY, 0);
+        parts.push(head);
+
+        // Ears
+        const earLen = p.headRadius * 1.6;
+        const leftEar = factory.createCone(p.headRadius * 0.22, earLen, 8);
+        parts.push(leftEar);
+
+        // Neck
+        const neckHeight = Math.max(0.05, p.headCenterY - p.headRadius * 0.6 - p.shoulderY);
+        const neck = factory.createCylinder(p.headRadius * 0.4, neckHeight, 10);
+        neck.translate(0, p.shoulderY + neckHeight * 0.5, 0);
+        parts.push(neck);
+
+        // Torso
+        const torsoHeight = Math.max(0.2, p.shoulderY - p.hipY);
+        const torso = factory.createCapsule(p.shoulderHalfWidth * 0.85, torsoHeight, 14);
+        torso.translate(0, p.hipY + torsoHeight * 0.5, 0);
+        parts.push(torso);
+
+        // Pelvis
+        const pelvis = factory.createSphere(p.hipHalfWidth, 10, 6);
+        pelvis.scale(1.1, 0.6, 1.0);
+        pelvis.translate(0, p.hipY, 0);
+        parts.push(pelvis);
+
+        // Arms (upper + lower capsule per side) — per-limb measured
+        // radius/length where the overlay pipeline found a usable
+        // reading, sanitize()'d against the old scalar as a fallback and
+        // a clamp against bad measurements.
+        const armLength = Math.max(0.2, (p.shoulderY - p.hipY) * 1.15);
+        const fallbackArmRadius = p.headRadius * 0.32;
+        for(const side of [-1, 1]){
+            const sideKey = side === -1 ? "L" : "R";
+            const upperDim = limbDims?.[`upperArm${sideKey}`];
+            const lowerDim = limbDims?.[`lowerArm${sideKey}`];
+
+            const upperLen = upperDim ? Math.max(0.05, upperDim.length) : armLength * 0.5;
+            const upperRadius = sanitizeDim(upperDim?.radius, fallbackArmRadius);
+            const upperArm = factory.createCapsule(upperRadius, upperLen, 10);
+            upperArm.translate(
+                side * (p.shoulderHalfWidth + upperRadius * 0.9),
+                p.shoulderY - upperLen * 0.5,
+                0
+            );
+            parts.push(upperArm);
+
+            const lowerLen = lowerDim ? Math.max(0.05, lowerDim.length) : armLength * 0.5;
+            const lowerRadius = sanitizeDim(lowerDim?.radius, fallbackArmRadius * 0.85);
+            const lowerArm = factory.createCapsule(lowerRadius, lowerLen, 10);
+            lowerArm.translate(
+                side * (p.shoulderHalfWidth + upperRadius * 0.9),
+                p.shoulderY - upperLen - lowerLen * 0.5,
+                0
+            );
+            parts.push(lowerArm);
+        }
+
+        // Legs — same measured/fallback pattern. (upperLeg/lowerLeg still
+        // collapse to one capsule, matching the original structure; split
+        // it the same way arms are split above if knee articulation is
+        // needed later — that's what the lowerLeg_or_foot classifier
+        // bucket in LimbClassifier is a placeholder for.)
+        const legLength = Math.max(0.2, p.hipY - p.feetY);
+        const fallbackLegRadius = p.hipHalfWidth * 0.4;
+        for(const side of [-1, 1]){
+            const sideKey = side === -1 ? "L" : "R";
+            const legDim = limbDims?.[`upperLeg${sideKey}`];
+            const legRadius = sanitizeDim(legDim?.radius, fallbackLegRadius);
+            const legLen = legDim ? Math.max(0.05, legDim.length) : legLength;
+            const leg = factory.createCapsule(legRadius, legLen, 10);
+            leg.translate(side * p.hipHalfWidth * 0.55, p.feetY + legLen * 0.5, 0);
+            parts.push(leg);
+        }
+
+        // Nose
+        const nose = factory.createCone(p.headRadius * 0.18, p.headRadius * 0.7, 8);
+        nose.translate(0, p.headCenterY - p.headRadius * 0.1, p.headRadius * 1.05);
+        parts.push(nose);
+
+        // Ears, positioned now that we know head geometry
+        leftEar.translate(-p.headRadius * 1.05, p.headCenterY, 0);
+        const rightEar = factory.createCone(p.headRadius * 0.22, earLen, 8);
+        rightEar.translate(p.headRadius * 1.05, p.headCenterY, 0);
+        parts.push(rightEar);
+
+        let goblin = parts[0];
+        for(let i = 1; i < parts.length; i++){
+            goblin = factory.mergeMeshes(goblin, parts[i]);
+        }
+        return goblin;
+    }
+    updateUI(landmarks, mask, pose = null, limbDims = null){
+        if(this.previewCanvas && mask){
+            this.extractor.drawPreview(mask, this.previewCanvas);
+        }
+        if(this.readoutEl){
+            if(!landmarks){
+                this.readoutEl.textContent = "No image loaded — using default proportions.";
+                return;
+            }
+            const { head, neck, shoulders, waist, hips, feet, bounds } = landmarks;
+            let text =
+                `bounds: ${bounds.width}x${bounds.height} (h:${bounds.height}px)\n` +
+                `head    y=${head.y} w=${head.width}\n` +
+                `neck    y=${neck.y} w=${neck.width}\n` +
+                `shoulder y=${shoulders.y} w=${shoulders.right - shoulders.left}\n` +
+                `waist   y=${waist.y} w=${waist.width}\n` +
+                `hips    y=${hips.y} w=${hips.right - hips.left}\n` +
+                `feet    y=${feet.y}`;
+
+            if(pose){
+                text += `\n\npose: yaw≈${pose.yawDeg.toFixed(1)}° (symmetry ${pose.symmetry.toFixed(2)})`;
+            }
+            if(limbDims && Object.keys(limbDims).length){
+                text += `\n\nlimb overlay detected:`;
+                for(const [limb, d] of Object.entries(limbDims)){
+                    text += `\n  ${limb.padEnd(14)} r=${d.radius.toFixed(3)} len=${d.length.toFixed(3)} (n=${d.sampleCount})`;
+                }
+            } else {
+                text += `\n\nno overlay detected — using default limb radii.`;
+            }
+            this.readoutEl.textContent = text;
+        }
+    }
+    generate(){
+        let landmarks = null;
+        let mask = null;
+        let pose = null;
+        let limbDims = null;
+        if(this.image){
+            const imageData = this.reader.read();
+            mask = this.extractor.extract(imageData);
+            landmarks = this.detector.detect(mask);
+            if(mask) pose = this.poseEstimator.estimate(mask);
+            limbDims = this.detectLimbDimensions(imageData, landmarks, pose);
+        }
+        this.lastLandmarks = landmarks;
+        this.lastPose = pose;
+        this.lastLimbDims = limbDims;
+        this.updateUI(landmarks, mask, pose, limbDims);
+
+        const proportions = this.computeProportions(landmarks);
+        const goblin = this.buildFromProportions(proportions, limbDims);
+
+        // replace contents of the shared topology mesh in place
+        this.topology.vertices = goblin.vertices;
+        this.topology.faces = goblin.faces;
+        this.topology.edges = goblin.edges;
+        this.topology.edgeRegistry = goblin.edgeRegistry;
+        this.topology.rebuildEdgeRegistry();
+        this.topology.repairTwins();
+        return this.topology;
+    }
+}
+
+// GOBLIN GENERATOR V2
+// Same overall shape (image -> mask -> landmarks -> proportions -> mesh) as
+// GoblinGenerator above, but every stage is swapped for the new
+// image-analysis/ -> shape-fit/ -> mesh-gen/ pipeline: cleaned/denoised
+// masks, refined+confidence-scored landmarks, per-part radius profiles
+// pulled straight from the silhouette (instead of a handful of scalar
+// constants), and stylized builders (squarish head, barrel torso, wedge
+// ears, blocky hands, flattened feet) instead of plain spheres/cylinders.
+class GoblinGeneratorV2 {
+    constructor(topology, ui = {}){
+        this.topology = topology;
+        this.reader = new ImageReader();
+        this.image = null;
+        this.previewCanvas = ui.previewCanvas || null;
+        this.readoutEl = ui.readoutEl || null;
+    }
+    async setImage(file){
+        this.image = file;
+        const url = URL.createObjectURL(file);
+        try { await this.reader.load(url); }
+        finally { URL.revokeObjectURL(url); }
+    }
+    // Builds a stylized squarish-oval head via a short loft using the
+    // superellipse ring function, instead of a plain UV sphere.
+    buildHead(headRadius){
+        const width = biasedWidth("head", headRadius*2);
+        const rx0 = width/2;
+        const depth = estimateDepth("head", width, DEPTH_RATIOS.head);
+        const segments = 6;
+        const path = [];
+        for(let i=0;i<=segments;i++){
+            const t = i/segments;
+            const shape = Math.sin(t*Math.PI); // 0 at poles, 1 at equator
+            const rx = rx0 * (0.25 + 0.75*shape);
+            const ry = (depth/2) * (0.25 + 0.75*shape);
+            path.push({ position:[0, (t-0.5)*width*0.95, 0], rx, ry });
+        }
+        return { mesh: loftLocal(path, 12, squarishRingFn(0.4)), rx0, depth };
+    }
+    buildTorso(mask, landmarks, scale, shoulderY, hipY, shoulderHalfWidth){
+        const profile = extractRadiusProfile(mask, shoulderY, hipY, scale, { sampleCount: 14, smoothWindow: 3 });
+        profile.samples = regularizeProfile(profile.samples, { minRadius: 0.03, maxDeltaRatio: 0.3 });
+        const length = Math.max(0.2, (hipY - shoulderY) * scale * -1) || shoulderHalfWidth*2.2;
+        return buildProfiledCapsule(profile, Math.max(0.3, length), 14, 12, DEPTH_RATIOS.torso, squarishRingFn(0.3));
+    }
+    generate(){
+        let mask = null, landmarks = null, refined = null, pose = null, parts = [];
+        if(this.image){
+            const imageData = this.reader.read();
+            const rawMask = extractByBrightness(imageData);
+            mask = largestComponent(cleanMask(rawMask, { erode: 1, dilate: 1 }));
+            landmarks = detectLandmarks(mask);
+            if(landmarks){
+                const rows = sampleWidths(mask);
+                refined = refineLandmarks(landmarks, rows);
+                pose = estimatePose(mask, refined);
+                parts = segmentParts(mask, refined);
+            }
+        }
+        if(this.previewCanvas && mask){
+            const extractor = new SilhouetteExtractor();
+            extractor.drawPreview(mask, this.previewCanvas);
+        }
+
+        const modelHeight = 3.4;
+        const scale = landmarks ? modelHeight / Math.max(1, landmarks.bounds.height) : 1;
+        const worldY = (y) => landmarks ? (landmarks.bounds.maxY - y) * scale : 0;
+
+        const headRadius = landmarks ? Math.max(0.08, (refined.head.width*0.5)*scale) : modelHeight*0.10;
+        const headCenterY = landmarks ? worldY(refined.head.y) : modelHeight*0.92;
+        const shoulderY = landmarks ? worldY(refined.shoulders.y) : modelHeight*0.78;
+        const hipY = landmarks ? worldY(refined.hips.y) : modelHeight*0.48;
+        const shoulderHalfWidth = landmarks ? Math.max(0.12,(refined.shoulders.right-refined.shoulders.left)*0.5*scale) : modelHeight*0.19;
+        const hipHalfWidth = landmarks ? Math.max(0.10,(refined.hips.right-refined.hips.left)*0.5*scale) : modelHeight*0.16;
+
+        const parts3d = [];
+
+        // Head — squarish loft instead of a UV sphere
+        const headMesh = this.buildHead(headRadius);
+        Prim.translateMesh(headMesh.mesh, 0, headCenterY, 0);
+        parts3d.push(headMesh.mesh);
+
+        // Torso — barrel profile sampled straight from the silhouette
+        let torsoMesh;
+        if(landmarks){
+            torsoMesh = this.buildTorso(mask, refined, scale, refined.shoulders.y, refined.hips.y, shoulderHalfWidth);
+        } else {
+            const flatProfile = { radius: () => shoulderHalfWidth*0.85 };
+            torsoMesh = buildProfiledCapsule(flatProfile, shoulderY-hipY, 14, 10, DEPTH_RATIOS.torso, squarishRingFn(0.3));
+        }
+        Prim.translateMesh(torsoMesh, 0, (shoulderY+hipY)/2, 0);
+        parts3d.push(torsoMesh);
+
+        // Pelvis
+        const pelvis = Prim.createSphere(hipHalfWidth, 10, 6);
+        Prim.scaleMesh(pelvis, 1.1, 0.6, 1.0);
+        Prim.translateMesh(pelvis, 0, hipY, 0);
+        parts3d.push(pelvis);
+
+        // Ears — thin tapering wedges with a strong tip flare
+        const earLen = headRadius*1.6;
+        for(const side of [-1,1]){
+            const ear = buildEar(headRadius*0.35, earLen, 0.65, 8, side);
+            Prim.translateMesh(ear, side*headRadius*1.0, headCenterY + headRadius*0.15, -headRadius*0.1);
+            parts3d.push(ear);
+        }
+
+        // Arms — capsule per segment, joint-blended at the shoulder
+        const armLength = Math.max(0.2, (shoulderY-hipY)*1.15);
+        const armRadius = headRadius*0.32;
+        for(const side of [-1,1]){
+            const upperLen = armLength*0.5, lowerLen = armLength*0.5;
+            const upperProfile = { radius: (t) => armRadius*(1-t*0.15) };
+            const upperArm = buildProfiledCapsule(upperProfile, upperLen, 10, 6, 0.95);
+            const armX = side*(shoulderHalfWidth+armRadius*0.9);
+            Prim.translateMesh(upperArm, armX, shoulderY-upperLen*0.5, 0);
+            parts3d.push(upperArm);
+
+            const lowerProfile = { radius: (t) => armRadius*0.85*(1-t*0.2) };
+            const lowerArm = buildProfiledCapsule(lowerProfile, lowerLen, 10, 6, 0.9);
+            Prim.translateMesh(lowerArm, armX, shoulderY-upperLen-lowerLen*0.5, 0);
+            parts3d.push(lowerArm);
+
+            const hand = buildHand(biasedWidth("hand", armRadius*1.6), armRadius*1.4, armRadius*1.6*DEPTH_RATIOS.hand, side);
+            Prim.translateMesh(hand, armX, shoulderY-upperLen-lowerLen-armRadius*0.7, 0);
+            parts3d.push(hand);
+
+            // blend collar smoothing the shoulder -> upper-arm seam
+            const blend = buildBlendRing([armX*0.4, shoulderY, 0], shoulderHalfWidth*0.4, [armX, shoulderY-upperLen*0.15, 0], armRadius, 10, 3);
+            parts3d.push(blend);
+        }
+
+        // Legs + flattened feet
+        const legLength = Math.max(0.2, hipY);
+        const legRadius = hipHalfWidth*0.4;
+        for(const side of [-1,1]){
+            const legProfile = { radius: (t) => legRadius*(1-t*0.1) };
+            const leg = buildProfiledCapsule(legProfile, legLength*0.85, 10, 8, 0.92);
+            const legX = side*hipHalfWidth*0.55;
+            Prim.translateMesh(leg, legX, legLength*0.85*0.5 + legLength*0.15, 0);
+            parts3d.push(leg);
+
+            const foot = buildFoot(biasedWidth("foot", legRadius*2.4), legRadius*1.6, legRadius*1.2*DEPTH_RATIOS.foot, 8);
+            Prim.translateMesh(foot, legX, legLength*0.1, legRadius*0.6);
+            parts3d.push(foot);
+        }
+
+        const merged = mergeMeshes(parts3d, { weldEpsilon: 1e-4 });
+        const goblin = toHalfEdgeMesh(merged, HalfEdgeMesh, THREE.Vector3);
+
+        if(this.readoutEl){
+            let text = landmarks
+                ? `[v2 pipeline]\nbounds: ${landmarks.bounds.width}x${landmarks.bounds.height}\n` +
+                  `head conf=${refined.head.confidence?.toFixed(2)} neck conf=${refined.neck.confidence?.toFixed(2)}\n` +
+                  `pose: yaw≈${pose.yawDeg.toFixed(1)}° tilt≈${pose.headTiltDeg.toFixed(1)}°\n` +
+                  `parts segmented: ${parts.map(p=>p.label).join(", ") || "none"}\n` +
+                  `verts=${merged.vertices.length} faces=${merged.faces.length}`
+                : `[v2 pipeline] no image loaded — using default proportions.\nverts=${merged.vertices.length} faces=${merged.faces.length}`;
+            this.readoutEl.textContent = text;
+        }
+
+        this.topology.vertices = goblin.vertices;
+        this.topology.faces = goblin.faces;
+        this.topology.edges = goblin.edges;
+        this.topology.edgeRegistry = goblin.edgeRegistry;
+        this.topology.rebuildEdgeRegistry();
+        this.topology.repairTwins();
+        return this.topology;
+    }
+}
+
+// Minimal local loft (mirrors mesh-gen/loftBuilder.js) so the head builder
+// above doesn't need a second import path just for one call site — kept
+// numerically identical to the shared loft() for consistency.
+function loftLocal(path, sides, ringFn){
+    const m = { vertices: [], faces: [] };
+    const rings = [];
+    for(let i=0;i<path.length;i++){
+        const prev = path[Math.max(0,i-1)].position, next = path[Math.min(path.length-1,i+1)].position;
+        let fwd = [next[0]-prev[0], next[1]-prev[1], next[2]-prev[2]];
+        const flen = Math.hypot(...fwd) || 1;
+        fwd = [fwd[0]/flen, fwd[1]/flen, fwd[2]/flen];
+        const worldUp = Math.abs(fwd[1])>0.95 ? [1,0,0] : [0,1,0];
+        const cx = (a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+        let right = cx(fwd, worldUp); let rl = Math.hypot(...right)||1; right=[right[0]/rl,right[1]/rl,right[2]/rl];
+        let up = cx(right, fwd); let ul = Math.hypot(...up)||1; up=[up[0]/ul,up[1]/ul,up[2]/ul];
+        const { position, rx, ry } = path[i];
+        const pts = [];
+        for(let k=0;k<sides;k++){
+            const a = (k/sides)*Math.PI*2;
+            const p = ringFn(a, rx, ry);
+            pts.push([position[0]+right[0]*p.x+up[0]*p.y, position[1]+right[1]*p.x+up[1]*p.y, position[2]+right[2]*p.x+up[2]*p.y]);
+        }
+        rings.push(pts.map(p => { m.vertices.push(p); return m.vertices.length-1; }));
+    }
+    for(let i=0;i<rings.length-1;i++){
+        const a=rings[i], b=rings[i+1];
+        for(let k=0;k<sides;k++){ const n=(k+1)%sides; m.faces.push([a[k],a[n],b[n],b[k]]); }
+    }
+    const c0 = m.vertices.length; m.vertices.push(path[0].position.slice());
+    for(let k=0;k<sides;k++){ const n=(k+1)%sides; m.faces.push([c0, rings[0][n], rings[0][k]]); }
+    const c1 = m.vertices.length; m.vertices.push(path[path.length-1].position.slice());
+    const last = rings.length-1;
+    for(let k=0;k<sides;k++){ const n=(k+1)%sides; m.faces.push([c1, rings[last][k], rings[last][n]]); }
+    return m;
+}
+
+// MESH SYSTEM
+class MeshSystem {
+    constructor(scene){
+        this.scene = scene;
+        this.topology = new PrimitiveFactory().createCube(1);
+        this.createRenderMesh();
+    }
+    createRenderMesh(){
+        this.selectedEdgeLine = new THREE.Line(
+            new THREE.BufferGeometry(),
+            new THREE.LineBasicMaterial({ color:0xffff00 })
+        );
+        this.scene.add(this.selectedEdgeLine);
+
+        const geo = this.topology.buildGeometry();
+        const mat = new THREE.MeshStandardMaterial({
+            color:0x6688aa,
+            side:THREE.DoubleSide
+        });
+        this.mesh = new THREE.Mesh(geo, mat);
+        this.geometry = geo;
+        this.scene.add(this.mesh);
+
+        const edgeGeo = new THREE.EdgesGeometry(geo);
+        this.edgeLines = new THREE.LineSegments(
+            edgeGeo,
+            new THREE.LineBasicMaterial({ color:0xff66aa })
+        );
+        this.scene.add(this.edgeLines);
+
+        const pointMat = new THREE.PointsMaterial({
+            color:0xffffff,
+            size:0.08,
+            sizeAttenuation:true
+        });
+        this.points = new THREE.Points(geo, pointMat);
+        this.scene.add(this.points);
+
+        this.highlightMesh = this.mesh.clone();
+        this.highlightMesh.material = new THREE.MeshBasicMaterial({
+            color:0xffaa00,
+            transparent:true,
+            opacity:0.5,
+            side:THREE.DoubleSide
+        });
+        this.highlightMesh.visible = false;
+        this.scene.add(this.highlightMesh);
+    }
+    updateSelectedVertex(vertex){
+        if(!vertex){
+            if(this.selectedVertexPoint) this.selectedVertexPoint.visible = false;
+            return;
+        }
+        if(!this.selectedVertexPoint){
+            this.selectedVertexPoint = new THREE.Points(
+                new THREE.BufferGeometry(),
+                new THREE.PointsMaterial({ color:0xffff00, size:0.15 })
+            );
+            this.scene.add(this.selectedVertexPoint);
+        }
+        this.selectedVertexPoint.visible = true;
+        const p = vertex.position;
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.Float32BufferAttribute([p.x,p.y,p.z], 3));
+        this.selectedVertexPoint.geometry.dispose();
+        this.selectedVertexPoint.geometry = geo;
+    }
+    updateSelectedEdge(edge){
+        if(!edge){
+            this.selectedEdgeLine.visible = false;
+            return;
+        }
+        this.selectedEdgeLine.visible = true;
+        const a = edge.prev.vertex.position;
+        const b = edge.vertex.position;
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.Float32BufferAttribute([a.x,a.y,a.z, b.x,b.y,b.z], 3));
+        this.selectedEdgeLine.geometry.dispose();
+        this.selectedEdgeLine.geometry = geo;
+    }
+    rebuild(){
+        const geo = this.topology.buildGeometry();
+        this.mesh.geometry.dispose();
+        this.edgeLines.geometry.dispose();
+        this.mesh.geometry = geo;
+        this.edgeLines.geometry = new THREE.EdgesGeometry(geo);
+        this.points.geometry = geo;
+        this.highlightMesh.geometry = geo;
+        this.geometry = geo;
+        stats.innerHTML = `
+Vertices: ${this.topology.vertices.length}<br>
+Edges: ${this.topology.edges.length}<br>
+Faces: ${this.topology.faces.length}
+        `;
+    }
+}
+
+// APP
+class EditorApp{
+    constructor(){
+        this.selection = new Selection();
+        this.mouse = new THREE.Vector2();
+        this.initScene();
+        this.initHelpers();
+        this.goblinGenerator = new GoblinGenerator(this.meshSystem.topology, {
+            previewCanvas: document.getElementById("silhouettePreview"),
+            readoutEl: document.getElementById("landmarkReadout")
+        });
+        this.goblinGeneratorV2 = new GoblinGeneratorV2(this.meshSystem.topology, {
+            previewCanvas: document.getElementById("silhouettePreview"),
+            readoutEl: document.getElementById("landmarkReadout")
+        });
+        this.initInput();
+        this.animate();
+    }
+    initScene(){
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x2a2a2a);
+        this.camera = new THREE.PerspectiveCamera(
+            60,
+            viewport.clientWidth / viewport.clientHeight,
+            0.1,
+            1000
+        );
+        this.camera.position.set(4,4,6);
+        this.renderer = new THREE.WebGLRenderer({ antialias:true });
+        this.renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+        viewport.appendChild(this.renderer.domElement);
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.raycaster = new THREE.Raycaster();
+    }
+    initHelpers(){
+        const grid = new THREE.GridHelper(50,50);
+        this.scene.add(grid);
+        const axes = new THREE.AxesHelper(2);
+        this.scene.add(axes);
+        const ambient = new THREE.AmbientLight(0xffffff,1);
+        this.scene.add(ambient);
+        const sun = new THREE.DirectionalLight(0xffffff,2);
+        sun.position.set(10,10,5);
+        this.scene.add(sun);
+        this.meshSystem = new MeshSystem(this.scene);
+    }
+    pickEdge(ray){
+        let bestEdge = null;
+        let bestDistance = Infinity;
+        const cpRay = new THREE.Vector3();
+        const cpSeg = new THREE.Vector3();
+        for(const edge of this.meshSystem.topology.edges){
+            const a = edge.prev.vertex.position;
+            const b = edge.vertex.position;
+            ray.distanceSqToSegment(a, b, cpRay, cpSeg);
+            const d = cpRay.distanceTo(cpSeg);
+            if(d < 0.15 && d < bestDistance){
+                bestDistance = d;
+                bestEdge = edge;
+            }
+        }
+        return bestEdge;
+    }
+    pickVertex(ray){
+        let best = null;
+        let bestDistance = Infinity;
+        for(const v of this.meshSystem.topology.vertices){
+            const closest = ray.closestPointToPoint(v.position, true, new THREE.Vector3());
+            const d = closest.distanceTo(v.position);
+            if(d < 0.12 && d < bestDistance){
+                bestDistance = d;
+                best = v;
+            }
+        }
+        return best;
+    }
+    initInput(){
+        this.renderer.domElement.addEventListener("pointerdown", (event) => {
+            const ctrl = event.ctrlKey || event.metaKey;
+            if(!ctrl) this.selection.clear();
+
+            const rect = this.renderer.domElement.getBoundingClientRect();
+            this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            this.raycaster.setFromCamera(this.mouse, this.camera);
+
+            if(this.selection.mode === "vertex"){
+                this.selection.vertex = this.pickVertex(this.raycaster.ray);
+                return;
+            }
+            if(this.selection.mode === "edge"){
+                this.selection.edge = this.pickEdge(this.raycaster.ray);
+                return;
+            }
+            const hits = this.raycaster.intersectObject(this.meshSystem.mesh);
+            if(!hits.length) return;
+            const hit = hits[0];
+            const face = this.meshSystem.geometry.userData.faceMap[hit.faceIndex];
+            this.selection.face = face;
+        });
+        window.addEventListener("keydown", (e) => {
+            if(e.key === "e"){
+                const face = this.selection.face;
+                if(!face) return;
+                this.meshSystem.topology.extrudeFace(face);
+                this.meshSystem.topology.validateFaceLoops();
+                this.meshSystem.rebuild();
+            }
+        });
+    }
+    updateSelectionVisual(){
+        this.meshSystem.updateSelectedVertex(this.selection.vertex);
+        this.meshSystem.updateSelectedEdge(this.selection.edge);
+        if(!this.meshSystem.highlightMesh) return;
+        this.meshSystem.highlightMesh.visible = !!this.selection.face;
+    }
+    animate(){
+        requestAnimationFrame(() => this.animate());
+        this.controls.update();
+        this.renderer.render(this.scene, this.camera);
+        this.updateSelectionVisual();
+    }
+}
+
+const APP = new EditorApp();
+window.APP = APP;
+
+const topo = APP.meshSystem.topology;
+stats.innerHTML = `
+Vertices: ${topo.vertices.length}<br>
+Edges: ${topo.edges.length}<br>
+Faces: ${topo.faces.length}
+`;
+
+const fileInput = document.getElementById("imageInput");
+document.getElementById("generateGoblinTool").addEventListener("click", () => {
+    APP.goblinGenerator.generate();
+    APP.meshSystem.rebuild();
+});
+document.getElementById("generateGoblinToolV2").addEventListener("click", () => {
+    APP.goblinGeneratorV2.generate();
+    APP.meshSystem.rebuild();
+});
+
+fileInput.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    await APP.goblinGenerator.setImage(file);
+    await APP.goblinGeneratorV2.setImage(file);
+    APP.goblinGenerator.generate();
+    APP.meshSystem.rebuild();
+});
+
+window.addEventListener("resize", () => {
+    APP.camera.aspect = viewport.clientWidth / viewport.clientHeight;
+    APP.camera.updateProjectionMatrix();
+    APP.renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+});
+
+document.getElementById("selectTool").addEventListener("click", () => {
+    APP.selection.mode = "face";
+});
+document.getElementById("extrudeTool").addEventListener("click", () => {
+    APP.selection.mode = "face";
+});
+document.getElementById("sculptTool").addEventListener("click", () => {
+    APP.selection.mode = "vertex";
+});
+
+// Standalone "Load Image" button: loads + previews the silhouette without
+// rebuilding the mesh yet, so you can sanity-check the threshold before
+// committing to a full generate.
+const imageLoader = document.getElementById("imageLoader");
+document.getElementById("loadImg").addEventListener("click", () => {
+    imageLoader.click();
+});
+imageLoader.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    await APP.goblinGenerator.setImage(file);
+    await APP.goblinGeneratorV2.setImage(file);
+    const imageData = APP.goblinGenerator.reader.read();
+    const mask = APP.goblinGenerator.extractor.extract(imageData);
+    const landmarks = APP.goblinGenerator.detector.detect(mask);
+    const pose = mask ? APP.goblinGenerator.poseEstimator.estimate(mask) : null;
+    const limbDims = APP.goblinGenerator.detectLimbDimensions(imageData, landmarks, pose);
+    APP.goblinGenerator.updateUI(landmarks, mask, pose, limbDims);
+});
+</script>
+</body>
+</html>
