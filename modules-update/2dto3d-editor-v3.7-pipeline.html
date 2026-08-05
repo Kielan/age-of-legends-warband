@@ -1203,7 +1203,7 @@ function toHalfEdgeMesh(simpleMesh, HalfEdgeMeshCtor, Vec3Ctor){
 // step in radius. Interpolates radius with a smoothstep instead of linearly
 // for a slightly organic blend.
 function smoothstep(t){ return t*t*(3-2*t); }
-export function buildBlendRing(centerA, radiusA, centerB, radiusB, sides = 12, segments = 4, depthRatioA = 1, depthRatioB = 1){
+function buildBlendRing(centerA, radiusA, centerB, radiusB, sides = 12, segments = 4, depthRatioA = 1, depthRatioB = 1){
     const path = [];
     for(let i = 0; i <= segments; i++){
         const t = smoothstep(i/segments);
@@ -1316,7 +1316,7 @@ function buildAdjacency(mesh){
     return adj;
 }
 
-export function smoothMesh(mesh, iterations = 1, lambda = 0.5){
+function smoothMesh(mesh, iterations = 1, lambda = 0.5){
     let verts = mesh.vertices.map(v => v.slice());
     const adj = buildAdjacency(mesh);
     for(let it = 0; it < iterations; it++){
@@ -1336,8 +1336,7 @@ export function smoothMesh(mesh, iterations = 1, lambda = 0.5){
     }
     return { vertices: verts, faces: mesh.faces.map(f => f.slice()) };
 }
-
-export function weldClose(mesh, epsilon = 1e-4){
+function weldClose(mesh, epsilon = 1e-4){
     const key = (v) => `${Math.round(v[0]/epsilon)}_${Math.round(v[1]/epsilon)}_${Math.round(v[2]/epsilon)}`;
     const map = new Map();
     const remap = new Array(mesh.vertices.length);
