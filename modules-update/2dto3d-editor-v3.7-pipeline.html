@@ -757,6 +757,396 @@ function sampleSegment(mask, yFrom, yTo, sampleCount = 16){
 function sampleSegmentBetweenLandmarks(mask, landmarkA, landmarkB, sampleCount = 16){
     return sampleSegment(mask, landmarkA.y, landmarkB.y, sampleCount);
 }
+// shape-fit/crossSectionFitter.js
+// Turns a (width, depth) pair into an elliptical or stylized cross-section
+// descriptor {rx, ry, style} for the loft builder. "style" tags let
+// loftBuilder pick a ring-generation shape (round vs squarish vs wedge).
+function fitCrossSection(width, depth, style = "round"){
+    const rx = Math.max(0.001, width*0.5);
+    const ry = Math.max(0.001, depth*0.5);
+    return { rx, ry, style };
+}
+// Produces a full profile (array of cross-sections) from parallel width/depth
+// arrays, e.g. width profile from radiusProfileExtractor and a depth curve
+// from depthHeuristics applied per-sample.
+function fitProfile(widths, depths, style = "round"){
+    const n = Math.min(widths.length, depths.length);
+    const sections = [];
+    for(let i = 0; i < n; i++){
+        sections.push(fitCrossSection(widths[i]*2, depths[i]*2, style));
+    }
+    return sections;
+}
+// Per-angle squarish point (superellipse blend between a circle and a box).
+// Matches loftBuilder's ringFn(a, rx, ry) -> {x,y} signature, so it can be
+// passed straight into loft() for heads/torsos that shouldn't read as
+// perfectly round.
+function squarishRingFn(squareness = 0.35){
+    return (a, rx, ry) => {
+        const cx = Math.cos(a), sy = Math.sin(a);
+        const roundX = cx*rx, roundY = sy*ry;
+        const boxX = Math.sign(cx || 1) * rx * Math.pow(Math.abs(cx), 0.4);
+        const boxY = Math.sign(sy || 1) * ry * Math.pow(Math.abs(sy), 0.4);
+        return {
+            x: roundX*(1-squareness) + boxX*squareness,
+            y: roundY*(1-squareness) + boxY*squareness
+        };
+    };
+}
+// Full ring of squarish points at once (e.g. for direct inspection/debug
+// rendering rather than feeding loft()).
+function squarishRingPoints(rx, ry, sides = 12, squareness = 0.35){
+    const fn = squarishRingFn(squareness);
+    const pts = [];
+    for(let i = 0; i < sides; i++) pts.push(fn((i/sides)*Math.PI*2, rx, ry));
+    return pts;
+}
+// shape-fit/depthHeuristics.js
+// A 2D silhouette has no depth information, so depth-to-width ratios are
+// supplied per body-part style, matching the goblin tuning targets: head
+// stays a wide squarish oval (not spherical), torso reads as a barrel/belly,
+// hands/feet are blocky and flattened respectively.
+const DEPTH_RATIOS = {
+    head:    0.82,  // moderate, not spherical
+    torso:   0.72,  // barrel/belly — deeper than a thin torso
+    pelvis:  0.78,
+    upperArm:0.95,
+    lowerArm:0.90,
+    hand:    0.55,  // blocky rounded box, flatter than round
+    thigh:   0.92,
+    shin:    0.85,
+    foot:    0.45,  // flattened wedge
+    ear:     0.30   // thin tapering wedge
+};
+function estimateDepth(partType, width, overrideRatio = null){
+    const ratio = overrideRatio != null ? overrideRatio : (DEPTH_RATIOS[partType] ?? 0.85);
+    return Math.max(0.001, width * ratio);
+}
+// Slight widen/narrow biases from the tuning table (e.g. "head width
+// increase 20-35%"), applied on top of the raw measured width before depth
+// is derived from it.
+const WIDTH_BIAS = {
+    head: 1.28,
+    ear: 1.3,
+    shoulder: 1.06,
+    torsoLower: 1.12,
+    hand: 1.32,
+    foot: 1.2
+};
+function biasedWidth(partType, rawWidth){
+    return rawWidth * (WIDTH_BIAS[partType] ?? 1.0);
+}
+// shape-fit/sectionRegularizer.js
+// Clamps a radius/width profile so it can't collapse to zero or jump
+// violently between adjacent samples — guards against noisy silhouette
+// measurements producing a mesh with pinched or spiky cross-sections.
+function regularizeProfile(samples, { minRadius = 0.01, maxDeltaRatio = 0.35 } = {}){
+    const out = samples.map(v => Math.max(minRadius, v));
+    for(let i = 1; i < out.length; i++){
+        const prev = out[i-1];
+        const maxUp = prev * (1+maxDeltaRatio);
+        const maxDown = prev * (1-maxDeltaRatio);
+        out[i] = Math.min(maxUp, Math.max(maxDown, out[i]));
+    }
+    // second pass backward so a single wild sample can't just get clamped
+    // relative to its (already-clamped) neighbor and leave a visible kink
+    for(let i = out.length-2; i >= 0; i--){
+        const next = out[i+1];
+        const maxUp = next * (1+maxDeltaRatio);
+        const maxDown = next * (1-maxDeltaRatio);
+        out[i] = Math.min(maxUp, Math.max(maxDown, out[i]));
+    }
+    return out;
+}
+function enforceMonotonic(samples, direction = "decreasing"){
+    const out = samples.slice();
+    for(let i = 1; i < out.length; i++){
+        if(direction === "decreasing") out[i] = Math.min(out[i], out[i-1]);
+        else out[i] = Math.max(out[i], out[i-1]);
+    }
+    return out;
+}
+// mesh-gen/primitiveLibrary.js
+// Dependency-free primitive builders producing plain SimpleMesh objects:
+//   { vertices: [[x,y,z], ...], faces: [[i,j,k,...], ...] }
+// Kept free of THREE/HalfEdgeMesh so every mesh-gen module can run
+// standalone; the host app adapts SimpleMesh -> its own HalfEdgeMesh once,
+// at the integration boundary (see meshMerger.toHalfEdgeMesh).
+const vec3 = (x=0,y=0,z=0) => [x,y,z];
+const add = (a,b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]];
+const sub = (a,b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+const scale = (a,s) => [a[0]*s, a[1]*s, a[2]*s];
+const cross = (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const length = (a) => Math.hypot(a[0],a[1],a[2]);
+const normalize = (a) => { const l = length(a)||1; return [a[0]/l,a[1]/l,a[2]/l]; };
+const lerp3 = (a,b,t) => [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t];
+function mesh(){ return { vertices: [], faces: [] }; }
+function pushV(m, v){ m.vertices.push(v); return m.vertices.length-1; }
+function createBox(sx=1, sy=1, sz=1){
+    const m = mesh();
+    const hx=sx/2, hy=sy/2, hz=sz/2;
+    const v = [
+        pushV(m,[-hx,-hy,-hz]), pushV(m,[hx,-hy,-hz]), pushV(m,[hx,hy,-hz]), pushV(m,[-hx,hy,-hz]),
+        pushV(m,[-hx,-hy,hz]),  pushV(m,[hx,-hy,hz]),  pushV(m,[hx,hy,hz]),  pushV(m,[-hx,hy,hz])
+    ];
+    m.faces.push([v[0],v[1],v[2],v[3]],[v[5],v[4],v[7],v[6]],[v[4],v[0],v[3],v[7]],
+                 [v[1],v[5],v[6],v[2]],[v[3],v[2],v[6],v[7]],[v[4],v[5],v[1],v[0]]);
+    return m;
+}
+// Box with beveled edges (approximate rounded box) — used for blocky hands.
+function createRoundedBox(sx=1, sy=1, sz=1, bevel=0.2){
+    const b = Math.min(bevel, Math.min(sx,sy,sz)*0.45);
+    const m = mesh();
+    const hx=sx/2, hy=sy/2, hz=sz/2;
+    const signs = [-1,1];
+    const ringForCorner = [];
+    // Build an octagon-ish cage by offsetting each of the 8 box corners
+    // inward along its own diagonal — cheap chamfer, good enough visually.
+    for(const sxg of signs) for(const syg of signs) for(const szg of signs){
+        const corner = [sxg*hx, syg*hy, szg*hz];
+        const inward = normalize([-sxg,-syg,-szg]);
+        const p = add(corner, scale(inward, b));
+        ringForCorner.push(pushV(m, p));
+    }
+    // corner order: (---, --+, -+-, -++, +--, +-+, ++-, +++)
+    const idx = (sx,sy,sz) => ringForCorner[((sx+1)/2)*4 + ((sy+1)/2)*2 + ((sz+1)/2)];
+    const c = { mmm: idx(-1,-1,-1), mmp: idx(-1,-1,1), mpm: idx(-1,1,-1), mpp: idx(-1,1,1),
+                pmm: idx(1,-1,-1), pmp: idx(1,-1,1), ppm: idx(1,1,-1), ppp: idx(1,1,1) };
+    m.faces.push(
+        [c.mmm,c.pmm,c.ppm,c.mpm], // -z
+        [c.pmp,c.mmp,c.mpp,c.ppp], // +z
+        [c.mmp,c.mmm,c.mpm,c.mpp], // -x
+        [c.pmm,c.pmp,c.ppp,c.ppm], // +x
+        [c.mpm,c.ppm,c.ppp,c.mpp], // +y
+        [c.mmp,c.pmp,c.pmm,c.mmm]  // -y
+    );
+    return m;
+}
+function createCylinder(radius=1, height=1, sides=16){
+    const m = mesh();
+    const top=[], bottom=[]; const h=height/2;
+    for(let i=0;i<sides;i++){
+        const a=i/sides*Math.PI*2, x=Math.cos(a)*radius, z=Math.sin(a)*radius;
+        bottom.push(pushV(m,[x,-h,z])); top.push(pushV(m,[x,h,z]));
+    }
+    for(let i=0;i<sides;i++){ const n=(i+1)%sides; m.faces.push([bottom[i],bottom[n],top[n],top[i]]); }
+    const bc = pushV(m,[0,-h,0]); for(let i=0;i<sides;i++){ const n=(i+1)%sides; m.faces.push([bc,bottom[n],bottom[i]]); }
+    const tc = pushV(m,[0,h,0]); for(let i=0;i<sides;i++){ const n=(i+1)%sides; m.faces.push([tc,top[i],top[n]]); }
+    return m;
+}
+function createCone(radius=1, height=1, sides=16){
+    const m = mesh(); const ring=[]; const h=height/2;
+    for(let i=0;i<sides;i++){ const a=i/sides*Math.PI*2; ring.push(pushV(m,[Math.cos(a)*radius,-h,Math.sin(a)*radius])); }
+    const apex = pushV(m,[0,h,0]);
+    for(let i=0;i<sides;i++){ const n=(i+1)%sides; m.faces.push([ring[i],ring[n],apex]); }
+    const center = pushV(m,[0,-h,0]);
+    for(let i=0;i<sides;i++){ const n=(i+1)%sides; m.faces.push([center,ring[n],ring[i]]); }
+    return m;
+}
+function createSphere(radius=1, widthSeg=12, heightSeg=8){
+    const m = mesh(); const grid=[];
+    for(let iy=0; iy<=heightSeg; iy++){
+        const row=[]; const v=iy/heightSeg, phi=v*Math.PI;
+        for(let ix=0; ix<=widthSeg; ix++){
+            const u=ix/widthSeg, theta=u*Math.PI*2;
+            row.push(pushV(m,[-radius*Math.cos(theta)*Math.sin(phi), radius*Math.cos(phi), radius*Math.sin(theta)*Math.sin(phi)]));
+        }
+        grid.push(row);
+    }
+    for(let iy=0; iy<heightSeg; iy++) for(let ix=0; ix<widthSeg; ix++){
+        const a=grid[iy][ix], b=grid[iy][ix+1], c=grid[iy+1][ix+1], d=grid[iy+1][ix];
+        if(iy===0) m.faces.push([a,c,d]);
+        else if(iy===heightSeg-1) m.faces.push([a,b,c]);
+        else m.faces.push([a,b,c,d]);
+    }
+    return m;
+}
+// Thin tapering wedge: flat base, narrows toward the tip, with an optional
+// flare widening the tip again (goblin-ear silhouette).
+function createWedge(baseWidth=0.3, baseDepth=0.1, length=1, tipFlare=0.4, segments=6){
+    const m = mesh();
+    const rings = [];
+    for(let i=0;i<=segments;i++){
+        const t = i/segments;
+        // width narrows to ~15% at mid-length, then flares back out by tipFlare
+        const narrow = 1 - 0.85*Math.sin(Math.min(1,t*1.15)*Math.PI*0.5);
+        const flare = t>0.6 ? 1 + tipFlare*((t-0.6)/0.4) : 1;
+        const w = baseWidth*0.5*narrow*flare;
+        const d = baseDepth*0.5*(1-t*0.7);
+        const y = t*length;
+        rings.push([
+            pushV(m,[-w,y,-d]), pushV(m,[w,y,-d]), pushV(m,[w,y,d]), pushV(m,[-w,y,d])
+        ]);
+    }
+    for(let i=0;i<segments;i++){
+        const a=rings[i], b=rings[i+1];
+        for(let k=0;k<4;k++){ const n=(k+1)%4; m.faces.push([a[k],a[n],b[n],b[k]]); }
+    }
+    m.faces.push([rings[0][3],rings[0][2],rings[0][1],rings[0][0]]); // base cap
+    m.faces.push([rings[segments][0],rings[segments][1],rings[segments][2],rings[segments][3]]); // tip cap
+    return m;
+}
+function createCapsule(radius=0.3, height=1, sides=16){
+    const cylHeight = Math.max(height-radius*2, 0.001);
+    const body = createCylinder(radius, cylHeight, sides);
+    const top = createSphere(radius, sides, Math.max(4, Math.floor(sides/2)));
+    const bottom = createSphere(radius, sides, Math.max(4, Math.floor(sides/2)));
+    for(const v of top.vertices) if(v[1] >= 0) v[1] += cylHeight/2;
+    for(const v of bottom.vertices) if(v[1] <= 0) v[1] -= cylHeight/2;
+    return mergeSimple([body, top, bottom]);
+}
+function mergeSimple(meshes){
+    const out = mesh();
+    for(const m of meshes){
+        const offset = out.vertices.length;
+        for(const v of m.vertices) out.vertices.push(v.slice());
+        for(const f of m.faces) out.faces.push(f.map(i => i+offset));
+    }
+    return out;
+}
+function translateMesh(m, dx, dy, dz){
+    for(const v of m.vertices){ v[0]+=dx; v[1]+=dy; v[2]+=dz; }
+    return m;
+}
+function scaleMesh(m, sx, sy, sz){
+    for(const v of m.vertices){ v[0]*=sx; v[1]*=sy; v[2]*=sz; }
+    return m;
+}
+// mesh-gen/loftBuilder.js
+// Generic loft: given an ordered path of { position:[x,y,z], rx, ry,
+// up?:[x,y,z] }, builds an oriented ring at each point and connects
+// consecutive rings into quads. This is the workhorse behind capsuleBuilder,
+// torso/limb lofts, and the ear/foot builders' custom cross-sections.
+function frameAt(path, i){
+    const p = path[i];
+    const prev = path[Math.max(0,i-1)].position;
+    const next = path[Math.min(path.length-1,i+1)].position;
+    let forward = sub(next, prev);
+    if(length(forward) < 1e-6) forward = [0,1,0];
+    forward = normalize(forward);
+    const worldUp = Math.abs(forward[1]) > 0.95 ? [1,0,0] : [0,1,0];
+    const right = normalize(cross(forward, worldUp));
+    const up = normalize(cross(right, forward));
+    return { right, up, forward };
+}
+
+function ringPoints(center, right, up, rx, ry, sides, ringFn){
+    const pts = [];
+    for(let i=0;i<sides;i++){
+        const a = (i/sides)*Math.PI*2;
+        let x = Math.cos(a)*rx, y = Math.sin(a)*ry;
+        if(ringFn){ const p = ringFn(a, rx, ry); x = p.x; y = p.y; }
+        pts.push([
+            center[0] + right[0]*x + up[0]*y,
+            center[1] + right[1]*x + up[1]*y,
+            center[2] + right[2]*x + up[2]*y
+        ]);
+    }
+    return pts;
+}
+// path: [{position:[x,y,z], rx, ry}], ringFn optional (a,rx,ry)->{x,y} for
+// stylized (squarish/wedge) cross-sections instead of plain ellipses.
+function loft(path, sides = 10, { capStart = true, capEnd = true, ringFn = null } = {}){
+    const m = { vertices: [], faces: [] };
+    const rings = [];
+    for(let i = 0; i < path.length; i++){
+        const { right, up } = frameAt(path, i);
+        const pts = ringPoints(path[i].position, right, up, path[i].rx, path[i].ry, sides, ringFn);
+        const idxs = pts.map(p => { m.vertices.push(p); return m.vertices.length-1; });
+        rings.push(idxs);
+    }
+    for(let i = 0; i < rings.length-1; i++){
+        const a = rings[i], b = rings[i+1];
+        for(let k = 0; k < sides; k++){
+            const n = (k+1)%sides;
+            m.faces.push([a[k],a[n],b[n],b[k]]);
+        }
+    }
+    if(capStart){
+        const center = m.vertices.length;
+        m.vertices.push(path[0].position.slice());
+        for(let k=0;k<sides;k++){ const n=(k+1)%sides; m.faces.push([center, rings[0][n], rings[0][k]]); }
+    }
+    if(capEnd){
+        const last = rings.length-1;
+        const center = m.vertices.length;
+        m.vertices.push(path[last].position.slice());
+        for(let k=0;k<sides;k++){ const n=(k+1)%sides; m.faces.push([center, rings[last][k], rings[last][n]]); }
+    }
+    return m;
+}
+// mesh-gen/capsuleBuilder.js
+// A "profiled capsule": like primitiveLibrary.createCapsule but the radius
+// varies along its length according to a RadiusProfile (duck-typed
+// .radius(t)), so a limb or torso can taper/bulge instead of staying a
+// constant-radius tube. Ends taper smoothly to a point for a capsule cap.
+function buildProfiledCapsule(profile, length, sides = 12, segments = 10, depthRatio = 1.0, ringFn = null){
+    const path = [];
+    for(let i = 0; i <= segments; i++){
+        const t = i/segments;
+        const y = t*length - length/2;
+        // ease the radius toward 0 at the very ends over the last ~12% so
+        // the loft caps come to a rounded point rather than a hard disc
+        const endEase = Math.min(1, Math.min(t, 1-t) / 0.12);
+        const r = profile.radius(t) * Math.max(0.05, endEase);
+        path.push({ position: [0, y, 0], rx: r, ry: r*depthRatio });
+    }
+    return loft(path, sides, { capStart: false, capEnd: false, ringFn });
+}
+// Variant with hard start/end caps instead of tapering-to-a-point — useful
+// where the capsule will be joined to another part via jointBlendBuilder
+// and needs a flat, weldable ring instead of a pinched tip.
+function buildOpenProfiledCapsule(profile, length, sides = 12, segments = 10, depthRatio = 1.0){
+    const path = [];
+    for(let i = 0; i <= segments; i++){
+        const t = i/segments;
+        const y = t*length - length/2;
+        const r = profile.radius(t);
+        path.push({ position: [0, y, 0], rx: r, ry: r*depthRatio });
+    }
+    return loft(path, sides, { capStart: true, capEnd: true });
+}
+// mesh-gen/earBuilder.js
+// Goblin-style ear: thin tapering wedge with a strong tip flare, built as a
+// custom loft rather than a cone so it reads as a blade-like ear instead of
+// a smooth spike. side: -1 (left) or 1 (right) mirrors the flare direction.
+function buildEar(baseRadius = 0.1, earLength = 0.3, flare = 0.6, sides = 8, side = 1){
+    const segments = 8;
+    const path = [];
+    for(let i = 0; i <= segments; i++){
+        const t = i/segments;
+        // narrows sharply from the base, then flares outward near the tip
+        const narrow = 1 - 0.8*Math.min(1, t*1.2);
+        const flareAmt = t > 0.55 ? 1 + flare*((t-0.55)/0.45) : 1;
+        const rx = baseRadius * narrow * flareAmt;
+        const ry = baseRadius * 0.35 * narrow; // thin front-to-back
+        // sweep the ear up and slightly outward/back along its length
+        const y = t*earLength;
+        const outward = side * t*t*baseRadius*1.4;
+        const back = -t*baseRadius*0.5;
+        path.push({ position: [outward, y, back], rx: Math.max(0.001,rx), ry: Math.max(0.001,ry) });
+    }
+    return loft(path, sides, { capStart: true, capEnd: true });
+}
+// mesh-gen/footBuilder.js
+// Flattened wedge foot: narrower/rounder at the heel, wider and flatter
+// toward the toe, low overall height per the "feet: flattened wedge" style
+// target and the "foot height: flatten" tuning bias.
+function buildFoot(footLength = 0.2, width = 0.1, height = 0.07, sides = 8){
+    const segments = 6;
+    const path = [];
+    for(let i = 0; i <= segments; i++){
+        const t = i/segments; // 0 = heel, 1 = toe
+        const w = width*0.5 * (0.6 + 0.5*t);      // widens toward toe
+        const h = height*0.5 * (1.0 - 0.35*t);     // flattens toward toe
+        path.push({ position: [0, 0, t*footLength - footLength*0.3], rx: Math.max(0.001,w), ry: Math.max(0.001,h) });
+    }
+    const foot = loft(path, sides, { capStart: true, capEnd: true });
+    // rotate the loft's local Z-forward path into world Z (loft defaults to
+    // building along whatever axis the path points, so no extra transform
+    // needed here) — kept as an explicit no-op for clarity/extension.
+    return foot;
+}    
 /** BODY PARAMETERS **/
 export class BodyParameters{
     constructor(){
