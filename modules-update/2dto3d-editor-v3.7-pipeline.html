@@ -109,25 +109,25 @@ import {OrbitControls} from "https://esm.sh/three@0.165.0/examples/jsm/controls/
 // this page must be served over http(s) (a local static server, or GitHub
 // Pages) rather than opened directly as a file:// URL — browsers block
 // module-to-module fetches under file://.
-import { extractByBrightness, cleanMask, largestComponent } from "./image-analysis/maskExtractor.js";
-import { detectLandmarks, sampleWidths } from "./image-analysis/landmarkDetector.js";
-import { refineLandmarks } from "./image-analysis/featurePointRefiner.js";
-import { estimatePose } from "./image-analysis/poseEstimator.js";
-import { segmentParts } from "./image-analysis/partSegmenter.js";
-import { computeIoU } from "./image-analysis/silhouetteMetrics.js";
+// import { extractByBrightness, cleanMask, largestComponent } from "./image-analysis/maskExtractor.js";
+// import { detectLandmarks, sampleWidths } from "./image-analysis/landmarkDetector.js";
+// import { refineLandmarks } from "./image-analysis/featurePointRefiner.js";
+// import { estimatePose } from "./image-analysis/poseEstimator.js";
+// import { segmentParts } from "./image-analysis/partSegmenter.js";
+// import { computeIoU } from "./image-analysis/silhouetteMetrics.js";
 
-import { extractRadiusProfile } from "./shape-fit/radiusProfileExtractor.js";
-import { regularizeProfile } from "./shape-fit/sectionRegularizer.js";
-import { estimateDepth, biasedWidth, DEPTH_RATIOS } from "./shape-fit/depthHeuristics.js";
-import { squarishRingFn } from "./shape-fit/crossSectionFitter.js";
+// import { extractRadiusProfile } from "./shape-fit/radiusProfileExtractor.js";
+// import { regularizeProfile } from "./shape-fit/sectionRegularizer.js";
+// import { estimateDepth, biasedWidth, DEPTH_RATIOS } from "./shape-fit/depthHeuristics.js";
+// import { squarishRingFn } from "./shape-fit/crossSectionFitter.js";
 
-import * as Prim from "./mesh-gen/primitiveLibrary.js";
-import { buildProfiledCapsule } from "./mesh-gen/capsuleBuilder.js";
-import { buildEar } from "./mesh-gen/earBuilder.js";
-import { buildHand } from "./mesh-gen/handBuilder.js";
-import { buildFoot } from "./mesh-gen/footBuilder.js";
-import { buildBlendRing } from "./mesh-gen/jointBlendBuilder.js";
-import { mergeMeshes, toHalfEdgeMesh } from "./mesh-gen/meshMerger.js";
+// import * as Prim from "./mesh-gen/primitiveLibrary.js";
+// import { buildProfiledCapsule } from "./mesh-gen/capsuleBuilder.js";
+// import { buildEar } from "./mesh-gen/earBuilder.js";
+// import { buildHand } from "./mesh-gen/handBuilder.js";
+// import { buildFoot } from "./mesh-gen/footBuilder.js";
+// import { buildBlendRing } from "./mesh-gen/jointBlendBuilder.js";
+// import { mergeMeshes, toHalfEdgeMesh } from "./mesh-gen/meshMerger.js";
 
 const viewport =
     document.getElementById("viewport");
