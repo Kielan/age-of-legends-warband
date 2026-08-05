@@ -225,12 +225,338 @@ footBuilder.ts
 jointBlendBuilder.ts
 meshMerger.ts
 voxelizer.ts
-retopology.ts
-*****/
+retopology.ts *****/
 
-/************************************************************
- * BODY PARAMETERS
- ************************************************************/
+// image-analysis/maskExtractor.js
+// Binary-mask extraction + light morphological cleanup. Pure functions over
+// { width, height, pixels:Uint8ClampedArray(RGBA) } -> { width, height, data:Uint8Array }.
+function extractByBrightness(image, threshold = 200){
+    const { width, height, pixels } = image;
+    const mask = new Uint8Array(width * height);
+    for(let y = 0; y < height; y++){
+        for(let x = 0; x < width; x++){
+            const i = (y * width + x) * 4;
+            const r = pixels[i], g = pixels[i+1], b = pixels[i+2], a = pixels[i+3];
+            const brightness = (r + g + b) / 3;
+            mask[y * width + x] = (a > 10 && brightness < threshold) ? 1 : 0;
+        }
+    }
+    return { width, height, data: mask };
+}
+function extractByColorKey(image, target = [255,102,170], tolerance = 40){
+    const { width, height, pixels } = image;
+    const mask = new Uint8Array(width * height);
+    for(let y = 0; y < height; y++){
+        for(let x = 0; x < width; x++){
+            const i = (y * width + x) * 4;
+            const r = pixels[i], g = pixels[i+1], b = pixels[i+2], a = pixels[i+3];
+            if(a < 10) continue;
+            const d = Math.abs(r-target[0]) + Math.abs(g-target[1]) + Math.abs(b-target[2]);
+            mask[y * width + x] = d < tolerance ? 1 : 0;
+        }
+    }
+    return { width, height, data: mask };
+}
+// 3x3 majority-vote erode/dilate passes for despeckling noisy thresholds.
+function morphPass(mask, mode){
+    const { width, height, data } = mask;
+    const out = new Uint8Array(data.length);
+    for(let y = 0; y < height; y++){
+        for(let x = 0; x < width; x++){
+            let count = 0, total = 0;
+            for(let dy = -1; dy <= 1; dy++){
+                for(let dx = -1; dx <= 1; dx++){
+                    const nx = x+dx, ny = y+dy;
+                    if(nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+                    total++;
+                    if(data[ny*width+nx]) count++;
+                }
+            }
+            const v = data[y*width+x];
+            if(mode === "erode") out[y*width+x] = (v && count === total) ? 1 : 0;
+            else out[y*width+x] = (v || count >= 3) ? 1 : 0; // dilate: any neighbor on
+        }
+    }
+    return { width, height, data: out };
+}
+function cleanMask(mask, { erode = 1, dilate = 1 } = {}){
+    let m = mask;
+    for(let i = 0; i < erode; i++) m = morphPass(m, "erode");
+    for(let i = 0; i < dilate; i++) m = morphPass(m, "dilate");
+    return m;
+}
+// Flood-fill connected components (4-connectivity), keep only the largest.
+// Removes stray speckle blobs the threshold pass picks up from JPEG noise.
+function largestComponent(mask){
+    const { width, height, data } = mask;
+    const visited = new Uint8Array(width*height);
+    let best = null, bestSize = 0;
+    for(let sy = 0; sy < height; sy++){
+        for(let sx = 0; sx < width; sx++){
+            const sidx = sy*width+sx;
+            if(!data[sidx] || visited[sidx]) continue;
+            const stack = [sidx];
+            const pixels = [];
+            visited[sidx] = 1;
+            while(stack.length){
+                const idx = stack.pop();
+                pixels.push(idx);
+                const x = idx % width, y = (idx / width) | 0;
+                const neighbors = [idx-1,idx+1,idx-width,idx+width];
+                for(const nIdx of neighbors){
+                    if(nIdx < 0 || nIdx >= data.length) continue;
+                    const nx = nIdx % width;
+                    if(Math.abs(nx-x) > 1) continue; // guard row wraparound
+                    if(!data[nIdx] || visited[nIdx]) continue;
+                    visited[nIdx] = 1;
+                    stack.push(nIdx);
+                }
+            }
+            if(pixels.length > bestSize){ bestSize = pixels.length; best = pixels; }
+        }
+    }
+    const out = new Uint8Array(width*height);
+    if(best) for(const idx of best) out[idx] = 1;
+    return { width, height, data: out };
+}
+// image-analysis/contourTracer.js
+// Moore-neighbor boundary tracing: walks the outer edge of the mask's main
+// blob and returns an ordered polyline [{x,y}, ...] in pixel space.
+const NEIGHBORS = [
+    [1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]
+];
+function isOn(mask, x, y){
+    if(x < 0 || y < 0 || x >= mask.width || y >= mask.height) return false;
+    return !!mask.data[y*mask.width+x];
+}
+function findStart(mask){
+    for(let y = 0; y < mask.height; y++)
+        for(let x = 0; x < mask.width; x++)
+            if(isOn(mask, x, y)) return { x, y };
+    return null;
+}
+function traceContour(mask, maxSteps = 20000){
+    const start = findStart(mask);
+    if(!start) return [];
+    const contour = [start];
+    let current = start;
+    let backtrack = 4; // came from "west" conceptually at the very first pixel
+    let steps = 0;
+    do {
+        let found = null;
+        for(let k = 0; k < 8; k++){
+            const dir = (backtrack + k) % 8;
+            const [dx, dy] = NEIGHBORS[dir];
+            const nx = current.x + dx, ny = current.y + dy;
+            if(isOn(mask, nx, ny)){
+                found = { x: nx, y: ny, dir };
+                break;
+            }
+        }
+        if(!found) break;
+        contour.push({ x: found.x, y: found.y });
+        // next search starts just behind the direction we arrived from
+        backtrack = (found.dir + 5) % 8;
+        current = found;
+        steps++;
+    } while(!(current.x === start.x && current.y === start.y) && steps < maxSteps);
+    return contour;
+}
+// Ramer-Douglas-Peucker simplification, useful before feeding a contour
+// into landmark/feature detection so noise doesn't dominate curvature.
+function simplifyContour(points, epsilon = 1.5){
+    if(points.length < 3) return points.slice();
+    const perpDist = (p, a, b) => {
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        return Math.abs((p.x-a.x)*dy - (p.y-a.y)*dx) / len;
+    };
+    const recurse = (pts) => {
+        if(pts.length < 3) return pts;
+        let maxD = -1, idx = -1;
+        for(let i = 1; i < pts.length-1; i++){
+            const d = perpDist(pts[i], pts[0], pts[pts.length-1]);
+            if(d > maxD){ maxD = d; idx = i; }
+        }
+        if(maxD > epsilon){
+            const left = recurse(pts.slice(0, idx+1));
+            const right = recurse(pts.slice(idx));
+            return left.slice(0, -1).concat(right);
+        }
+        return [pts[0], pts[pts.length-1]];
+    };
+    return recurse(points);
+}
+// image-analysis/distanceTransform.js
+// Two-pass chamfer (3-4) distance transform: approximates Euclidean distance
+// from each foreground pixel to the nearest background pixel. Cheap and good
+// enough for medial-axis / part-thickness estimation — no exact-EDT needed.
+function distanceTransform(mask){
+    const { width, height, data } = mask;
+    const INF = 1e6;
+    const dist = new Float32Array(width*height).fill(INF);
+    for(let i = 0; i < data.length; i++) if(!data[i]) dist[i] = 0;
+    const at = (x,y) => (x < 0||y < 0||x >= width||y >= height) ? INF : dist[y*width+x];
+    const set = (x,y,v) => { if(v < dist[y*width+x]) dist[y*width+x] = v; };
+    // forward pass
+    for(let y = 0; y < height; y++){
+        for(let x = 0; x < width; x++){
+            if(!data[y*width+x]) continue;
+            let d = dist[y*width+x];
+            d = Math.min(d, at(x-1,y)+3, at(x,y-1)+3, at(x-1,y-1)+4, at(x+1,y-1)+4);
+            set(x,y,d);
+        }
+    }
+    // backward pass
+    for(let y = height-1; y >= 0; y--){
+        for(let x = width-1; x >= 0; x--){
+            if(!data[y*width+x]) continue;
+            let d = dist[y*width+x];
+            d = Math.min(d, at(x+1,y)+3, at(x,y+1)+3, at(x+1,y+1)+4, at(x-1,y+1)+4);
+            set(x,y,d);
+        }
+    }
+    // chamfer units -> approx pixel units (3 ~ 1px orthogonal step)
+    for(let i = 0; i < dist.length; i++){
+        if(dist[i] >= INF) dist[i] = 0;
+        else dist[i] = dist[i] / 3;
+    }
+    return { width, height, data: dist };
+}
+// Local maxima of the distance field along each row = a coarse medial axis,
+// useful as ridge points for part_segmenter / depth heuristics.
+function ridgePoints(distField, minDist = 1.5){
+    const { width, height, data } = distField;
+    const pts = [];
+    for(let y = 0; y < height; y++){
+        for(let x = 1; x < width-1; x++){
+            const v = data[y*width+x];
+            if(v < minDist) continue;
+            if(v >= data[y*width+x-1] && v >= data[y*width+x+1]){
+                pts.push({ x, y, radius: v });
+            }
+        }
+    }
+    return pts;
+}
+// image-analysis/partSegmenter.js
+// Splits a silhouette mask into named body-part regions using landmark
+// y-bands plus horizontal connected-components within each band (so a band
+// spanning "torso + two arms" becomes three separate blobs, classified by
+// their x-position relative to the torso center).
+
+function rowRuns(mask, y, minRunLen = 1){
+    const { width, data } = mask;
+    const runs = [];
+    let start = -1;
+    for(let x = 0; x <= width; x++){
+        const on = x < width && data[y*width+x];
+        if(on && start === -1) start = x;
+        if(!on && start !== -1){
+            if(x - start >= minRunLen) runs.push({ start, end: x-1 });
+            start = -1;
+        }
+    }
+    return runs;
+}
+
+// Groups per-row runs into blobs across a y-range using simple x-overlap
+// continuity (cheap alternative to full connected-component labeling, good
+// enough since limbs rarely cross within one band).
+function bandBlobs(mask, yFrom, yTo){
+    const blobs = []; // { runs:[{y,start,end}], minX, maxX }
+    for(let y = yFrom; y < yTo; y++){
+        const runs = rowRuns(mask, y);
+        for(const run of runs){
+            let attached = null;
+            for(const b of blobs){
+                const last = b.runs[b.runs.length-1];
+                if(last && last.y === y-1 && run.start <= last.end+2 && run.end >= last.start-2){
+                    attached = b; break;
+                }
+            }
+            if(!attached){ attached = { runs: [], minX: run.start, maxX: run.end }; blobs.push(attached); }
+            attached.runs.push({ y, ...run });
+            attached.minX = Math.min(attached.minX, run.start);
+            attached.maxX = Math.max(attached.maxX, run.end);
+        }
+    }
+    return blobs.filter(b => b.runs.length >= 2);
+}
+function segmentParts(mask, landmarks){
+    if(!landmarks) return [];
+    const { head, neck, shoulders, waist, hips, feet } = landmarks;
+    const bands = [
+        { name: "head", from: landmarks.bounds.minY, to: neck.y },
+        { name: "upperTorsoArms", from: neck.y, to: waist.y },
+        { name: "lowerTorsoLegs", from: waist.y, to: feet.y+1 }
+    ];
+    const parts = [];
+    for(const band of bands){
+        const blobs = bandBlobs(mask, Math.max(0,Math.floor(band.from)), Math.min(mask.height,Math.ceil(band.to)));
+        const centerX = shoulders ? (shoulders.left+shoulders.right)/2 : mask.width/2;
+        // sort by horizontal position so we can label left/center/right
+        blobs.sort((a,b) => (a.minX+a.maxX) - (b.minX+b.maxX));
+        blobs.forEach((b, i) => {
+            const cx = (b.minX+b.maxX)/2;
+            const side = cx < centerX - 4 ? "L" : (cx > centerX + 4 ? "R" : "C");
+            let label = band.name;
+            if(band.name === "upperTorsoArms") label = side === "C" ? "torsoUpper" : `arm${side}`;
+            if(band.name === "lowerTorsoLegs") label = side === "C" ? "pelvis" : `leg${side}`;
+            if(band.name === "head") label = "head";
+            const pixelCount = b.runs.reduce((s,r)=>s+(r.end-r.start+1),0);
+            parts.push({
+                label, side,
+                bounds: { minX: b.minX, maxX: b.maxX, minY: b.runs[0].y, maxY: b.runs[b.runs.length-1].y },
+                pixelCount
+            });
+        });
+    }
+    return parts;
+}
+// image-analysis/featurePointRefiner.js
+// Smooths landmark rows against their local neighborhood and assigns a
+// confidence score based on how distinct each extremum is from nearby rows —
+// a landmark sitting on a flat, ambiguous plateau is a weaker signal than one
+// sitting on a sharp peak/valley.
+function localWindow(rows, centerY, radius){
+    return rows.filter(r => Math.abs(r.y - centerY) <= radius);
+}
+// confidence in [0,1]: 1 = clearly stands out from its neighborhood,
+// 0 = width is basically indistinguishable from nearby rows (noisy pick).
+function confidenceFor(rows, landmark, radius, mode){
+    const window = localWindow(rows, landmark.y, radius);
+    if(window.length < 2) return 0.5;
+    const widths = window.map(r => r.width);
+    const mean = widths.reduce((a,b)=>a+b,0) / widths.length;
+    const spread = Math.max(1, Math.max(...widths) - Math.min(...widths));
+    const delta = mode === "max" ? landmark.width - mean : mean - landmark.width;
+    return Math.max(0, Math.min(1, delta / spread));
+}
+function refineLandmarks(landmarks, rows, radius = 6){
+    if(!landmarks) return null;
+    const out = { ...landmarks };
+    const extremaModes = {
+        head: "max", shoulders: "max", hips: "max", forehead: "max",
+        neck: "min", waist: "min", chin: "min"
+    };
+    for(const key of Object.keys(extremaModes)){
+        const lm = landmarks[key];
+        if(!lm) continue;
+        const window = localWindow(rows, lm.y, radius);
+        if(window.length){
+            // snap y to the true local extremum within the smoothing window,
+            // then average width with its immediate neighbors to denoise it
+            const mode = extremaModes[key];
+            const best = window.reduce((b,r) => (mode==="max" ? r.width>b.width : r.width<b.width) ? r : b, window[0]);
+            const near = localWindow(rows, best.y, 1);
+            const smoothedWidth = near.reduce((s,r)=>s+r.width,0) / near.length;
+            out[key] = { ...best, width: smoothedWidth, confidence: confidenceFor(rows, best, radius, mode) };
+        }
+    }
+    return out;
+}
+/** BODY PARAMETERS **/
 export class BodyParameters{
     constructor(){
         this.height = 1.0;
@@ -242,12 +568,10 @@ export class BodyParameters{
             foreheadWidth:0.28,
             chinWidth:0.16
         };
-
         this.neck={
             radius:0.07,
             length:0.08
         };
-
         this.torso={
             shoulderWidth:0.42,
             chestWidth:0.39,
@@ -257,13 +581,11 @@ export class BodyParameters{
             pelvisWidth:0.36,
             pelvisDepth:0.26
         };
-
         this.arm={
             upperLength:0.31,
             lowerLength:0.29,
             handLength:0.15
         };
-
         this.leg={
             thighLength:0.32,
             shinLength:0.29,
@@ -271,11 +593,7 @@ export class BodyParameters{
         };
     }
 }
-
-
-/************************************************************
- * POSE PARAMETERS
- ************************************************************/
+/** POSE PARAMETERS **/
 export class PoseParameters{
     constructor(){
         this.head={
@@ -291,9 +609,7 @@ export class PoseParameters{
             shoulderYaw:0,
             shoulderPitch:0,
             shoulderRoll:0,
-
             elbow:0,
-
             wristYaw:0,
             wristRoll:0
         };
@@ -301,18 +617,13 @@ export class PoseParameters{
         this.leftLeg={
             hipYaw:0,
             hipPitch:0,
-
             knee:0,
-
             anklePitch:0
         };
         this.rightLeg=JSON.parse(JSON.stringify(this.leftLeg));
     }
 }
-
-/************************************************************
- * CROSS SECTION PROFILE
- ************************************************************/
+/** CROSS SECTION PROFILE **/
 export class RadiusProfile{
     constructor(sampleCount=8){
         this.samples=[];
@@ -327,11 +638,7 @@ export class RadiusProfile{
         return this.samples[i]*(1-a)+this.samples[j]*a;
     }
 }
-
-
-/************************************************************
- * CROSS SECTION DATABASE
- ************************************************************/
+/** CROSS SECTION DATABASE **/
 export class CrossSectionProfiles{
     constructor(){
         this.head=new RadiusProfile(10);
@@ -346,18 +653,13 @@ export class CrossSectionProfiles{
         this.foot=new RadiusProfile(6);
     }
 }
-
-/************************************************************
- * TOPOLOGY LOOP
- ************************************************************/
+/** TOPOLOGY LOOP **/
 export class EdgeLoop{
     constructor(name,t){
         this.name=name;
         this.t=t;
     }
 }
-
-
 /************************************************************
  * TOPOLOGY BLUEPRINT
  ************************************************************/
