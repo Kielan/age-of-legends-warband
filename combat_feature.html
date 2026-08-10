@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Isle of Dread — Diablo / Guild Wars Combat Prototype</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:#eee;font-family:monospace}
+canvas{display:block}
+button,select{font:inherit}
+#menu{
+ position:absolute;left:0;top:0;width:300px;height:100vh;z-index:30;
+ overflow:auto;background:linear-gradient(#141414,#090909);border-right:2px solid #49331f
+}
+#selectionPanel{
+ position:absolute;right:0;top:0;width:320px;height:100vh;z-index:30;
+ overflow:auto;padding:12px;background:linear-gradient(#21170e,#0b0b0b);
+ border-left:2px solid #4e3824
+}
+.rtsPanel,.selectionCard{
+ border:2px solid #5a4128;background:#15110d;padding:12px;margin-bottom:12px;
+ box-shadow:inset 0 0 12px rgba(0,0,0,.8)
+}
+.panelTitle{color:#f2c14d;font-size:20px;font-weight:bold;text-transform:uppercase}
+#mapName{color:#ffd86b;font-size:20px;margin:10px 0}
+#mapPreview{width:100%;height:160px;object-fit:cover;border:3px solid #5a4128;image-rendering:pixelated}
+.settingRow{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #2d2117}
+.settingLabel{color:#d9b05d}
+select{background:#1c1c1c;color:#fff;border:1px solid #555;padding:5px}
+#startButton{
+ width:100%;padding:14px;margin-top:12px;font-size:20px;font-weight:bold;
+ background:linear-gradient(#2058b5,#102e63);border:2px solid #7db5ff;color:#ffe28a;cursor:pointer
+}
+button{
+ width:100%;padding:8px;margin:4px 0;background:#222;color:#fff;border:1px solid #444;
+ cursor:pointer;text-align:left
+}
+button:hover{background:#3a3a3a}.activeFaction{background:#355a2c;border-color:#7fcf5f}
+.section{padding:10px;border-bottom:1px solid #222}
+.section h2,.section h3{margin:4px 0 10px}
+#gameViewport{
+ position:absolute;left:300px;right:320px;top:0;bottom:112px;z-index:1
+}
+#hud{
+ position:absolute;left:300px;right:320px;bottom:0;height:112px;z-index:40;
+ display:flex;background:#080808;border-top:2px solid #4b3825;color:white
+}
+#hudLeft{width:205px;padding:8px;border-right:2px solid #333}
+#minimap{width:190px;height:92px;background:#111;border:2px solid #555;image-rendering:pixelated}
+#hudCenter{width:365px;display:flex;gap:10px;padding:8px;border-right:2px solid #333}
+#unitPortrait{width:76px;height:92px;border:2px solid #666;background:#201a15;display:flex;align-items:center;justify-content:center;font-size:45px}
+#unitStats{flex:1;min-width:0}
+.unitName{font-size:17px;color:#ffdc73;font-weight:bold}
+.levelBadge{color:#a9d8ff}
+.bar{height:14px;border:2px solid #555;background:#260000;margin:4px 0}
+.fill{height:100%;width:100%}
+#healthFill{background:linear-gradient(90deg,#9e1717,#38d94b)}
+#manaFill{background:linear-gradient(90deg,#164f9a,#43b9ff)}
+.statLine{font-size:12px;margin:2px 0}
+#hudRight{flex:1;padding:8px;display:flex;align-items:center;gap:8px;min-width:0}
+#skillbar{display:grid;grid-template-columns:repeat(4,66px);gap:7px}
+.skill{
+ position:relative;width:66px;height:66px;border:2px solid #80673b;background:#191919;
+ display:flex;align-items:center;justify-content:center;font-size:28px;cursor:pointer
+}
+.skill:hover{border-color:#ffd86b;transform:translateY(-1px)}
+.skill.locked{filter:grayscale(1);opacity:.45}.skill.cooldown{opacity:.65}
+.skill .key{position:absolute;left:3px;top:2px;color:#ffd86b;font-size:11px}
+.skill .cd{position:absolute;right:3px;bottom:2px;color:#fff;font-size:12px}
+#combatLog{
+ flex:1;height:78px;overflow:hidden;border:1px solid #44362a;background:#0c0c0c;padding:5px;
+ font-size:11px;color:#cfcfcf
+}
+#combatLog div{margin-bottom:2px}.good{color:#6cff72}.bad{color:#ff7676}.gold{color:#ffd86b}
+#abilityQueue{
+ position:absolute;left:310px;bottom:122px;z-index:41;display:flex;gap:5px;min-height:32px
+}
+.queueItem{border:1px solid #8b6b32;background:#17120c;padding:5px;color:#ffd86b;font-size:11px}
+#targetFrame{
+ position:absolute;right:330px;top:12px;width:250px;z-index:41;padding:8px;
+ background:rgba(10,7,5,.88);border:2px solid #593f24;display:none
+}
+.targetName{color:#ff8a6a;font-weight:bold}.targetBar{height:12px;background:#350000;border:1px solid #777}.targetFill{height:100%;background:#e33}
+#combatHint{
+ position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:41;
+ padding:7px 12px;background:rgba(0,0,0,.65);border:1px solid #5b4630;color:#ddd;font-size:12px
+}
+#levelUp{
+ position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);z-index:60;
+ display:none;padding:18px 26px;text-align:center;background:rgba(22,15,8,.97);
+ border:3px solid #d6a43a;box-shadow:0 0 30px #000;color:#fff
+}
+#levelUp h2{margin:0;color:#ffd86b}.small{font-size:11px;color:#aaa}
+</style>
+</head>
+<body>
+<div id="menu"></div>
+
+<div id="selectionPanel">
+ <div class="rtsPanel">
+  <div class="panelTitle">Single Player Lobby</div>
+  <div id="mapName">Isle of Dread</div>
+  <img id="mapPreview" src="https://picsum.photos/320/160?random=4">
+  <div class="settingRow"><span class="settingLabel">Game Speed</span><select id="gameSpeed">
+   <option>Slow</option><option selected>Normal</option><option>Fast</option><option>Ultra Fast</option>
+  </select></div>
+  <div class="settingRow"><span class="settingLabel">Combat</span><span>Action RPG</span></div>
+  <div class="settingRow"><span class="settingLabel">Enemy Camps</span><span>8</span></div>
+  <div id="mapDescription" style="line-height:1.45;color:#ccc;margin-top:10px;padding:8px;background:#0e0e0e">
+   Explore the island, clear enemy camps, gain experience and build your hero.
+   Left click selects units/camps. Right click moves and attacks. Skills may be queued.
+  </div>
+  <button id="startButton">Start Game</button>
+ </div>
+ <div class="selectionCard">
+  <h3>Selection</h3>
+  <div id="selectedInfo">None</div>
+ </div>
+ <div class="selectionCard">
+  <h3>Hero Build</h3>
+  <div id="heroDetails"></div>
+ </div>
+</div>
+
+<div id="gameViewport"></div>
+<div id="combatHint">WASD / drag not implemented — right-click to move • click enemy to target • 1–4 skills • Q queues current skill</div>
+<div id="targetFrame">
+ <div class="targetName" id="targetName">Enemy</div>
+ <div class="small" id="targetLevel">Level 1</div>
+ <div class="targetBar"><div class="targetFill" id="targetFill"></div></div>
+ <div id="targetHpText" class="small"></div>
+</div>
+<div id="abilityQueue"></div>
+
+<div id="levelUp">
+ <h2>LEVEL UP!</h2>
+ <div id="levelUpText"></div>
+ <button id="levelUpClose">Continue</button>
+</div>
+
+<div id="hud">
+ <div id="hudLeft"><canvas id="minimap"></canvas></div>
+ <div id="hudCenter">
+  <div id="unitPortrait">🧙</div>
+  <div id="unitStats">
+   <div class="unitName"><span id="heroName">Warden</span> <span class="levelBadge">Lv <span id="levelText">1</span></span></div>
+   <div class="bar"><div id="healthFill" class="fill"></div></div>
+   <div class="statLine">HP <span id="hpText"></span></div>
+   <div class="bar"><div id="manaFill" class="fill"></div></div>
+   <div class="statLine">Mana <span id="manaText"></span></div>
+   <div class="statLine">DMG <span id="damageText"></span> • Armor <span id="armorText"></span> • XP <span id="xpText"></span></div>
+  </div>
+ </div>
+ <div id="hudRight">
+  <div id="skillbar"></div>
+  <div id="combatLog"></div>
+ </div>
+</div>
+
+<script type="module">
+import * as THREE from "https://esm.sh/three@0.165.0";
+
+/* ---------- WORLD ---------- */
+const WORLD_HALF = 105;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x101014);
+scene.fog = new THREE.Fog(0x101014, 55, 190);
+
+const viewport = document.getElementById("gameViewport");
+const camera = new THREE.PerspectiveCamera(58, 1, .1, 1000);
+camera.position.set(42,34,42);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+viewport.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xaec7ff,0x47321f,.9));
+const sun = new THREE.DirectionalLight(0xfff0cf,1.8);
+sun.position.set(50,90,30); sun.castShadow=true; scene.add(sun);
+
+const terrain = new THREE.Mesh(
+ new THREE.PlaneGeometry(WORLD_HALF*2,WORLD_HALF*2,1,1),
+ new THREE.MeshStandardMaterial({color:0x355a2c,roughness:1})
+);
+terrain.rotation.x=-Math.PI/2; terrain.receiveShadow=true; terrain.userData.type="Ground";
+scene.add(terrain);
+
+function terrainHeight(x,z){
+ return Math.sin(x*.08)*1.5 + Math.cos(z*.075)*1.1 + Math.sin((x+z)*.035)*1.4;
+}
+const groundMesh = terrain;
+
+/* ---------- MATERIALS / PRIMITIVES ---------- */
+const MAT={
+ hero:new THREE.MeshStandardMaterial({color:0x6f8fe8,flatShading:true}),
+ armor:new THREE.MeshStandardMaterial({color:0x777f8d,flatShading:true,metalness:.25,roughness:.7}),
+ kobold:new THREE.MeshStandardMaterial({color:0xd59c72,flatShading:true}),
+ gnoll:new THREE.MeshStandardMaterial({color:0xc89b53,flatShading:true}),
+ goblin:new THREE.MeshStandardMaterial({color:0x6fa04e,flatShading:true}),
+ wolf:new THREE.MeshStandardMaterial({color:0x555555,flatShading:true}),
+ camp:new THREE.MeshStandardMaterial({color:0x5d3b20,flatShading:true}),
+ fire:new THREE.MeshStandardMaterial({color:0xff642e,emissive:0xff2500,emissiveIntensity:1.4}),
+ ice:new THREE.MeshStandardMaterial({color:0x72c9ff,emissive:0x164a70,emissiveIntensity:.6})
+};
+function box(w,h,d,mat){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.castShadow=true;m.receiveShadow=true;return m}
+function cone(r,h,s,mat){const m=new THREE.Mesh(new THREE.ConeGeometry(r,h,s),mat);m.castShadow=true;return m}
+
+/* ---------- HERO ---------- */
+const hero={
+ name:"Warden", level:1, xp:0, xpToNext:100,
+ hp:260,maxHp:260,mana:140,maxMana:140,
+ baseDamage:18, armor:6, speed:10, attackRange:3.2,
+ position:new THREE.Vector3(0,0,0), target:null, attackTimer:0,
+ buffs:{berserk:0,haste:0,lifesteal:0}, skillQueue:[]
+};
+const heroMesh=new THREE.Group();
+heroMesh.userData.type="Hero";
+const torso=box(1.45,2.2,1.05,MAT.hero);torso.position.y=2.5;heroMesh.add(torso);
+const head=cone(.62,.9,8,MAT.hero);head.position.y=4.15;heroMesh.add(head);
+const weapon=box(.22,2.2,.22,MAT.armor);weapon.position.set(.95,2.5,0);weapon.rotation.z=-.25;heroMesh.add(weapon);
+heroMesh.position.copy(hero.position);scene.add(heroMesh);
+
+/* ---------- ENEMIES / CAMPS ---------- */
+const enemies=[];
+const camps=[];
+let nextEnemyId=1;
+
+const enemyTypes={
+ gnoll:{name:"Gnoll Brute",hp:150,damage:12,armor:3,xp:55,speed:2.6,range:2.8,mat:MAT.gnoll},
+ goblin:{name:"Goblin Taskmaster",hp:105,damage:9,armor:1,xp:42,speed:3.4,range:8,mat:MAT.goblin},
+ kobold:{name:"Kobold Raider",hp:82,damage:7,armor:1,xp:32,speed:3.8,range:2.5,mat:MAT.kobold},
+ wolf:{name:"Dire Wolf",hp:120,damage:14,armor:2,xp:48,speed:5,range:2.3,mat:MAT.wolf}
+};
+function createEnemy(type,x,z,camp){
+ const t=enemyTypes[type], g=new THREE.Group();
+ const body=box(type==="gnoll"?1.8:1.25,type==="gnoll"?2.7:1.8,type==="wolf"?2.8:1,t.mat);
+ body.position.y=type==="gnoll"?2.1:1.5;g.add(body);
+ if(type!=="wolf"){const h=cone(.45,.7,7,t.mat);h.position.y=3.5;g.add(h)}
+ g.position.set(x,terrainHeight(x,z),z);
+ g.userData={type:"Enemy",enemyId:nextEnemyId++};
+ const e={id:g.userData.enemyId,type,name:t.name,level:Math.max(1,Math.floor(hero.level+(Math.random()*2-.8))),
+   hp:t.hp,maxHp:t.hp,damage:t.damage,armor:t.armor,xp:t.xp,speed:t.speed,range:t.range,
+   mesh:g,camp,target:null,attackTimer:Math.random(),alive:true};
+ e.maxHp*=1+(e.level-1)*.12;e.hp=e.maxHp;e.damage*=1+(e.level-1)*.1;
+ scene.add(g);enemies.push(e);
+ return e;
+}
+function createCamp(x,z,index){
+ const g=new THREE.Group();g.userData={type:"Enemy Camp",campId:index};
+ const base=box(8,.7,8,MAT.camp);base.position.y=.35;g.add(base);
+ const fire= new THREE.Mesh(new THREE.CylinderGeometry(.7,.7,.25,8),MAT.fire);fire.position.y=1.2;g.add(fire);
+ const tent=cone(3.8,5,4,MAT.camp);tent.position.y=3;tent.rotation.y=Math.PI/4;g.add(tent);
+ g.position.set(x,terrainHeight(x,z),z);scene.add(g);
+ const camp={id:index,mesh:g,x,z,cleared:false,enemies:[]};camps.push(camp);
+ return camp;
+}
+const campSpots=[[-55,-45],[52,-42],[-62,35],[55,38],[-20,68],[25,-70],[-80,-5],[82,4]];
+campSpots.forEach((p,i)=>{
+ const c=createCamp(p[0],p[1],i+1);
+ const types=[["gnoll","goblin","kobold"],["goblin","wolf","wolf"],["gnoll","gnoll","kobold"],["kobold","goblin","wolf"]];
+ const roster=types[i%types.length];
+ for(let j=0;j<roster.length;j++){
+  const a=j*Math.PI*2/roster.length;
+  c.enemies.push(createEnemy(roster[j],p[0]+Math.cos(a)*7,p[1]+Math.sin(a)*7,c));
+ }
+});
+
+/* ---------- COMBAT DATA ---------- */
+const skills={
+ berserk:{key:"1",icon:"⚔",name:"Berserk",cost:25,cd:10,range:0,
+  desc:"Gain +45% damage and +30% attack speed for 8 sec.",cast(){hero.buffs.berserk=8;log("Berserk! Damage and attack speed increased.","good")}},
+ fireball:{key:"2",icon:"🔥",name:"Fireball",cost:30,cd:4,range:28,
+  desc:"Hurl a fireball for 70 + 0.55×damage magical damage.",cast(){castProjectile("fireball",70+hero.baseDamage*.55)}},
+ haste:{key:"3",icon:"💨",name:"Haste",cost:20,cd:12,range:0,
+  desc:"Gain +75% movement speed and +35% attack speed for 7 sec.",cast(){hero.buffs.haste=7;log("Haste activated.","good")}},
+ lifesteal:{key:"4",icon:"🩸",name:"Lifesteal",cost:35,cd:14,range:0,
+  desc:"For 8 sec, attacks heal you for 35% of damage dealt.",cast(){hero.buffs.lifesteal=8;log("Lifesteal active.","good")}}
+};
+for(const s of Object.values(skills))s.cooldown=0;
+
+/* ---------- UI ---------- */
+const $=id=>document.getElementById(id);
+function log(text,cls=""){const d=document.createElement("div");d.className=cls;d.textContent=text;$("combatLog").prepend(d);while($("combatLog").children.length>7)$("combatLog").lastChild.remove()}
+function xpNeeded(){return Math.floor(100*Math.pow(1.35,hero.level-1))}
+function gainXP(amount){
+ hero.xp+=amount; log(`+${amount} XP`,"gold");
+ while(hero.xp>=xpNeeded()){hero.xp-=xpNeeded();hero.level++;hero.xpToNext=xpNeeded();
+  hero.maxHp+=32;hero.hp=hero.maxHp;hero.maxMana+=16;hero.mana=hero.maxMana;
+  hero.baseDamage+=4;hero.armor+=1;
+  $("levelUpText").textContent=`You are now level ${hero.level}. Max HP, mana, damage and armor increased.`;
+  $("levelUp").style.display="block"; log(`LEVEL ${hero.level}!`,"gold");
+ }
+ updateHUD();
+}
+function updateHUD(){
+ $("levelText").textContent=hero.level;
+ $("hpText").textContent=`${Math.ceil(hero.hp)} / ${hero.maxHp}`;
+ $("manaText").textContent=`${Math.ceil(hero.mana)} / ${hero.maxMana}`;
+ $("damageText").textContent=Math.round(hero.baseDamage*(hero.buffs.berserk>0?1.45:1));
+ $("armorText").textContent=hero.armor;
+ $("xpText").textContent=`${hero.xp} / ${xpNeeded()}`;
+ $("healthFill").style.width=`${Math.max(0,hero.hp/hero.maxHp*100)}%`;
+ $("manaFill").style.width=`${Math.max(0,hero.mana/hero.maxMana*100)}%`;
+ $("heroDetails").innerHTML=`<b>Level ${hero.level}</b><br>Damage: ${Math.round(hero.baseDamage*(hero.buffs.berserk>0?1.45:1))}<br>Armor: ${hero.armor}<br>Attack range: ${hero.attackRange}<br>XP: ${hero.xp}/${xpNeeded()}<br><br><span class="small">Berserk ${hero.buffs.berserk.toFixed(1)}s • Haste ${hero.buffs.haste.toFixed(1)}s • Lifesteal ${hero.buffs.lifesteal.toFixed(1)}s</span>`;
+ updateTargetUI();updateQueueUI();
+}
+function renderSkills(){
+ $("skillbar").innerHTML="";
+ Object.entries(skills).forEach(([id,s])=>{
+  const b=document.createElement("div");b.className="skill";b.id=`skill-${id}`;
+  b.innerHTML=`<span class="key">${s.key}</span>${s.icon}<span class="cd"></span>`;
+  b.title=`${s.name}: ${s.desc} Cost ${s.cost}`;
+  b.onclick=()=>requestSkill(id);
+  $("skillbar").appendChild(b);
+ });
+}
+function updateSkills(){
+ for(const [id,s] of Object.entries(skills)){
+  const b=$(`skill-${id}`);if(!b)continue;
+  b.classList.toggle("cooldown",s.cooldown>0);
+  b.classList.toggle("locked",hero.level<1);
+  b.querySelector(".cd").textContent=s.cooldown>0?s.cooldown.toFixed(1):"";
+ }
+}
+function updateQueueUI(){
+ $("abilityQueue").innerHTML=hero.skillQueue.map((id,i)=>`<div class="queueItem">${i+1}. ${skills[id].icon} ${skills[id].name}</div>`).join("");
+}
+function updateTargetUI(){
+ const e=hero.target;
+ if(!e||!e.alive){$("targetFrame").style.display="none";return}
+ $("targetFrame").style.display="block";$("targetName").textContent=e.name;
+ $("targetLevel").textContent=`Level ${e.level}`;
+ $("targetFill").style.width=`${Math.max(0,e.hp/e.maxHp*100)}%`;
+ $("targetHpText").textContent=`${Math.ceil(e.hp)} / ${Math.ceil(e.maxHp)} HP`;
+}
+renderSkills();
+
+/* ---------- SKILL / ATTACK SYSTEM ---------- */
+function requestSkill(id){
+ const s=skills[id];
+ if(s.cooldown>0)return log(`${s.name} is on cooldown.`,"bad");
+ if(hero.mana<s.cost)return log(`Not enough mana for ${s.name}.`,"bad");
+ if((id==="fireball")&&!hero.target)return log("Fireball requires a target.","bad");
+ hero.skillQueue.push(id);updateQueueUI();
+ log(`Queued ${s.name}.`,"gold");
+}
+function executeSkill(id){
+ const s=skills[id];if(s.cooldown>0||hero.mana<s.cost)return false;
+ if(id==="fireball" && (!hero.target||!hero.target.alive))return false;
+ hero.mana-=s.cost;s.cooldown=s.cd;s.cast();return true;
+}
+function processSkillQueue(){
+ if(!hero.skillQueue.length)return;
+ const id=hero.skillQueue[0];
+ if(executeSkill(id))hero.skillQueue.shift();
+ else if(skills[id].cooldown>0)return;
+ else hero.skillQueue.shift();
+ updateQueueUI();
+}
+function castProjectile(kind,damage){
+ const target=hero.target;if(!target)return;
+ const p=new THREE.Mesh(new THREE.SphereGeometry(.45,8,8),MAT.fire);
+ p.position.copy(heroMesh.position);p.position.y+=2.8;scene.add(p);
+ const start=p.position.clone(), end=target.mesh.position.clone();end.y+=1.5;
+ const startTime=performance.now(),duration=320;
+ function tick(){
+  const t=Math.min(1,(performance.now()-startTime)/duration);
+  p.position.lerpVectors(start,end,t);
+  if(t<1)requestAnimationFrame(tick);
+  else{scene.remove(p);dealDamage(target,damage,"Fireball")}
+ } tick();
+}
+function dealDamage(e,amount,source="Attack"){
+ if(!e||!e.alive)return;
+ const actual=Math.max(1,amount-e.armor*.35);
+ e.hp-=actual;log(`${source}: ${Math.round(actual)} damage to ${e.name}.`);
+ if(e.hp<=0)killEnemy(e);
+ updateTargetUI();
+}
+function killEnemy(e){
+ e.alive=false;scene.remove(e.mesh);gainXP(e.xp);
+ log(`${e.name} defeated.`,"good");
+ const c=e.camp;if(c)c.enemies=c.enemies.filter(x=>x!==e);
+ if(c&&c.enemies.every(x=>!x.alive)){c.cleared=true;c.mesh.children.forEach(o=>o.material?.emissive?.setHex?.(0));log(`Camp ${c.id} cleared!`,"gold")}
+ hero.target=null;updateTargetUI();
+}
+function performAttack(){
+ const e=hero.target;if(!e||!e.alive)return;
+ const dist=heroMesh.position.distanceTo(e.mesh.position);
+ if(dist>hero.attackRange){moveHeroToward(e.mesh.position,hero.attackRange-.5);return}
+ const mult=hero.buffs.berserk>0?1.45:1;
+ const dmg=(hero.baseDamage*(.9+Math.random()*.25))*mult;
+ dealDamage(e,dmg,"Attack");
+ if(hero.buffs.lifesteal>0){
+  const heal=dmg*.35;hero.hp=Math.min(hero.maxHp,hero.hp+heal);log(`Lifesteal heals ${Math.round(heal)}.`,"good")
+ }
+ hero.attackTimer=1/(hero.buffs.berserk>0?1.35:1);
+}
+
+/* ---------- MOVEMENT / TARGETING ---------- */
+function moveHeroToward(pos,stopDistance=0){
+ const dx=pos.x-heroMesh.position.x,dz=pos.z-heroMesh.position.z;
+ const d=Math.hypot(dx,dz);if(d<=stopDistance)return true;
+ const dt=.016, speed=hero.speed*(hero.buffs.haste>0?1.75:1);
+ const step=Math.min(d,speed*dt);
+ heroMesh.position.x+=dx/d*step;heroMesh.position.z+=dz/d*step;
+ heroMesh.position.y=terrainHeight(heroMesh.position.x,heroMesh.position.z);
+ hero.position.copy(heroMesh.position);heroMesh.rotation.y=Math.atan2(dx,dz);
+ return false;
+}
+function enemyAI(dt){
+ for(const e of enemies){
+  if(!e.alive)continue;
+  const d=e.mesh.position.distanceTo(heroMesh.position);
+  if(d<18){
+   if(d>e.range){moveEnemy(e,heroMesh.position,e.range-.2,dt)}
+   else{
+    e.attackTimer-=dt;
+    if(e.attackTimer<=0){
+     const actual=Math.max(1,e.damage-hero.armor*.25);
+     hero.hp-=actual;e.attackTimer=1.25;
+     log(`${e.name} hits you for ${Math.round(actual)}.`,"bad");
+     if(hero.hp<=0){hero.hp=hero.maxHp;heroMesh.position.set(0,terrainHeight(0,0),0);log("You were defeated and returned to the starting point.","bad")}
+    }
+   }
+  }
+ }
+}
+function moveEnemy(e,pos,stop,dt){
+ const dx=pos.x-e.mesh.position.x,dz=pos.z-e.mesh.position.z,d=Math.hypot(dx,dz);if(d<=stop)return;
+ const step=Math.min(d,e.speed*dt);e.mesh.position.x+=dx/d*step;e.mesh.position.z+=dz/d*step;e.mesh.position.y=terrainHeight(e.mesh.position.x,e.mesh.position.z);
+ e.mesh.rotation.y=Math.atan2(dx,dz);
+}
+
+/* ---------- INPUT ---------- */
+const raycaster=new THREE.Raycaster(),mouse=new THREE.Vector2();
+function raycast(clientX,clientY){
+ const r=renderer.domElement.getBoundingClientRect();
+ mouse.x=((clientX-r.left)/r.width)*2-1;mouse.y=-((clientY-r.top)/r.height)*2+1;
+ raycaster.setFromCamera(mouse,camera);
+ return raycaster.intersectObjects(scene.children,true);
+}
+renderer.domElement.addEventListener("contextmenu",e=>e.preventDefault());
+renderer.domElement.addEventListener("pointerdown",e=>{
+ const hits=raycast(e.clientX,e.clientY);if(!hits.length)return;
+ let obj=hits[0].object;while(obj.parent&&!obj.userData.type)obj=obj.parent;
+ if(e.button===2){
+  if(obj.userData.type==="Enemy"){
+   const target=enemies.find(x=>x.id===obj.userData.enemyId);if(target){hero.target=target;log(`Targeting ${target.name}.`,"gold")}
+  }else{
+   const p=hits[0].point;hero.target=null;hero.destination=p.clone();log("Moving.");
+  }
+  updateTargetUI();return;
+ }
+ if(e.button===0){
+  if(obj.userData.type==="Enemy"){
+   const target=enemies.find(x=>x.id===obj.userData.enemyId);if(target)hero.target=target;
+   $("selectedInfo").innerHTML=`<b>${target.name}</b><br>Level ${target.level}<br>HP ${Math.ceil(target.hp)}/${Math.ceil(target.maxHp)}<br>Damage ${Math.round(target.damage)}<br>XP ${target.xp}`;
+  }else if(obj.userData.type==="Enemy Camp"){
+   const c=camps.find(x=>x.id===obj.userData.campId);
+   $("selectedInfo").innerHTML=`<b>Enemy Camp ${c.id}</b><br>${c.cleared?"Cleared":"Hostile"}<br>Enemies remaining: ${c.enemies.filter(x=>x.alive).length}`;
+  }
+  updateTargetUI();
+ }
+});
+window.addEventListener("keydown",e=>{
+ const n={"1":"berserk","2":"fireball","3":"haste","4":"lifesteal"}[e.key];
+ if(n)requestSkill(n);
+ if(e.key.toLowerCase()==="q" && hero.skillQueue.length<5) requestSkill("fireball");
+});
+$("levelUpClose").onclick=()=>{$("levelUp").style.display="none"};
+$("startButton").onclick=()=>{
+ gameStarted=true;$("startButton").textContent="Game Running";$("startButton").style.background="linear-gradient(#2d7d32,#18451b)";
+ log("Game started. Enemy camps are active.","good");
+};
+
+/* ---------- MINIMAP ---------- */
+const mini=$("minimap"),ctx=mini.getContext("2d");
+function drawMinimap(){
+ ctx.fillStyle="#10200e";ctx.fillRect(0,0,mini.width,mini.height);
+ const sx=mini.width/(WORLD_HALF*2),sz=mini.height/(WORLD_HALF*2);
+ camps.forEach(c=>{ctx.fillStyle=c.cleared?"#777":"#c33";ctx.fillRect((c.x+WORLD_HALF)*sx-3,(c.z+WORLD_HALF)*sz-3,6,6)});
+ enemies.forEach(e=>{if(e.alive){ctx.fillStyle="#ff6b45";ctx.fillRect((e.mesh.position.x+WORLD_HALF)*sx-1,(e.mesh.position.z+WORLD_HALF)*sz-1,2,2)}});
+ ctx.fillStyle="#5fd5ff";ctx.fillRect((heroMesh.position.x+WORLD_HALF)*sx-3,(heroMesh.position.z+WORLD_HALF)*sz-3,6,6);
+}
+
+/* ---------- MENU ---------- */
+const menu=$("menu");
+menu.innerHTML=`
+ <div class="section"><h2>Warden Combat Prototype</h2><div class="small">Diablo / Guild Wars inspired action-RPG layer</div></div>
+ <div class="section"><h3>Combat</h3>
+  <button onclick="heroAttack()">Attack / Target</button>
+  <button onclick="clearQueue()">Clear Ability Queue</button>
+ </div>
+ <div class="section"><h3>Enemy Camps</h3><div class="small">8 camps are distributed across the island. Clear every camp to finish the combat loop.</div></div>
+ <div class="section"><h3>Skills</h3>
+  <button onclick="requestSkill('berserk')">1 — ⚔ Berserk</button>
+  <button onclick="requestSkill('fireball')">2 — 🔥 Fireball</button>
+  <button onclick="requestSkill('haste')">3 — 💨 Haste</button>
+  <button onclick="requestSkill('lifesteal')">4 — 🩸 Lifesteal</button>
+ </div>
+ <div class="section"><h3>Controls</h3><div class="small">Left click: select<br>Right click enemy: target<br>Right click ground: move<br>1–4: queue skills<br>Q: queue fireball</div></div>`;
+window.heroAttack=()=>{if(hero.target)performAttack();else log("Select an enemy first.","bad")};
+window.clearQueue=()=>{hero.skillQueue.length=0;updateQueueUI();log("Ability queue cleared.")};
+
+/* ---------- LOOP ---------- */
+let gameStarted=false,last=performance.now();
+function update(dt){
+ if(!gameStarted)return;
+ for(const s of Object.values(skills))s.cooldown=Math.max(0,s.cooldown-dt);
+ hero.buffs.berserk=Math.max(0,hero.buffs.berserk-dt);
+ hero.buffs.haste=Math.max(0,hero.buffs.haste-dt);
+ hero.buffs.lifesteal=Math.max(0,hero.buffs.lifesteal-dt);
+ hero.mana=Math.min(hero.maxMana,hero.mana+7*dt);
+
+ processSkillQueue();
+ if(hero.target&&hero.target.alive){
+  const d=heroMesh.position.distanceTo(hero.target.mesh.position);
+  if(d>hero.attackRange-.2)moveHeroToward(hero.target.mesh.position,hero.attackRange-.2);
+  else{hero.attackTimer-=dt;if(hero.attackTimer<=0)performAttack()}
+ }else if(hero.destination){if(moveHeroToward(hero.destination,.4))hero.destination=null}
+ enemyAI(dt);
+ updateHUD();updateSkills();drawMinimap();
+}
+function frame(now){
+ requestAnimationFrame(frame);const dt=Math.min(.05,(now-last)/1000);last=now;
+ update(dt);
+ camera.lookAt(heroMesh.position.x,0,heroMesh.position.z);
+ renderer.render(scene,camera);
+}
+function resize(){
+ const w=viewport.clientWidth,h=viewport.clientHeight;
+ camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);
+}
+window.addEventListener("resize",resize);resize();updateHUD();log("Select an enemy camp to begin.","gold");frame(performance.now());
+</script>
+</body>
+</html>
