@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>Standalone Three.js Platformer Controls + Live Player Upload</title>
+<style>
+  :root{color-scheme:dark}
+  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0e141b;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  canvas{display:block}
+  #topbar{position:fixed;z-index:20;left:0;right:0;top:0;height:58px;display:flex;align-items:center;gap:10px;padding:0 14px;background:rgba(10,14,20,.88);border-bottom:1px solid rgba(255,255,255,.12);backdrop-filter:blur(12px)}
+  #brand{font-weight:850;letter-spacing:.06em;font-size:13px;margin-right:auto;white-space:nowrap}
+  button,.button{appearance:none;border:1px solid rgba(255,255,255,.18);border-radius:9px;background:#232c38;color:#fff;padding:9px 12px;font:700 12px/1 system-ui;cursor:pointer;user-select:none}
+  button:hover,.button:hover{background:#2d3948}
+  button:active,.button:active{transform:translateY(1px)}
+  #folderInput{display:none}
+  #assetName{max-width:34vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#aab8c7}
+  #hud{position:fixed;z-index:10;inset:58px 0 0;pointer-events:none;color:#fff;text-shadow:0 2px 5px #000}
+  #status{position:absolute;right:16px;top:14px;text-align:right;font-size:13px}
+  #damage{font-size:28px;font-weight:900}
+  #state{font-size:12px;opacity:.85}
+  #assetStatus{font-size:11px;margin-top:5px;color:#bcd8ff;max-width:340px}
+  #help{position:absolute;left:16px;bottom:16px;line-height:1.55;font-size:13px;opacity:.92;background:rgba(0,0,0,.28);padding:9px 11px;border-radius:8px}
+  #center{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:11px;opacity:.2;letter-spacing:.08em}
+  #meter{display:inline-block;width:160px;height:8px;border:1px solid #fff;border-radius:8px;overflow:hidden;vertical-align:middle}
+  #meter i{display:block;height:100%;width:0;background:#ff8a32}
+  #dropOverlay{position:fixed;z-index:50;inset:72px 18px 18px;border:2px dashed rgba(255,255,255,.35);border-radius:16px;background:rgba(25,45,70,.72);display:none;place-items:center;color:#fff;font-weight:800;letter-spacing:.04em;pointer-events:none}
+  #errorBox{position:fixed;z-index:100;left:16px;right:16px;bottom:16px;max-height:38vh;overflow:auto;display:none;background:#3a1116;color:#ffd9dd;border:1px solid #a94a55;border-radius:10px;padding:12px;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap}
+  #posePanel{position:fixed;z-index:35;right:14px;top:72px;width:250px;display:none;background:rgba(10,14,20,.93);border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:10px;color:#fff;box-shadow:0 8px 28px rgba(0,0,0,.35)}
+  #posePanel h3{margin:0 0 7px;font-size:12px;letter-spacing:.05em}
+  #posePanel .small{font-size:11px;line-height:1.4;color:#b9c5d3;margin-bottom:8px}
+  #poseSelected{font:700 12px ui-monospace,SFMono-Regular,Consolas,monospace;color:#ffe08a;margin:5px 0 8px}
+  .poseGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+  .poseGrid button{padding:7px 4px;font-size:11px}
+  #poseValues{font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;color:#bcd8ff;margin:8px 0}
+  #posePanel .wide{width:100%;margin-top:6px}
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <div id="brand">PLATFORMER CONTROLS</div>
+    <label for="folderInput" class="button">Upload Player Folder</label>
+    <input id="folderInput" type="file" webkitdirectory directory multiple />
+    <button id="poseEditBtn" type="button">Pose Edit</button>
+    <button id="resetAssetBtn" type="button">Use Placeholder Cube</button>
+    <span id="assetName">Player: placeholder cube</span>
+  </div>
+
+  <div id="hud">
+    <div id="status">
+      <div id="damage">0%</div>
+      <div id="state">IDLE | GROUND</div>
+      <div>POWER <span id="meter"><i></i></span></div>
+      <div id="assetStatus">Ready — choose a folder containing FBX, GLB, or GLTF.</div>
+    </div>
+    <div id="center">DRAG-AND-DROP STANDALONE 3D PLATFORMER — V22 — REFERENCE-LOCKED HERO IDLE + POSE EDITOR</div>
+    <div id="help">
+      A / D — move &nbsp; W / SPACE — jump &nbsp; S — crouch / fast fall<br>
+      J — light attack &nbsp; K — heavy attack &nbsp; L — attack &nbsp; Q — dash/tackle<br>
+      SHIFT — dodge/juke &nbsp; LEDGE: W climb/roll, SPACE jump-off, S drop &nbsp; DOUBLE JUMP enabled &nbsp; R — reset
+    </div>
+  </div>
+  <div id="dropOverlay">DROP A PLAYER ASSET FOLDER</div>
+  <div id="errorBox"></div>
+  <div id="posePanel">
+    <h3>JOINT POSE EDITOR</h3>
+    <div class="small">Click a joint cube. Drag mouse: X/Y rotation. Hold <b>Shift</b> while dragging for Z. Buttons make precise 5° adjustments.</div>
+    <div id="poseSelected">Selected: none</div>
+    <div id="poseValues">X 0.0° &nbsp; Y 0.0° &nbsp; Z 0.0°</div>
+    <div class="poseGrid">
+      <button data-axis="x" data-sign="-1">X −</button>
+      <button data-axis="y" data-sign="-1">Y −</button>
+      <button data-axis="z" data-sign="-1">Z −</button>
+      <button data-axis="x" data-sign="1">X +</button>
+      <button data-axis="y" data-sign="1">Y +</button>
+      <button data-axis="z" data-sign="1">Z +</button>
+    </div>
+    <button id="poseReferencePreset" class="wide">Reapply V22 Reference Pose</button>
+    <button id="poseResetJoint" class="wide">Reset Selected Joint</button>
+    <button id="poseResetAll" class="wide">Reset All Manual Edits</button>
+    <button id="poseCopyJson" class="wide">Copy Pose JSON</button>
+  </div>
+
+  <!-- Classic scripts intentionally used instead of ES modules so this page can be opened directly with file:// -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <!-- FBXLoader r128 expects the global `fflate` object when decoding compressed binary FBX arrays. -->
+  <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script>
+  (() => {
+    'use strict';
+
+    const errorBox = document.getElementById('errorBox');
+    function showError(err){
+      console.error(err);
+      errorBox.style.display='block';
+      errorBox.textContent = 'Runtime error:\n' + String(err && (err.stack || err.message) || err);
+    }
+    window.addEventListener('error', e => showError(e.error || e.message));
+    window.addEventListener('unhandledrejection', e => showError(e.reason));
+
+    if(!window.THREE){
+      showError('Three.js failed to load from the CDN. This standalone file does not need a local server, but it does need internet access for the Three.js library.');
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // THREE.JS SCENE
+    // -------------------------------------------------------------------------
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x101820);
+    scene.fog = new THREE.Fog(0x101820, 32, 90);
+
+    const camera = new THREE.PerspectiveCamera(48, innerWidth/innerHeight, .05, 160);
+    camera.position.set(0,7.5,18);
+
+    let renderer;
+    try{
+      renderer = new THREE.WebGLRenderer({antialias:true});
+    }catch(err){ showError(err); return; }
+    renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    renderer.setSize(innerWidth,innerHeight);
+    renderer.shadowMap.enabled=true;
+    renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+    renderer.outputEncoding=THREE.sRGBEncoding;
+    document.body.insertBefore(renderer.domElement, document.body.firstChild);
+
+    scene.add(new THREE.HemisphereLight(0xa7c7ff,0x17110b,1.4));
+    const sun=new THREE.DirectionalLight(0xffd2a6,2.15);
+    sun.position.set(-10,18,12); sun.castShadow=true;
+    sun.shadow.mapSize.set(2048,2048);
+    sun.shadow.camera.left=-35; sun.shadow.camera.right=35;
+    sun.shadow.camera.top=25; sun.shadow.camera.bottom=-10;
+    scene.add(sun);
+
+    const clock=new THREE.Clock();
+    const keys=Object.create(null), pressed=Object.create(null);
+    addEventListener('keydown',e=>{
+      const k=e.key.toLowerCase();
+      if(!keys[k]) pressed[k]=true;
+      keys[k]=true;
+      if([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault();
+    });
+    addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+    function consume(k){ const v=!!pressed[k]; delete pressed[k]; return v; }
+
+    function mat(color,rough=.75,metal=0){return new THREE.MeshStandardMaterial({color,roughness:rough,metalness:metal});}
+    const M={
+      steel:mat(0x343a40,.62,.72), dark:mat(0x151a1e,.55,.82), copper:mat(0xb46a32,.58,.72),
+      orange:mat(0xe47c2b,.5,.55), glow:mat(0xffc65a,.3,.3), red:mat(0xa92d27,.62,.5),
+      floor:mat(0x383a3d,.92,.45), edge:mat(0x68645d,.7,.65), target:mat(0x3e9bff,.45,.25)
+    };
+    function box(w,h,d,m){const x=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);x.castShadow=x.receiveShadow=true;return x;}
+    function cyl(r,h,m,rad=12){const x=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,rad),m);x.castShadow=x.receiveShadow=true;return x;}
+
+    // -------------------------------------------------------------------------
+    // STAGE
+    // Platform y is the top surface. Player root y is the feet/contact point.
+    // -------------------------------------------------------------------------
+    const stage=new THREE.Group(); scene.add(stage);
+    function platform(x,y,z,w,d,h=.6){
+      const p=box(w,h,d,M.floor); p.position.set(x,y-h/2,z); stage.add(p);
+      const rim=box(w+.08,.10,d+.08,M.edge); rim.position.set(x,y+.02,z); stage.add(rim);
+      for(let i=-Math.floor(w/2);i<=Math.floor(w/2);i+=2){
+        const bolt=cyl(.055,.08,M.copper,8); bolt.rotation.x=Math.PI/2; bolt.position.set(x+i,y+.075,z-d/2+.18); stage.add(bolt);
+      }
+      return {x,y,z,w,d,h,top:y};
+    }
+    const platforms=[
+      platform(0,0,0,24,5,.7), platform(-7,3,0,6,4,.7), platform(7,3,0,6,4,.7),
+      platform(0,5.4,0,4.5,3,.7), platform(-11,5,0,3.2,3,.7), platform(11,5,0,3.2,3,.7)
+    ];
+
+    const back=box(52,15,1.2,M.dark); back.position.set(0,6,-5); stage.add(back);
+    function tower(x,h=10){
+      const t=box(3.5,h,3.5,M.dark); t.position.set(x,h/2-1,-4.2); stage.add(t);
+      const band=box(3.8,.35,3.8,M.copper); band.position.set(x,h*.55-1,-4.2); stage.add(band);
+      for(let y=2;y<h-1;y+=2.2){const l=box(.25,.18,.08,M.glow);l.position.set(x-1.7,y-1,-2.4);stage.add(l);}
+    }
+    tower(-14,10);tower(14,12);tower(0,8);
+    for(let x=-20;x<=20;x+=4){const p=cyl(.24,3,M.steel,12);p.rotation.z=Math.PI/2;p.position.set(x,2.2,-4.1);stage.add(p);}
+
+    // -------------------------------------------------------------------------
+    // LIVE PLAYER ASSET MANAGER
+    // -------------------------------------------------------------------------
+    class PlayerVisual {
+      constructor(parent){
+        this.parent=parent;
+        this.object=null;
+        this.mixer=null;
+        this.actions={};
+        this.currentAction=null;
+        this.urls=[];
+        this.placeholder=null;
+        this.proc=null;
+        this.usePlaceholder();
+      }
+
+      clear(){
+        if(this.object){
+          this.parent.remove(this.object);
+          this.object.traverse(o=>{
+            if(o.geometry) o.geometry.dispose && o.geometry.dispose();
+            if(o.material){
+              const mats=Array.isArray(o.material)?o.material:[o.material];
+              mats.forEach(m=>{
+                for(const k in m){const v=m[k]; if(v && v.isTexture && v.dispose) v.dispose();}
+                m.dispose && m.dispose();
+              });
+            }
+          });
+        }
+        this.object=null; this.mixer=null; this.actions={}; this.currentAction=null; this.proc=null;
+        this.urls.forEach(URL.revokeObjectURL); this.urls.length=0;
+      }
+
+      usePlaceholder(){
+        this.clear();
+        const g=new THREE.Group();
+        const cube=box(1.15,2.4,1.0,new THREE.MeshStandardMaterial({color:0xff8a32,roughness:.55,metalness:.15}));
+        cube.position.y=1.2; g.add(cube);
+        const eye=box(.56,.18,.04,new THREE.MeshBasicMaterial({color:0x9eeeff})); eye.position.set(0,1.55,.52); g.add(eye);
+        this.parent.add(g); this.object=g; this.placeholder=g;
+        document.getElementById('assetName').textContent='Player: placeholder cube';
+        document.getElementById('assetStatus').textContent='Ready — choose a folder containing FBX, GLB, or GLTF.';
+      }
+
+      _pathVariants(path){
+        const p=decodeURIComponent(String(path||'')).replace(/\\/g,'/').replace(/^\.\//,'');
+        const parts=p.split('/');
+        return [p,p.toLowerCase(),parts[parts.length-1],parts[parts.length-1].toLowerCase()];
+      }
+
+      _normAssetName(s){
+        return String(s||'').toLowerCase().replace(/\\/g,'/').split('/').pop()
+          .replace(/\.[^.]+$/,'').replace(/_(col|nor|rgh|mtl|spc|ao|nor_a|nor_b)$/,'')
+          .replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+      }
+
+      _pickColorRecord(materialName,colorRecords,rootLower){
+        const mn=this._normAssetName(materialName); let best=null,bestScore=-Infinity;
+        for(const rec of colorRecords){
+          const stem=this._normAssetName(rec.file.name); let score=0;
+          if(stem===mn) score+=10000;
+          if(mn&&stem&&(mn.includes(stem)||stem.includes(mn))) score+=2500+Math.min(mn.length,stem.length);
+          const mt=new Set(mn.split('_').filter(t=>t.length>1));
+          for(const t of stem.split('_').filter(t=>t.length>1)) if(mt.has(t)) score+=35+t.length;
+          const dir=rec.relLower.includes('/')?rec.relLower.slice(0,rec.relLower.lastIndexOf('/')+1):'';
+          if(dir===rootLower) score+=700; else if(dir.startsWith(rootLower)) score+=150;
+          if(score>bestScore){bestScore=score;best=rec;}
+        }
+        return bestScore>=120?best:null;
+      }
+
+      _autoUpright(root){
+        const candidates=[[0,0,0],[-Math.PI/2,0,0],[Math.PI/2,0,0],[0,0,-Math.PI/2],[0,0,Math.PI/2]];
+        let head=null,feet=[]; const hp=new THREE.Vector3(),fp=new THREE.Vector3();
+        root.traverse(o=>{const n=(o.name||'').toLowerCase();if(!head&&/(head|neck)/.test(n))head=o;if(/(foot|ankle|toe)/.test(n))feet.push(o);});
+        let best=null;
+        for(const c of candidates){
+          root.rotation.set(c[0],c[1],c[2]); root.updateMatrixWorld(true);
+          const bb=new THREE.Box3().setFromObject(root), size=new THREE.Vector3(); bb.getSize(size);
+          let score=size.y*2.4-Math.max(size.x,size.z);
+          if(head&&feet.length){head.getWorldPosition(hp);let fy=0;for(const f of feet){f.getWorldPosition(fp);fy+=fp.y;}fy/=feet.length;score+=hp.y>fy?1000:-1000;}
+          if(!best||score>best.score)best={score,c:c.slice()};
+        }
+        root.rotation.set(best.c[0],best.c[1],best.c[2]);root.updateMatrixWorld(true);return best;
+      }
+
+      async loadFolder(fileList){
+        const files=Array.from(fileList||[]);
+        if(!files.length) return;
+        const status=document.getElementById('assetStatus');
+        status.textContent='Indexing selected asset folder…';
+
+        const modelFiles=files.filter(f=>/\.(glb|gltf|fbx)$/i.test(f.name));
+        if(!modelFiles.length) throw new Error('No .glb, .gltf, or .fbx model was found in that folder.');
+
+        // Prefer GLB, then GLTF, then FBX because GLB is the most self-contained browser format.
+        const priority={glb:0,gltf:1,fbx:2};
+        modelFiles.sort((a,b)=>(priority[a.name.split('.').pop().toLowerCase()]??9)-(priority[b.name.split('.').pop().toLowerCase()]??9));
+        const modelFile=modelFiles[0];
+
+        const urlByPath=new Map();
+        const filesByBase=new Map();
+        const fileRecords=[];
+        for(const f of files){
+          const rel=(f.webkitRelativePath||f.name).replace(/\\/g,'/');
+          const url=URL.createObjectURL(f); this.urls.push(url);
+          const relLower=rel.toLowerCase();
+          urlByPath.set(rel,url);
+          urlByPath.set(relLower,url);
+          const base=f.name.toLowerCase();
+          const rec={file:f,rel,relLower,url,base};
+          fileRecords.push(rec);
+          if(!filesByBase.has(base)) filesByBase.set(base,[]);
+          filesByBase.get(base).push(rec);
+        }
+
+        const colorRecords=fileRecords.filter(rec=>/_col\.(png|jpg|jpeg|webp)$/i.test(rec.file.name));
+        const modelRel=(modelFile.webkitRelativePath||modelFile.name).replace(/\\/g,'/');
+        const rootDir=modelRel.includes('/')?modelRel.slice(0,modelRel.lastIndexOf('/')+1):'';
+        const rootLower=rootDir.toLowerCase();
+        const missingSidecars=new Set();
+
+        // When several costumes contain the same texture name, choose the copy nearest
+        // to the selected model. For Hero/brave.fbx this strongly prefers Hero/foo.png
+        // over Hero/Alternate/c01/foo.png, etc.
+        const bestBasenameMatch=(base)=>{
+          const arr=filesByBase.get(base.toLowerCase());
+          if(!arr||!arr.length) return null;
+          const score=(rec)=>{
+            const dir=rec.relLower.includes('/')?rec.relLower.slice(0,rec.relLower.lastIndexOf('/')+1):'';
+            if(dir===rootLower) return -100000;               // exact model directory
+            if(dir.startsWith(rootLower)) return dir.length-rootLower.length; // child folder
+            // Prefer fewer path components and shorter paths as a general fallback.
+            return 10000 + dir.split('/').filter(Boolean).length*100 + dir.length;
+          };
+          return arr.slice().sort((a,b)=>score(a)-score(b))[0].url;
+        };
+
+        const manager=new THREE.LoadingManager();
+        manager.setURLModifier=(url)=>{
+          if(/^blob:|^data:|^https?:/i.test(url)) return url;
+          let clean=decodeURIComponent(url).replace(/\\/g,'/').replace(/^\.\//,'');
+          const resolve=(base,rel)=>{
+            const stack=(base+rel).split('/'); const out=[];
+            for(const s of stack){if(!s||s==='.')continue;if(s==='..')out.pop();else out.push(s);}
+            return out.join('/');
+          };
+          const resolved=resolve(rootDir,clean);
+          const direct=[resolved,resolved.toLowerCase(),clean,clean.toLowerCase()];
+          for(const k of direct){if(urlByPath.has(k)) return urlByPath.get(k);}
+
+          // FBX exporters frequently preserve an obsolete source-tree path. Resolve its
+          // basename against the selected folder, preferring the selected FBX directory.
+          const base=clean.split('/').pop().toLowerCase();
+          const nearest=bestBasenameMatch(base);
+          if(nearest) return nearest;
+
+          missingSidecars.add(url);
+          console.warn('Asset sidecar not found in selected folder:',url);
+          return url;
+        };
+
+        const modelURL=URL.createObjectURL(modelFile); this.urls.push(modelURL);
+        const ext=modelFile.name.split('.').pop().toLowerCase();
+        status.textContent='Loading '+modelFile.name+'…';
+
+        let loadedRoot, clips=[];
+        if(ext==='fbx'){
+          if(!THREE.FBXLoader) throw new Error('FBXLoader failed to load from the CDN.');
+          if(typeof window.fflate === 'undefined') throw new Error('fflate failed to load from the CDN. FBX binary decompression is unavailable.');
+          const fbx=await new Promise((resolve,reject)=>new THREE.FBXLoader(manager).load(modelURL,resolve,undefined,reject));
+          loadedRoot=fbx; clips=fbx.animations||[];
+        }else{
+          if(!THREE.GLTFLoader) throw new Error('GLTFLoader failed to load from the CDN.');
+          const gltf=await new Promise((resolve,reject)=>new THREE.GLTFLoader(manager).load(modelURL,resolve,undefined,reject));
+          loadedRoot=gltf.scene; clips=gltf.animations||[];
+        }
+
+        // IMPORTANT: keep the newly loaded asset DETACHED while normalizing it.
+        // Box3.setFromObject() is world-space. If loadedRoot is already parented beneath
+        // hero.visualRoot, the player's gameplay position is baked into the bounds and
+        // subtracting the bounds center cancels that position. Normalize first, parent last.
+        const old=this.object;
+
+        let meshCount=0, materialCount=0, mappedCount=0, explicitColorMaps=0;
+        const textureLoader=new THREE.TextureLoader(manager);
+        const textureCache=new Map();
+        const loadColorTexture=(rec)=>{
+          if(!rec)return null;if(textureCache.has(rec.url))return textureCache.get(rec.url);
+          const t=textureLoader.load(rec.url);t.encoding=THREE.sRGBEncoding;t.flipY=true;
+          t.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());t.needsUpdate=true;
+          textureCache.set(rec.url,t);return t;
+        };
+
+        loadedRoot.traverse(o=>{
+          if(!(o.isMesh||o.isSkinnedMesh))return;
+          meshCount++;o.visible=true;o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;
+          const sourceMats=Array.isArray(o.material)?o.material:[o.material], repaired=[];
+          sourceMats.forEach((src,idx)=>{
+            if(!src)return;materialCount++;let map=src.map||null;if(map)mappedCount++;
+            const rec=this._pickColorRecord(src.name||o.name||'',colorRecords,rootLower);
+            if(rec){const explicit=loadColorTexture(rec);if(explicit){map=explicit;explicitColorMaps++;}}
+            if(map){map.encoding=THREE.sRGBEncoding;map.flipY=true;map.needsUpdate=true;}
+            const mat=new THREE.MeshBasicMaterial({name:(src.name||('material_'+idx))+'_visible',color:0xffffff,map:map,side:THREE.DoubleSide,transparent:false,opacity:1,depthTest:true,depthWrite:true,alphaTest:0,skinning:!!o.isSkinnedMesh});
+            mat.vertexColors=false;mat.fog=true; if(o.isSkinnedMesh){mat.skinning=true;} mat.needsUpdate=true; repaired.push(mat);
+          });
+          if(repaired.length)o.material=Array.isArray(o.material)?repaired:repaired[0];
+        });
+
+        const upright=this._autoUpright(loadedRoot);
+        loadedRoot.updateMatrixWorld(true);
+        let bb=new THREE.Box3().setFromObject(loadedRoot);
+        const height=Math.max(.001,bb.max.y-bb.min.y),scale=3.25/height;
+        loadedRoot.scale.multiplyScalar(scale);loadedRoot.updateMatrixWorld(true);
+        bb=new THREE.Box3().setFromObject(loadedRoot);
+        loadedRoot.position.y-=bb.min.y;
+        loadedRoot.position.x-=(bb.min.x+bb.max.x)*.5;
+        loadedRoot.position.z-=(bb.min.z+bb.max.z)*.5;
+        loadedRoot.updateMatrixWorld(true);
+
+        // Only now replace the previous visual. The normalized model's local origin is
+        // feet-centered at (0,0,0), and hero.visualRoot supplies the full gameplay transform.
+        // This guarantees an upload visually replaces the cube at its exact current position.
+        if(old) this.parent.remove(old);
+        this.object=loadedRoot;
+        this.parent.add(loadedRoot);
+        this.placeholder=null;
+        loadedRoot.updateMatrixWorld(true);
+
+        // Build a procedural bone driver from the uploaded skeleton. This runs even
+        // when the asset contains zero embedded animation clips.
+        this.proc=new ProceduralSkeletonAnimator(loadedRoot);
+        const deformCount=this.proc.deformBones?this.proc.deformBones.size:0;
+        const mappedRoleCount=Object.values(this.proc.bones||{}).filter(a=>Array.isArray(a)&&a.length).length;
+        const controlledBoneCount=Object.values(this.proc.bones||{}).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0);
+
+        this.mixer=clips.length?new THREE.AnimationMixer(loadedRoot):null;
+        this.actions={};
+        if(this.mixer){
+          clips.forEach(clip=>{
+            const name=(clip.name||'clip').toLowerCase();
+            this.actions[name]=this.mixer.clipAction(clip);
+          });
+          this.playBest('idle');
+        }
+
+        if(old){
+          old.traverse(o=>{ if(o.geometry&&o.geometry.dispose)o.geometry.dispose(); });
+        }
+        document.getElementById('assetName').textContent='Player: '+modelFile.name;
+        const missingText=missingSidecars.size?' — '+missingSidecars.size+' unresolved sidecar request(s)':'';
+        status.textContent='Loaded '+modelFile.name+' — '+meshCount+' meshes, '+explicitColorMaps+' explicit color maps, '+clips.length+' animation clip'+(clips.length===1?'':'s')+', deform bones '+deformCount+', mapped roles '+mappedRoleCount+', controlled bone instances '+controlledBoneCount+', upright '+upright.c.map(v=>Math.round(THREE.MathUtils.radToDeg(v))).join('/')+'°'+missingText+'.';
+      }
+
+      playBest(state){
+        if(!this.mixer) return;
+        const patterns={
+          idle:['idle','wait','stand'], run:['run','sprint','walk','move'], jump:['jump','air','fall'],
+          attack_light:['attack','slash','punch','jab'], attack_heavy:['heavy','smash','attack'], attack:['special','skill','magic','attack'], dash_tackle:['dash','tackle','charge'], dodge_juke:['dodge','roll','evade'], crouch:['crouch','duck'], grab_ledge:['ledge','hang'], ledge_climb:['climb','roll'], ledge_jump:['jump','ledge']
+        };
+        const names=Object.keys(this.actions);
+        const wants=patterns[state]||patterns.idle;
+        let name=null;
+        for(const p of wants){name=names.find(n=>n.includes(p));if(name)break;}
+        if(!name && state==='idle') name=names[0];
+        if(!name) return;
+        const next=this.actions[name];
+        if(next===this.currentAction) return;
+        next.reset().fadeIn(.14).play();
+        if(this.currentAction) this.currentAction.fadeOut(.14);
+        this.currentAction=next;
+      }
+      update(dt,state='idle',velocity=new THREE.Vector3(),grounded=true){if(this.mixer)this.mixer.update(dt);if(this.proc)this.proc.update(dt,state,velocity,grounded);}
+    }
+
+    // -------------------------------------------------------------------------
+    // PROCEDURAL SKELETON ANIMATOR
+    // Works with uploaded rigs even when the FBX contains zero animation clips.
+    // Bone names are matched heuristically; unknown bones simply remain at rest.
+    // -------------------------------------------------------------------------
+    class ProceduralSkeletonAnimator {
+      constructor(root){
+        this.root=root; this.time=0; this.state='idle'; this.stateTime=0;
+        this.rest=new Map(); this.meta=new Map(); this.deformBones=new Set(); this.bones={};
+        this._discover(); this._captureRigMeta();
+
+        // V16 animation-space calibration.
+        // The FBX root is already normalized so its visual origin is at the player's
+        // controller feet. Save that root transform and the resting foot-bone height.
+        // Grounded poses can then bend the rig without visually lifting/sinking the player.
+        this.assetBasePosition=this.root.position.clone();
+        this._footScratch=new THREE.Vector3();
+        this._footLocalScratch=new THREE.Vector3();
+        this.restFootY=this._measureFootYInVisualFrame();
+        this.footLockY=0;
+        // Additive manual joint rotations from the live pose editor.
+        // Stored by anatomical ROLE so all duplicate deform-bone instances move together.
+        this.manualOffsets={};
+      }
+      _norm(name){return String(name||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+      _discover(){
+        this.root.traverse(o=>{if(o.isSkinnedMesh&&o.skeleton&&Array.isArray(o.skeleton.bones)) for(const b of o.skeleton.bones) if(b&&b.isBone)this.deformBones.add(b);});
+        if(!this.deformBones.size)this.root.traverse(o=>{if(o.isBone)this.deformBones.add(o);});
+        const all=[...this.deformBones]; for(const b of all)this.rest.set(b,{q:b.quaternion.clone(),p:b.position.clone(),s:b.scale.clone()});
+        const group=(names,rx=[])=>{const wanted=new Set(names.map(n=>this._norm(n)));let hits=all.filter(b=>wanted.has(this._norm(b.name)));if(!hits.length)hits=all.filter(b=>rx.some(r=>r.test(this._norm(b.name))));return [...new Set(hits)];};
+        this.bones.hips=group(['UHIp','UHIP','Hips','Pelvis','Root'],[/hip/,/pelvis/]);
+        this.bones.spine=group(['Waist','Spine','Spine1'],[/waist/,/^spine1?$/]);
+        this.bones.chest=group(['Bust','Chest','Spine2','UpperChest'],[/bust/,/chest/,/spine2/]);
+        this.bones.neck=group(['Neck'],[/^neck$/]); this.bones.head=group(['Head'],[/^head$/]);
+        this.bones.shoulderL=group(['ShoulderL','ClavicleL'],[/(shoulder|clavicle)l$/]); this.bones.shoulderR=group(['ShoulderR','ClavicleR'],[/(shoulder|clavicle)r$/]);
+        this.bones.upperArmL=group(['ArmL','UpperArmL','LeftArm'],[/(upperarm|arm)l$/]); this.bones.upperArmR=group(['ArmR','UpperArmR','RightArm'],[/(upperarm|arm)r$/]);
+        // Avoid claiming HandL/HandR as forearms when possible. This prevents one bone from being driven twice.
+        this.bones.foreArmL=group(['ForeArmL','LowerArmL','ElbowL'],[/(forearm|lowerarm|elbow)l$/]); this.bones.foreArmR=group(['ForeArmR','LowerArmR','ElbowR'],[/(forearm|lowerarm|elbow)r$/]);
+        this.bones.handL=group(['HandL','LeftHand'],[/handl$/]); this.bones.handR=group(['HandR','RightHand'],[/handr$/]);
+        this.bones.thighL=group(['LegL','UpLegL','ThighL'],[/(upleg|thigh|leg)l$/]); this.bones.thighR=group(['LegR','UpLegR','ThighR'],[/(upleg|thigh|leg)r$/]);
+        this.bones.shinL=group(['KneeL','LowerLegL','ShinL'],[/(knee|lowerleg|shin|calf)l$/]); this.bones.shinR=group(['KneeR','LowerLegR','ShinR'],[/(knee|lowerleg|shin|calf)r$/]);
+        this.bones.footL=group(['FootL','LeftFoot'],[/footl$/]); this.bones.footR=group(['FootR','RightFoot'],[/footr$/]);
+        // If forearm names are absent, Hand is the next link in this particular game rig; use it as forearm but not as hand too.
+        if(!this.bones.foreArmL.length){this.bones.foreArmL=this.bones.handL;this.bones.handL=[];}
+        if(!this.bones.foreArmR.length){this.bones.foreArmR=this.bones.handR;this.bones.handR=[];}
+        const claimed=new Set();
+        for(const role of ['head','neck']) this.bones[role]=this.bones[role].filter(b=>{if(claimed.has(b))return false;claimed.add(b);return true;});
+        console.log('V13 procedural role groups',Object.fromEntries(Object.entries(this.bones).map(([k,v])=>[k,v.map(b=>b.name)])));
+      }
+      _firstBoneChild(bone){if(!bone)return null;for(const c of bone.children)if(c.isBone&&c.position.lengthSq()>1e-10)return c;let f=null;bone.traverse(c=>{if(!f&&c!==bone&&c.isBone&&c.position.lengthSq()>1e-10)f=c;});return f;}
+      _captureRigMeta(){this.root.updateMatrixWorld(true);for(const bone of this.deformBones){const r=this.rest.get(bone),c=this._firstBoneChild(bone);let restDirParent=null;if(c&&r&&c.position.lengthSq()>1e-10)restDirParent=c.position.clone().normalize().applyQuaternion(r.q).normalize();this.meta.set(bone,{child:c,restDirParent});}}
+      _footBones(){
+        const out=[],seen=new Set();
+        for(const role of ['footL','footR']){
+          for(const b of this.bones[role]||[]){
+            if(b&&!seen.has(b)){seen.add(b);out.push(b);}
+          }
+        }
+        return out;
+      }
+      _measureFootYInVisualFrame(){
+        const feet=this._footBones();
+        if(!feet.length)return 0;
+        const frame=this.root.parent||this.root;
+        frame.updateMatrixWorld(true);
+        const inv=frame.matrixWorld.clone().invert();
+        let minY=Infinity;
+        for(const b of feet){
+          b.updateWorldMatrix(true,false);
+          b.getWorldPosition(this._footScratch);
+          this._footLocalScratch.copy(this._footScratch).applyMatrix4(inv);
+          minY=Math.min(minY,this._footLocalScratch.y);
+        }
+        return Number.isFinite(minY)?minY:0;
+      }
+      _applyGroundFootLock(dt,state,grounded){
+        // Only lock planted poses. Airborne/ledge/dodge states intentionally move feet.
+        const lock=grounded&&(state==='idle'||state==='crouch');
+        const target=lock?(this.restFootY-this._measureFootYInVisualFrame()):0;
+        this.footLockY=THREE.MathUtils.damp(this.footLockY,target,28,dt);
+        this.root.position.y=this.assetBasePosition.y+this.footLockY;
+        this.root.updateMatrixWorld(true);
+      }
+      setState(s){if(this.state!==s){this.state=s;this.stateTime=0;}}
+      getManualOffset(role){
+        if(!this.manualOffsets[role]) this.manualOffsets[role]=new THREE.Euler(0,0,0,'XYZ');
+        return this.manualOffsets[role];
+      }
+      setManualOffset(role,x,y,z){
+        const e=this.getManualOffset(role);
+        e.set(x,y,z,'XYZ');
+      }
+      resetManualOffset(role){
+        if(this.manualOffsets[role]) this.manualOffsets[role].set(0,0,0,'XYZ');
+      }
+      resetManualOffsets(){
+        for(const e of Object.values(this.manualOffsets)) e.set(0,0,0,'XYZ');
+      }
+      manualPoseJSON(){
+        const out={};
+        for(const [role,e] of Object.entries(this.manualOffsets)){
+          if(Math.abs(e.x)+Math.abs(e.y)+Math.abs(e.z)>1e-6){
+            out[role]={
+              x:+THREE.MathUtils.radToDeg(e.x).toFixed(2),
+              y:+THREE.MathUtils.radToDeg(e.y).toFixed(2),
+              z:+THREE.MathUtils.radToDeg(e.z).toFixed(2)
+            };
+          }
+        }
+        return out;
+      }
+      _applyManualOffsets(){
+        for(const [role,e] of Object.entries(this.manualOffsets)){
+          if(!e || (Math.abs(e.x)+Math.abs(e.y)+Math.abs(e.z)<1e-8)) continue;
+          const q=new THREE.Quaternion().setFromEuler(e);
+          this._forRole(role,b=>{
+            // Apply on top of the current procedural pose instead of rebuilding from rest.
+            b.quaternion.multiply(q);
+            b.updateMatrix();
+          });
+        }
+      }
+      _forRole(role,fn){for(const b of this.bones[role]||[])fn(b);}
+      _restore(k){
+        // Rotation blends can be soft, but bone POSITION must stay on the imported bind
+        // locations unless a state explicitly opts in.  Moving every duplicated UHIp/
+        // pelvis instance was able to leave pieces of the multipart FBX below the
+        // controller even after the state returned to idle.
+        for(const[b,r]of this.rest){
+          b.quaternion.slerp(r.q,k);
+          b.position.copy(r.p);
+          b.scale.copy(r.s);
+        }
+      }
+      _eulerBone(b,rx=0,ry=0,rz=0,s=16,dt=.016){const r=this.rest.get(b);if(!r)return;const q=r.q.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rx,ry,rz,'XYZ')));b.quaternion.slerp(q,1-Math.exp(-s*dt));}
+      _eulerRole(role,rx=0,ry=0,rz=0,s=16,dt=.016){this._forRole(role,b=>this._eulerBone(b,rx,ry,rz,s,dt));}
+      _offsetRole(role,x=0,y=0,z=0,s=14,dt=.016){this._forRole(role,b=>{const r=this.rest.get(b);if(r)b.position.lerp(r.p.clone().add(new THREE.Vector3(x,y,z)),1-Math.exp(-s*dt));});}
+      _aimBone(b,d,s=22,dt=.016){if(!b||!b.parent||!d||d.lengthSq()<1e-10)return;const r=this.rest.get(b),m=this.meta.get(b);if(!r||!m||!m.restDirParent)return;const frame=this.root.parent||this.root;frame.updateMatrixWorld(true);const world=d.clone().normalize().transformDirection(frame.matrixWorld).normalize();b.parent.updateWorldMatrix(true,false);const local=world.clone().transformDirection(b.parent.matrixWorld.clone().invert()).normalize();const target=new THREE.Quaternion().setFromUnitVectors(m.restDirParent,local).multiply(r.q.clone());b.quaternion.slerp(target,1-Math.exp(-s*dt));b.updateMatrix();}
+      _aimRole(role,d,s=22,dt=.016){this._forRole(role,b=>this._aimBone(b,d,s,dt));}
+      _phase(duration){return THREE.MathUtils.clamp(this.stateTime/duration,0,1);}
+      _idle(dt){
+        // V22: reference-locked standing silhouette.
+        //
+        // Visual targets from the supplied SSBU frame:
+        // - broad but relaxed stance
+        // - pelvis subtly loaded toward sword-side leg
+        // - shield-side knee relaxed
+        // - sword arm long and low, sword descending diagonally outward
+        // - shield held vertically beside the ribs, not across the chest
+        // - shoulders quiet / torso tall
+        // - head turned strongly toward shield side with a small downward pitch
+        //
+        // Keep the idle motion extremely small: the REFERENCE POSE is the animation root.
+        const t=this.time;
+        const breathe=Math.sin(t*.82);
+        const micro=Math.sin(t*.47+1.1);
+
+        // Core / weight distribution.
+        this._eulerRole('hips',
+          .008*breathe,
+          -.030,
+          .050 + .006*micro,
+          48,dt);
+
+        this._eulerRole('spine',
+          -.012 + .006*breathe,
+          -.012,
+          -.022,
+          48,dt);
+
+        this._eulerRole('chest',
+          .010 + .005*breathe,
+          .060,
+          .018,
+          48,dt);
+
+        // Head/neck: unmistakable reference look toward shield hand.
+        this._eulerRole('neck',
+          -.070 + .006*micro,
+          .545,
+          -.035,
+          52,dt);
+
+        // SWORD SIDE — anatomical right / screen-left.
+        // Shoulder remains low. Arm hangs almost straight with a small outward flare.
+        this._aimRole('shoulderR',
+          new THREE.Vector3(.185,-.976,.115),112,dt);
+        this._aimRole('upperArmR',
+          new THREE.Vector3(.205,-.974,.095),116,dt);
+        this._aimRole('foreArmR',
+          new THREE.Vector3(.150,-.985,.080),120,dt);
+
+        // Wrist establishes the downward/outward sword line.
+        this._eulerRole('handR',
+          -.31,
+          -.19,
+          .96,
+          72,dt);
+
+        // SHIELD SIDE — anatomical left / screen-right.
+        // Upper arm hangs down/out; elbow bends so forearm rises toward lower ribs.
+        this._aimRole('shoulderL',
+          new THREE.Vector3(-.175,-.958,.228),112,dt);
+        this._aimRole('upperArmL',
+          new THREE.Vector3(-.235,-.875,.425),118,dt);
+        this._aimRole('foreArmL',
+          new THREE.Vector3(.405,.115,.907),124,dt);
+
+        // Hand keeps shield upright and just outside torso.
+        this._eulerRole('handL',
+          -.18,
+          -.20,
+          -.31,
+          72,dt);
+
+        // LEGS — asymmetric stance rather than mirrored V stance.
+        // Sword-side foot (R) is slightly farther outward and carries more weight.
+        this._aimRole('thighR',
+          new THREE.Vector3(.285,-.955,.082),108,dt);
+        this._aimRole('shinR',
+          new THREE.Vector3(.040,-.997,.066),108,dt);
+        this._aimRole('footR',
+          new THREE.Vector3(.205,-.972,.112),104,dt);
+
+        // Shield-side leg is a touch softer and less far out.
+        this._aimRole('thighL',
+          new THREE.Vector3(-.235,-.968,.086),108,dt);
+        this._aimRole('shinL',
+          new THREE.Vector3(-.035,-.996,.082),108,dt);
+        this._aimRole('footL',
+          new THREE.Vector3(-.155,-.981,.116),104,dt);
+      }
+      _run(dt,v){const sp=THREE.MathUtils.clamp(Math.abs(v.x)/6.5,.3,1.35),t=this.time*(9.5+sp*3),w=Math.sin(t),c=Math.cos(t),ll=Math.max(0,w),rl=Math.max(0,-w);this._aimRole('shoulderL',new THREE.Vector3(-.30,-.90,.12),36,dt);this._aimRole('shoulderR',new THREE.Vector3(.30,-.90,.12),36,dt);this._aimRole('upperArmL',new THREE.Vector3(-.18,-.70,-.68*w),44,dt);this._aimRole('upperArmR',new THREE.Vector3(.18,-.70,.68*w),44,dt);this._aimRole('foreArmL',new THREE.Vector3(-.08,-.50,-.68*w+.20),44,dt);this._aimRole('foreArmR',new THREE.Vector3(.08,-.50,.68*w+.20),44,dt);this._aimRole('thighL',new THREE.Vector3(-.08,-.68,.72*w),44,dt);this._aimRole('thighR',new THREE.Vector3(.08,-.68,-.72*w),44,dt);this._aimRole('shinL',new THREE.Vector3(-.03,-.82,.52*ll-.12),44,dt);this._aimRole('shinR',new THREE.Vector3(.03,-.82,.52*rl-.12),44,dt);this._eulerRole('spine',-.10,.07*c,-v.x*.014,28,dt);this._eulerRole('chest',.04,-.09*c,v.x*.010,28,dt);this._offsetRole('hips',0,.045*Math.abs(c),0,28,dt);}
+      _crouch(dt){
+        // V16 compact squat. Previous targets folded one knee too high and could
+        // visually lift the character. Use moderate, mirrored leg bends and let
+        // the post-pose foot-lock keep the soles on the controller ground plane.
+        this._aimRole('shoulderL',new THREE.Vector3(-.24,-.90,.36),48,dt);
+        this._aimRole('shoulderR',new THREE.Vector3( .24,-.90,.36),48,dt);
+        this._aimRole('upperArmL',new THREE.Vector3(-.18,-.78,.60),50,dt);
+        this._aimRole('upperArmR',new THREE.Vector3( .18,-.78,.60),50,dt);
+        this._aimRole('foreArmL',new THREE.Vector3(-.08,-.55,.83),50,dt);
+        this._aimRole('foreArmR',new THREE.Vector3( .08,-.55,.83),50,dt);
+
+        // Both thighs move forward by the same amount; both shins fold backward
+        // by the same amount. X signs only preserve left/right separation.
+        this._aimRole('thighL',new THREE.Vector3(-.16,-.72,.67),56,dt);
+        this._aimRole('thighR',new THREE.Vector3( .16,-.72,.67),56,dt);
+        this._aimRole('shinL',new THREE.Vector3(-.08,-.76,-.64),56,dt);
+        this._aimRole('shinR',new THREE.Vector3( .08,-.76,-.64),56,dt);
+        this._aimRole('footL',new THREE.Vector3(-.05,-.998,.035),52,dt);
+        this._aimRole('footR',new THREE.Vector3( .05,-.998,.035),52,dt);
+
+        // Lower the pelvis enough to read as a squat, but not so far that the
+        // multipart FBX folds into itself. Foot lock compensates the visual height.
+        this._offsetRole('hips',0,-.30,0,48,dt);
+        this._eulerRole('spine',.16,0,0,38,dt);
+        this._eulerRole('chest',-.055,0,0,38,dt);
+      }
+      _jump(dt,v){const rise=v.y>=0;this._aimRole('upperArmL',new THREE.Vector3(-.34,rise?.52:.18,.72),38,dt);this._aimRole('upperArmR',new THREE.Vector3(.34,rise?.52:.18,.72),38,dt);this._aimRole('foreArmL',new THREE.Vector3(-.12,.30,.90),38,dt);this._aimRole('foreArmR',new THREE.Vector3(.12,.30,.90),38,dt);this._aimRole('thighL',new THREE.Vector3(-.18,-.45,.78),38,dt);this._aimRole('thighR',new THREE.Vector3(.18,-.62,.58),38,dt);this._aimRole('shinL',new THREE.Vector3(-.06,-.45,-.74),38,dt);this._aimRole('shinR',new THREE.Vector3(.06,-.58,-.58),38,dt);this._eulerRole('spine',rise?-.14:.14,0,0,28,dt);}
+      _dash(dt){const u=this._phase(.34),pulse=Math.sin(u*Math.PI);this._aimRole('upperArmL',new THREE.Vector3(-.12,-.10,.99),48,dt);this._aimRole('upperArmR',new THREE.Vector3(.12,-.10,.99),48,dt);this._aimRole('foreArmL',new THREE.Vector3(-.06,-.04,.99),48,dt);this._aimRole('foreArmR',new THREE.Vector3(.06,-.04,.99),48,dt);this._aimRole('thighL',new THREE.Vector3(-.08,-.78,.52),42,dt);this._aimRole('thighR',new THREE.Vector3(.08,-.78,-.52),42,dt);this._eulerRole('spine',-.52,0,0,42,dt);this._eulerRole('chest',-.20,0,0,42,dt);this._offsetRole('hips',0,-.08*pulse,.12*pulse,36,dt);}
+      _dodge(dt){const u=this._phase(.44),spin=Math.sin(u*Math.PI);this._aimRole('upperArmL',new THREE.Vector3(-.60,-.55,.58),40,dt);this._aimRole('upperArmR',new THREE.Vector3(.60,-.55,-.58),40,dt);this._aimRole('thighL',new THREE.Vector3(-.20,-.52,.78),40,dt);this._aimRole('thighR',new THREE.Vector3(.20,-.52,-.78),40,dt);this._eulerRole('spine',.05,1.25*spin,.28*spin,40,dt);this._eulerRole('chest',0,1.55*spin,-.22*spin,40,dt);}
+      _light(dt){const u=this._phase(.28),strike=Math.sin(Math.min(1,u)*Math.PI);this._aimRole('upperArmR',new THREE.Vector3(.12,-.15,.99),52,dt);this._aimRole('foreArmR',new THREE.Vector3(.04,-.04,.99),52,dt);this._aimRole('upperArmL',new THREE.Vector3(-.22,-.90,.35),42,dt);this._eulerRole('chest',0,-.55+.95*strike,0,46,dt);this._eulerRole('spine',-.06,-.22+.42*strike,0,42,dt);}
+      _heavy(dt){const u=this._phase(.48),wind=THREE.MathUtils.clamp(u/.42,0,1),hit=THREE.MathUtils.clamp((u-.38)/.38,0,1);this._aimRole('upperArmR',new THREE.Vector3(.35,.55,-.70+1.55*hit),50,dt);this._aimRole('foreArmR',new THREE.Vector3(.12,.70,-.65+1.55*hit),50,dt);this._aimRole('upperArmL',new THREE.Vector3(-.25,-.75,.52),42,dt);this._eulerRole('spine',-.12,-.70*wind+1.20*hit,0,46,dt);this._eulerRole('chest',0,-1.0*wind+1.70*hit,0,50,dt);}
+      _attack(dt){const u=this._phase(.62),s=Math.sin(u*Math.PI);this._aimRole('upperArmL',new THREE.Vector3(-.82,.15,.54),46,dt);this._aimRole('upperArmR',new THREE.Vector3(.82,.15,.54),46,dt);this._aimRole('foreArmL',new THREE.Vector3(-.92,.02,.34),46,dt);this._aimRole('foreArmR',new THREE.Vector3(.92,.02,.34),46,dt);this._eulerRole('spine',-.08,1.15*s,0,44,dt);this._eulerRole('chest',0,1.45*s,0,44,dt);}
+      _ledge(dt){const sway=Math.sin(this.time*2.8)*.04;this._aimRole('upperArmL',new THREE.Vector3(-.24,.96,.12),50,dt);this._aimRole('upperArmR',new THREE.Vector3(.24,.96,.12),50,dt);this._aimRole('foreArmL',new THREE.Vector3(-.08,.99,.05),50,dt);this._aimRole('foreArmR',new THREE.Vector3(.08,.99,.05),50,dt);this._aimRole('thighL',new THREE.Vector3(-.18,-.48,.72+sway),42,dt);this._aimRole('thighR',new THREE.Vector3(.18,-.48,.62-sway),42,dt);this._aimRole('shinL',new THREE.Vector3(-.06,-.42,-.75),42,dt);this._aimRole('shinR',new THREE.Vector3(.06,-.45,-.70),42,dt);this._eulerRole('spine',.20,0,0,38,dt);}
+      _ledgeClimb(dt){const u=this._phase(.62);this._aimRole('upperArmL',new THREE.Vector3(-.22,.90-.90*u,.34),46,dt);this._aimRole('upperArmR',new THREE.Vector3(.22,.90-.90*u,.34),46,dt);this._aimRole('thighL',new THREE.Vector3(-.24,-.35,.82-.55*u),42,dt);this._aimRole('thighR',new THREE.Vector3(.24,-.42,.70-.45*u),42,dt);this._eulerRole('spine',.30-.55*u,0,.25*Math.sin(u*Math.PI),42,dt);}
+      update(dt,state,velocity,grounded){
+        this.setState(state);this.time+=dt;this.stateTime+=dt;
+        // Begin every frame at the normalized visual-root transform so pose-specific
+        // ground compensation cannot accumulate from one state into the next.
+        this.root.position.copy(this.assetBasePosition);
+        this._restore(1-Math.exp(-1.6*dt));
+        switch(state){
+          case'run':this._run(dt,velocity);break;
+          case'crouch':this._crouch(dt);break;
+          case'jump':case'ledge_jump':this._jump(dt,velocity);break;
+          case'dash_tackle':this._dash(dt);break;
+          case'dodge_juke':this._dodge(dt);break;
+          case'attack_light':this._light(dt);break;
+          case'attack_heavy':this._heavy(dt);break;
+          case'attack':case'special':this._attack(dt);break;
+          case'grab_ledge':this._ledge(dt);break;
+          case'ledge_climb':this._ledgeClimb(dt);break;
+          default:this._idle(dt);break;
+        }
+        // User-authored pose corrections are always additive to the procedural state.
+        this._applyManualOffsets();
+        this.root.updateMatrixWorld(true);
+        const sk=new Set();
+        this.root.traverse(o=>{if(o.isSkinnedMesh&&o.skeleton&&!sk.has(o.skeleton)){sk.add(o.skeleton);o.skeleton.update();}});
+        this._applyGroundFootLock(dt,state,grounded);
+        // Skeleton matrices depend on the root/world transform too.
+        for(const s of sk)s.update();
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // PLAYER CONTROLLER
+    // -------------------------------------------------------------------------
+    class Hero{
+      constructor(){
+        this.root=new THREE.Group(); scene.add(this.root); this.root.position.set(-7,3,0);
+        this.visualRoot=new THREE.Group(); this.root.add(this.visualRoot);
+        this.visual=new PlayerVisual(this.visualRoot);
+        this.velocity=new THREE.Vector3(); this.grounded=false; this.canDoubleJump=true;
+        this.coyote=.12; this.jumpBuffer=0; this.damage=0; this.state='idle';
+        this.attackTimer=0; this.attackType=''; this.attackHit=false; this.invuln=0; this.dodgeTimer=0;
+        this.facing=1; this.specialCooldown=0; this.previousY=this.root.position.y;
+        this.dashTimer=0; this.jukeTimer=0; this.ledgeGrab=null; this.ledgeCooldown=0; this.jukeStartZ=0;
+        this.ledgeClimb=null; this.ledgeJumpTimer=0; this.jumpCount=0; this.maxJumps=2;
+      }
+      setState(s){if(this.state!==s){this.state=s;this.visual.playBest(s);}}
+      startAttack(type){
+        if(this.attackTimer>0||this.dodgeTimer>0)return;
+        this.attackType=type; this.attackTimer=type==='light'?.28:type==='heavy'?.48:.62; this.attackHit=false;
+        this.setState(type==='light'?'attack_light':type==='heavy'?'attack_heavy':'special');
+      }
+      jump(){
+        if(this.dodgeTimer>0||this.ledgeClimb)return;
+        if(this.grounded||this.coyote>0){
+          this.velocity.y=8.9;this.grounded=false;this.coyote=0;this.jumpBuffer=0;this.jumpCount=1;this.canDoubleJump=true;this.setState('jump');
+        } else if(this.jumpCount<this.maxJumps || this.canDoubleJump){
+          this.velocity.y=8.35;this.jumpCount=Math.max(1,this.jumpCount)+1;this.canDoubleJump=false;this.jumpBuffer=0;this.setState('jump');
+          spawnBurst(this.root.position.clone().add(new THREE.Vector3(0,.15,0)),0xbfe8ff,8);
+        }
+      }
+      beginLedgeClimb(){
+        if(!this.ledgeGrab)return;
+        const g=this.ledgeGrab,p=g.p,side=g.side;
+        this.ledgeClimb={p,side,t:0,duration:.62,start:this.root.position.clone(),end:new THREE.Vector3(
+          side<0?p.x-p.w/2+.8:p.x+p.w/2-.8,p.top,p.z)};
+        this.ledgeGrab=null;this.velocity.set(0,0,0);this.grounded=false;this.setState('ledge_climb');
+      }
+      beginLedgeJump(){
+        if(!this.ledgeGrab)return;
+        const side=this.ledgeGrab.side;this.ledgeGrab=null;this.ledgeCooldown=.32;this.grounded=false;
+        this.jumpCount=1;this.canDoubleJump=true;this.velocity.set(-side*4.4,9.2,0);this.ledgeJumpTimer=.34;this.setState('ledge_jump');
+      }
+      dashTackle(){
+        if(this.attackTimer>0||this.dodgeTimer>0||this.dashTimer>0||this.ledgeGrab)return;
+        this.dashTimer=.34;this.invuln=.12;this.velocity.x=this.facing*17;this.velocity.y=this.grounded?0:Math.max(this.velocity.y,-1);this.setState('dash_tackle');
+      }
+      dodge(){
+        if(this.dodgeTimer>0||this.dashTimer>0||this.ledgeGrab)return;
+        this.dodgeTimer=.44;this.jukeTimer=.44;this.invuln=.48;this.jukeStartZ=this.root.position.z;
+        this.velocity.x=this.facing*10;this.velocity.y=this.grounded?1.2:1.5;this.setState('dodge_juke');
+      }
+      dropLedge(){
+        if(!this.ledgeGrab)return;const dir=this.ledgeGrab.side;this.ledgeGrab=null;this.ledgeCooldown=.32;this.grounded=false;
+        this.velocity.x=dir*.8;this.velocity.y=-1.5;this.setState('jump');
+      }
+      update(dt){
+        this.previousY=this.root.position.y;
+        this.specialCooldown=Math.max(0,this.specialCooldown-dt);this.invuln=Math.max(0,this.invuln-dt);this.coyote=Math.max(0,this.coyote-dt);
+        if(!this.ledgeGrab&&!this.ledgeClimb&&(consume(' ')||consume('w')))this.jumpBuffer=.12;
+        this.jumpBuffer=Math.max(0,this.jumpBuffer-dt);if(this.jumpBuffer>0&&!this.ledgeGrab&&!this.ledgeClimb)this.jump();
+        if(consume('shift'))this.dodge();if(consume('q'))this.dashTackle();if(consume('j'))this.startAttack('light');if(consume('k'))this.startAttack('heavy');
+        if(consume('l')&&this.specialCooldown<=0){this.startAttack('special');this.specialCooldown=1;}
+        this.ledgeCooldown=Math.max(0,this.ledgeCooldown-dt);
+        if(this.ledgeGrab){
+          this.velocity.set(0,0,0);
+          if(consume('w'))this.beginLedgeClimb();
+          else if(consume(' '))this.beginLedgeJump();
+          else if(consume('s'))this.dropLedge();
+          else {this.setState('grab_ledge');this.visualRoot.scale.x=this.facing;this.visual.update(dt,this.state,this.velocity,false);return;}
+        }
+        if(this.ledgeClimb){
+          const c=this.ledgeClimb;c.t+=dt;const u=THREE.MathUtils.clamp(c.t/c.duration,0,1);
+          // Smooth pull-up followed by a small forward roll onto the platform.
+          const e=u*u*(3-2*u);
+          this.root.position.lerpVectors(c.start,c.end,e);
+          this.root.position.y+=Math.sin(u*Math.PI)*.42;
+          this.visualRoot.rotation.z=-c.side*Math.sin(u*Math.PI)*.72;
+          this.velocity.set(0,0,0);this.setState('ledge_climb');
+          if(u>=1){
+            this.root.position.copy(c.end);this.visualRoot.rotation.z=0;this.ledgeClimb=null;this.ledgeCooldown=.22;
+            this.grounded=true;this.coyote=.12;this.jumpCount=0;this.canDoubleJump=true;this.setState('idle');
+          }
+          this.visualRoot.scale.x=this.facing;this.visual.update(dt,this.state,this.velocity,this.grounded);return;
+        }
+        if(this.ledgeJumpTimer>0){
+          this.ledgeJumpTimer=Math.max(0,this.ledgeJumpTimer-dt);
+          this.setState(this.ledgeJumpTimer>0?'ledge_jump':'jump');
+        }
+
+        if(this.dashTimer>0){
+          this.dashTimer-=dt;this.root.position.x+=this.velocity.x*dt;this.velocity.x*=Math.pow(.08,dt);
+          // Tackle can hit once during the middle of the burst.
+          if(this.dashTimer<.22&&!this.attackHit){this.attackHit=true;this.attackType='heavy';spawnHitbox(this);}
+          if(this.dashTimer<=0){this.attackHit=false;this.setState(this.grounded?'idle':'jump');}
+          this.resolvePlatforms();this.visualRoot.scale.x=this.facing;this.visual.update(dt,this.state,this.velocity,this.grounded);return;
+        }
+        if(this.dodgeTimer>0){
+          this.dodgeTimer-=dt;this.jukeTimer=Math.max(0,this.jukeTimer-dt);
+          const u=1-this.dodgeTimer/.44;
+          this.root.position.x+=this.velocity.x*dt;this.velocity.x*=Math.pow(.08,dt);
+          // Arc briefly into Z to sell a juke around the opponent, then return to the lane.
+          this.root.position.z=this.jukeStartZ+Math.sin(u*Math.PI)*1.35*this.facing;
+          this.visualRoot.rotation.y=u*Math.PI*2*this.facing;
+          if(this.dodgeTimer<=0){this.root.position.z=this.jukeStartZ;this.visualRoot.rotation.y=0;this.setState(this.grounded?'idle':'jump');}
+          this.resolvePlatforms();this.visualRoot.scale.x=this.facing;this.visual.update(dt,this.state,this.velocity,this.grounded);return;
+        }
+
+        const move=(keys.a?-1:0)+(keys.d?1:0);
+        if(move){this.facing=move>0?1:-1;this.velocity.x=THREE.MathUtils.damp(this.velocity.x,move*(keys.shift?9:6.5),14,dt);}
+        else this.velocity.x=THREE.MathUtils.damp(this.velocity.x,0,18,dt);
+        if(keys.s&&!this.grounded)this.velocity.y-=20*dt;
+        this.velocity.y-=22*dt;this.root.position.x+=this.velocity.x*dt;this.root.position.y+=this.velocity.y*dt;
+        this.resolvePlatforms();
+
+        if(this.attackTimer>0){
+          this.attackTimer-=dt;
+          if(!this.attackHit&&this.attackTimer<(this.attackType==='light'?.19:this.attackType==='heavy'?.30:.34)){this.attackHit=true;spawnHitbox(this);}
+          if(this.attackTimer<=0){this.attackTimer=0;this.setState(this.grounded?(Math.abs(this.velocity.x)>1?'run':'idle'):'jump');}
+        }else if(this.dodgeTimer<=0){
+          if(this.grounded&&keys.s)this.setState('crouch');
+          else this.setState(this.grounded?(Math.abs(this.velocity.x)>1?'run':'idle'):'jump');
+        }
+        if(this.attackTimer>0&&this.attackType==='special')this.setState('attack');
+        this.visualRoot.scale.x=this.facing;
+        this.visual.update(dt,this.state,this.velocity,this.grounded);
+      }
+      _insidePlatformXZ(p,x=this.root.position.x,z=this.root.position.z,margin=.22){
+        return x>=p.x-p.w/2+margin && x<=p.x+p.w/2-margin && Math.abs(z-p.z)<=p.d/2+.20;
+      }
+      _platformUnderPlayer(maxDrop=1.15){
+        let best=null;
+        for(const p of platforms){
+          if(!this._insidePlatformXZ(p))continue;
+          const drop=this.root.position.y-p.top;
+          if(drop>=-.14&&drop<=maxDrop&&(!best||p.top>best.top))best=p;
+        }
+        return best;
+      }
+      _sweptGroundHit(){
+        // Continuous feet-vs-platform-top test.  Instead of asking whether the CURRENT
+        // feet position happens to be near a thin top plane, test the full vertical
+        // segment traveled this frame.  This prevents tunneling at high fall speed.
+        if(this.velocity.y>0)return null;
+        let best=null;
+        const x=this.root.position.x,z=this.root.position.z;
+        const hi=Math.max(this.previousY,this.root.position.y)+.035;
+        const lo=Math.min(this.previousY,this.root.position.y)-.035;
+        for(const p of platforms){
+          if(!this._insidePlatformXZ(p,x,z,.20))continue;
+          if(p.top<=hi&&p.top>=lo&&(!best||p.top>best.top))best=p;
+        }
+        return best;
+      }
+      _rescueGroundBelow(maxDrop=2.25){
+        // Last-resort downward contact test used only while descending.  It deliberately
+        // ignores rendered FBX bounds and operates from the controller feet point.
+        let best=null;
+        for(const p of platforms){
+          if(!this._insidePlatformXZ(p,this.root.position.x,this.root.position.z,.18))continue;
+          const drop=this.root.position.y-p.top;
+          if(drop>=-maxDrop&&drop<=maxDrop&&p.top<=this.previousY+.08&&(!best||p.top>best.top))best=p;
+        }
+        return best;
+      }
+      resolvePlatforms(){
+        let landing=this._sweptGroundHit();
+
+        // Near-surface support catches ordinary low-speed landings and seam jitter.
+        if(!landing&&this.velocity.y<=0){
+          const fallDistance=Math.max(0,this.previousY-this.root.position.y);
+          landing=this._platformUnderPlayer(Math.max(.30,Math.min(1.25,fallDistance+.18)));
+        }
+
+        // If the feet have already ended a little BELOW a platform because a frame was
+        // late, rescue them to the highest platform directly underneath/through which
+        // they passed.  Limit this to descending motion so jumping upward through a
+        // one-way platform still works.
+        if(!landing&&this.velocity.y<=0){
+          const rescue=this._rescueGroundBelow(Math.max(1.4,Math.abs(this.velocity.y)*.08+.55));
+          if(rescue&&this.previousY>=rescue.top-.10)landing=rescue;
+        }
+
+        if(landing){
+          this.root.position.y=landing.top;
+          this.velocity.y=0;
+          this.grounded=true;
+          this.coyote=.12;
+          this.jumpCount=0;
+          this.canDoubleJump=true;
+        }else if(this.grounded){
+          const support=this._platformUnderPlayer(.22);
+          if(support&&Math.abs(this.root.position.y-support.top)<=.22){
+            this.root.position.y=support.top;
+            this.velocity.y=0;
+            this.grounded=true;
+          }else{
+            this.grounded=false;
+            this.coyote=.12;
+          }
+        }
+
+        // Absolute support invariant: if state says GROUNDED, the controller feet must
+        // actually coincide with a platform top.  This is the requested below-player
+        // test and prevents a stale grounded state while the visible player is beneath
+        // the floor.
+        if(this.grounded){
+          const support=this._platformUnderPlayer(.28);
+          if(support){
+            this.root.position.y=support.top;
+            this.velocity.y=0;
+          }else{
+            this.grounded=false;
+          }
+        }
+
+        // Ledge grab: while falling, catch a platform edge if the character's hands/body
+        // pass just below the top and the feet are outside the walkable surface.
+        if(!landing&&!this.grounded&&!this.ledgeGrab&&this.ledgeCooldown<=0&&this.velocity.y<0){
+          for(const p of platforms){
+            if(Math.abs(this.root.position.z-p.z)>p.d/2+.5)continue;
+            if(this.root.position.y<p.top-1.75||this.root.position.y>p.top-.18)continue;
+            const left=p.x-p.w/2,right=p.x+p.w/2;
+            const dl=Math.abs(this.root.position.x-left),dr=Math.abs(this.root.position.x-right);
+            if(Math.min(dl,dr)<.42){
+              const side=dl<dr?-1:1; // -1 left edge, +1 right edge
+              this.ledgeGrab={p,side};this.facing=-side;
+              this.root.position.set(side<0?left-.33:right+.33,p.top-1.45,p.z);
+              this.velocity.set(0,0,0);this.setState('grab_ledge');break;
+            }
+          }
+        }
+        if(this.root.position.y<-10)this.reset();
+      }
+      reset(){this.root.position.set(-7,3.1,0);this.velocity.set(0,0,0);this.damage=0;this.grounded=false;this.canDoubleJump=true;this.attackTimer=0;this.dashTimer=0;this.dodgeTimer=0;this.ledgeGrab=null;this.ledgeClimb=null;this.ledgeJumpTimer=0;this.jumpCount=0;this.canDoubleJump=true;this.visualRoot.rotation.set(0,0,0);this.root.position.z=0;this.setState('jump');}
+    }
+    const hero=new Hero();
+
+    // -------------------------------------------------------------------------
+    // LIVE JOINT POSE EDITOR
+    // -------------------------------------------------------------------------
+    class JointPoseEditor{
+      constructor(hero){
+        this.hero=hero;
+        this.enabled=false;
+        this.boundProc=null;
+        this.group=new THREE.Group();
+        this.group.renderOrder=999;
+        scene.add(this.group);
+
+        this.handles=[];
+        this.selected=null;
+        this.selectedRole=null;
+        this.dragging=false;
+        this.dragStart={x:0,y:0};
+        this.startEuler=new THREE.Euler();
+        this.raycaster=new THREE.Raycaster();
+        this.mouse=new THREE.Vector2();
+
+        this.roles=[
+          'neck','chest','spine','hips',
+          'shoulderL','upperArmL','foreArmL','handL',
+          'shoulderR','upperArmR','foreArmR','handR',
+          'thighL','shinL','footL',
+          'thighR','shinR','footR'
+        ];
+
+        this.panel=document.getElementById('posePanel');
+        this.selectedEl=document.getElementById('poseSelected');
+        this.valuesEl=document.getElementById('poseValues');
+        this.toggleBtn=document.getElementById('poseEditBtn');
+
+        this.toggleBtn.addEventListener('click',()=>this.setEnabled(!this.enabled));
+        renderer.domElement.addEventListener('pointerdown',e=>this._pointerDown(e));
+        addEventListener('pointermove',e=>this._pointerMove(e));
+        addEventListener('pointerup',()=>this._pointerUp());
+
+        this.panel.querySelectorAll('[data-axis]').forEach(btn=>{
+          btn.addEventListener('click',()=>{
+            if(!this.selectedRole)return;
+            const axis=btn.dataset.axis,sign=Number(btn.dataset.sign)||1;
+            const proc=this.hero.visual.proc;if(!proc)return;
+            const e=proc.getManualOffset(this.selectedRole);
+            e[axis]+=THREE.MathUtils.degToRad(5)*sign;
+            this._refreshReadout();
+          });
+        });
+        document.getElementById('poseReferencePreset').addEventListener('click',()=>{
+          const proc=this.hero.visual.proc;
+          if(proc){
+            proc.resetManualOffsets();
+            this.hero.velocity.set(0,0,0);
+            this.hero.setState('idle');
+            this._refreshReadout();
+            this.selectedEl.textContent='V22 reference pose reapplied';
+          }
+        });
+        document.getElementById('poseResetJoint').addEventListener('click',()=>{
+          const proc=this.hero.visual.proc;
+          if(proc&&this.selectedRole){proc.resetManualOffset(this.selectedRole);this._refreshReadout();}
+        });
+        document.getElementById('poseResetAll').addEventListener('click',()=>{
+          const proc=this.hero.visual.proc;if(proc){proc.resetManualOffsets();this._refreshReadout();}
+        });
+        document.getElementById('poseCopyJson').addEventListener('click',async()=>{
+          const proc=this.hero.visual.proc;if(!proc)return;
+          const text=JSON.stringify(proc.manualPoseJSON(),null,2);
+          try{await navigator.clipboard.writeText(text);this.selectedEl.textContent='Pose JSON copied';}
+          catch(_){console.log('POSE JSON',text);this.selectedEl.textContent='Pose JSON logged to console';}
+        });
+        this.setEnabled(false);
+      }
+
+      setEnabled(on){
+        this.enabled=!!on;
+        this.group.visible=this.enabled;
+        this.panel.style.display=this.enabled?'block':'none';
+        this.toggleBtn.textContent=this.enabled?'Exit Pose Edit':'Pose Edit';
+        if(this.enabled){
+          this.hero.velocity.set(0,0,0);
+          this.hero.setState('idle');
+          this._ensureHandles();
+        }
+      }
+
+      _ensureHandles(){
+        const proc=this.hero.visual.proc;
+        if(!proc){this.group.clear();this.handles=[];this.boundProc=null;return;}
+        if(proc===this.boundProc&&this.handles.length)return;
+        this.boundProc=proc;
+        this.group.clear();this.handles=[];
+        const geom=new THREE.BoxGeometry(.19,.19,.19);
+        for(const role of this.roles){
+          const bones=proc.bones[role]||[];
+          if(!bones.length)continue;
+          const mat=new THREE.MeshBasicMaterial({
+            color:0x43d7ff,transparent:true,opacity:.82,
+            depthTest:false,depthWrite:false
+          });
+          const h=new THREE.Mesh(geom,mat);
+          h.userData.role=role;
+          h.renderOrder=999;
+          this.group.add(h);
+          this.handles.push(h);
+        }
+      }
+
+      _representativeBone(role){
+        const proc=this.hero.visual.proc;
+        return proc&&proc.bones[role]&&proc.bones[role][0]||null;
+      }
+
+      _pick(e){
+        const rect=renderer.domElement.getBoundingClientRect();
+        this.mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
+        this.mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
+        this.raycaster.setFromCamera(this.mouse,camera);
+        const hits=this.raycaster.intersectObjects(this.handles,false);
+        return hits.length?hits[0].object:null;
+      }
+
+      _pointerDown(e){
+        if(!this.enabled)return;
+        const h=this._pick(e);
+        if(!h)return;
+        e.preventDefault();
+        this._select(h);
+        this.dragging=true;
+        this.dragStart.x=e.clientX;this.dragStart.y=e.clientY;
+        const proc=this.hero.visual.proc;
+        this.startEuler.copy(proc.getManualOffset(this.selectedRole));
+        renderer.domElement.setPointerCapture&&renderer.domElement.setPointerCapture(e.pointerId);
+      }
+
+      _pointerMove(e){
+        if(!this.enabled||!this.dragging||!this.selectedRole)return;
+        const proc=this.hero.visual.proc;if(!proc)return;
+        const dx=e.clientX-this.dragStart.x,dy=e.clientY-this.dragStart.y;
+        const scale=.008;
+        const x=this.startEuler.x-dy*scale;
+        let y=this.startEuler.y+dx*scale;
+        let z=this.startEuler.z;
+        if(e.shiftKey){
+          y=this.startEuler.y;
+          z=this.startEuler.z+dx*scale-dy*scale*.35;
+        }
+        proc.setManualOffset(this.selectedRole,x,y,z);
+        this._refreshReadout();
+      }
+
+      _pointerUp(){this.dragging=false;}
+
+      _select(h){
+        for(const x of this.handles)x.material.color.setHex(0x43d7ff);
+        this.selected=h;this.selectedRole=h.userData.role;
+        h.material.color.setHex(0xffdc61);
+        this._refreshReadout();
+      }
+
+      _refreshReadout(){
+        const proc=this.hero.visual.proc;
+        if(!proc||!this.selectedRole){
+          this.selectedEl.textContent='Selected: none';
+          this.valuesEl.textContent='X 0.0°   Y 0.0°   Z 0.0°';
+          return;
+        }
+        const e=proc.getManualOffset(this.selectedRole);
+        const d=n=>THREE.MathUtils.radToDeg(n).toFixed(1);
+        this.selectedEl.textContent='Selected: '+this.selectedRole;
+        this.valuesEl.textContent=`X ${d(e.x)}°   Y ${d(e.y)}°   Z ${d(e.z)}°`;
+      }
+
+      update(){
+        if(!this.enabled){this.group.visible=false;return;}
+        this.group.visible=true;
+        this._ensureHandles();
+        const proc=this.hero.visual.proc;if(!proc)return;
+
+        // Freeze gameplay locomotion while posing so the character stays put.
+        this.hero.velocity.x=0;
+        if(this.hero.grounded)this.hero.setState('idle');
+
+        const p=new THREE.Vector3();
+        for(const h of this.handles){
+          const b=this._representativeBone(h.userData.role);
+          if(!b){h.visible=false;continue;}
+          h.visible=true;
+          b.getWorldPosition(p);
+          h.position.copy(p);
+          // Scale handles slightly with camera distance so they remain clickable.
+          const dist=camera.position.distanceTo(p);
+          const s=THREE.MathUtils.clamp(dist*.018,.16,.34);
+          h.scale.setScalar(s/.19);
+        }
+      }
+    }
+
+    const poseEditor=new JointPoseEditor(hero);
+
+    // -------------------------------------------------------------------------
+    // TARGET + COMBAT
+    // -------------------------------------------------------------------------
+    const dummy=new THREE.Group();scene.add(dummy);dummy.position.set(7,3,0);
+    const db=box(1,2.1,.72,M.target);db.position.y=1.05;dummy.add(db);
+    const dh=cyl(.38,.55,M.glow,12);dh.position.y=2.42;dummy.add(dh);
+    let dummyDamage=0,dummyVel=new THREE.Vector3();
+    function spawnHitbox(owner){
+      const reach=owner.attackType==='light'?1.45:owner.attackType==='heavy'?1.9:2.25;
+      const damage=owner.attackType==='light'?5:owner.attackType==='heavy'?13:10;
+      const hitPos=owner.root.position.clone().add(new THREE.Vector3(owner.facing*reach,1.3,0));
+      if(hitPos.distanceTo(dummy.position.clone().add(new THREE.Vector3(0,1.2,0)))<2){
+        dummyDamage=Math.min(999,dummyDamage+damage);const kb=owner.attackType==='heavy'?8:owner.attackType==='special'?7:4;
+        dummyVel.x=owner.facing*kb;dummyVel.y=owner.attackType==='heavy'?5:2.5;spawnBurst(hitPos,owner.attackType==='heavy'?0xffb12b:0xffffff,10);
+      }
+    }
+    function updateDummy(dt){dummyVel.y-=22*dt;dummy.position.addScaledVector(dummyVel,dt);dummyVel.x=THREE.MathUtils.damp(dummyVel.x,0,5,dt);if(dummy.position.y<3){dummy.position.y=3;dummyVel.y=0;}}
+    const particles=[];
+    function spawnBurst(pos,color,n){for(let i=0;i<n;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(.06,.06,.06),new THREE.MeshBasicMaterial({color}));m.position.copy(pos);scene.add(m);particles.push({m,life:.4+Math.random()*.3,v:new THREE.Vector3((Math.random()-.5)*7,Math.random()*6,(Math.random()-.5)*2)});}}
+    function updateParticles(dt){for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.life-=dt;p.v.y-=15*dt;p.m.position.addScaledVector(p.v,dt);p.m.scale.multiplyScalar(.96);if(p.life<=0){scene.remove(p.m);p.m.geometry.dispose();p.m.material.dispose();particles.splice(i,1);}}}
+
+    // -------------------------------------------------------------------------
+    // CAMERA / HUD / FILE PICKER
+    // -------------------------------------------------------------------------
+    const camTarget=new THREE.Vector3();
+    function updateCamera(dt){
+      const focus=new THREE.Vector3((hero.root.position.x+dummy.position.x)*.5,3.2,0);camTarget.lerp(focus,1-Math.pow(.001,dt));
+      const span=Math.abs(hero.root.position.x-dummy.position.x),desiredZ=15+Math.min(span*.35,7),desiredY=6.5+Math.min(span*.08,2);
+      camera.position.x=THREE.MathUtils.damp(camera.position.x,camTarget.x,4,dt);camera.position.y=THREE.MathUtils.damp(camera.position.y,desiredY,4,dt);camera.position.z=THREE.MathUtils.damp(camera.position.z,desiredZ,4,dt);camera.lookAt(camTarget.x,3,0);
+    }
+    function updateHUD(){
+      document.querySelector('#damage').textContent=Math.round(dummyDamage)+'%';document.querySelector('#meter i').style.width=Math.min(dummyDamage,100)+'%';
+      document.querySelector('#state').textContent=hero.state.toUpperCase()+' | '+(hero.grounded?'GROUND':'AIR')+' | JUMPS '+hero.jumpCount+'/'+hero.maxJumps;
+    }
+    addEventListener('keydown',e=>{if(e.key.toLowerCase()==='r'){hero.reset();dummy.position.set(7,3,0);dummyDamage=0;dummyVel.set(0,0,0);}});
+
+    const folderInput=document.getElementById('folderInput');
+    async function loadPlayerFolderPreservingController(files){
+      // FBX parsing + hundreds of textures can take several seconds.  The render loop
+      // continues during that time, so preserve the exact controller state occupied by
+      // the placeholder and restore it once the visual swap is complete.
+      const snap={
+        position:hero.root.position.clone(),
+        velocity:hero.velocity.clone(),
+        grounded:hero.grounded,
+        facing:hero.facing,
+        previousY:hero.previousY,
+        jumpCount:hero.jumpCount,
+        canDoubleJump:hero.canDoubleJump,
+        state:hero.state,
+        visualRot:hero.visualRoot.rotation.clone()
+      };
+      hero.velocity.set(0,0,0);
+      await hero.visual.loadFolder(files);
+      hero.root.position.copy(snap.position);
+      hero.velocity.copy(snap.velocity);
+      hero.grounded=snap.grounded;
+      hero.facing=snap.facing;
+      hero.previousY=snap.position.y;
+      hero.jumpCount=snap.jumpCount;
+      hero.canDoubleJump=snap.canDoubleJump;
+      hero.visualRoot.rotation.copy(snap.visualRot);
+      hero.visualRoot.scale.x=hero.facing;
+      hero.setState(snap.grounded ? (keys.s?'crouch':'idle') : snap.state);
+      hero.root.updateMatrixWorld(true);
+    }
+
+    folderInput.addEventListener('change',async e=>{
+      try{errorBox.style.display='none';await loadPlayerFolderPreservingController(e.target.files);}
+      catch(err){showError(err);document.getElementById('assetStatus').textContent='Player load failed — placeholder/previous player kept.';}
+      finally{folderInput.value='';}
+    });
+    document.getElementById('resetAssetBtn').addEventListener('click',()=>hero.visual.usePlaceholder());
+
+    // Folder drag/drop works in Chromium browsers when directory entries are exposed.
+    const overlay=document.getElementById('dropOverlay');
+    addEventListener('dragover',e=>{e.preventDefault();overlay.style.display='grid';});
+    addEventListener('dragleave',e=>{if(e.clientX===0||e.clientY===0||e.clientX===innerWidth||e.clientY===innerHeight)overlay.style.display='none';});
+    addEventListener('drop',async e=>{
+      e.preventDefault();overlay.style.display='none';
+      // A flat file drop can be loaded; for complete texture folders use the top menu folder picker.
+      if(e.dataTransfer.files&&e.dataTransfer.files.length){
+        try{await loadPlayerFolderPreservingController(e.dataTransfer.files);}catch(err){showError(err);}
+      }
+    });
+
+    function animate(){
+      requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.033);hero.update(dt);poseEditor.update();updateDummy(dt);updateParticles(dt);updateCamera(dt);updateHUD();renderer.render(scene,camera);
+    }
+    animate();
+    addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+  })();
+  </script>
+</body>
+</html>
