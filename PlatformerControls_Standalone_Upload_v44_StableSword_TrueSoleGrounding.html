@@ -1,0 +1,4012 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>Standalone Three.js Platformer Controls + Live Player Upload</title>
+<style>
+  :root{color-scheme:dark}
+  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0e141b;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  canvas{display:block}
+  #topbar{position:fixed;z-index:20;left:0;right:0;top:0;height:58px;display:flex;align-items:center;gap:10px;padding:0 14px;background:rgba(10,14,20,.88);border-bottom:1px solid rgba(255,255,255,.12);backdrop-filter:blur(12px)}
+  #brand{font-weight:850;letter-spacing:.06em;font-size:13px;margin-right:auto;white-space:nowrap}
+  button,.button{appearance:none;border:1px solid rgba(255,255,255,.18);border-radius:9px;background:#232c38;color:#fff;padding:9px 12px;font:700 12px/1 system-ui;cursor:pointer;user-select:none}
+  button:hover,.button:hover{background:#2d3948}
+  button:active,.button:active{transform:translateY(1px)}
+  #folderInput{display:none}
+  #assetName{max-width:34vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#aab8c7}
+  #hud{position:fixed;z-index:10;inset:58px 0 0;pointer-events:none;color:#fff;text-shadow:0 2px 5px #000}
+  #status{position:absolute;right:16px;top:14px;text-align:right;font-size:13px}
+  #damage{font-size:28px;font-weight:900}
+  #state{font-size:12px;opacity:.85}
+  #assetStatus{font-size:11px;margin-top:5px;color:#bcd8ff;max-width:340px}
+  #help{position:absolute;left:16px;bottom:16px;line-height:1.55;font-size:13px;opacity:.92;background:rgba(0,0,0,.28);padding:9px 11px;border-radius:8px}
+  #center{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:11px;opacity:.2;letter-spacing:.08em}
+  #meter{display:inline-block;width:160px;height:8px;border:1px solid #fff;border-radius:8px;overflow:hidden;vertical-align:middle}
+  #meter i{display:block;height:100%;width:0;background:#ff8a32}
+  #dropOverlay{position:fixed;z-index:50;inset:72px 18px 18px;border:2px dashed rgba(255,255,255,.35);border-radius:16px;background:rgba(25,45,70,.72);display:none;place-items:center;color:#fff;font-weight:800;letter-spacing:.04em;pointer-events:none}
+  #errorBox{position:fixed;z-index:100;left:16px;right:16px;bottom:16px;max-height:38vh;overflow:auto;display:none;background:#3a1116;color:#ffd9dd;border:1px solid #a94a55;border-radius:10px;padding:12px;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap}
+  #posePanel{position:fixed;z-index:35;right:14px;top:72px;width:330px;display:none;background:rgba(10,14,20,.93);border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:10px;color:#fff;box-shadow:0 8px 28px rgba(0,0,0,.35)}
+  #posePanel h3{margin:0 0 7px;font-size:12px;letter-spacing:.05em}
+  #posePanel .small{font-size:11px;line-height:1.4;color:#b9c5d3;margin-bottom:8px}
+  #poseSelected{font:700 12px ui-monospace,SFMono-Regular,Consolas,monospace;color:#ffe08a;margin:5px 0 8px}
+  .poseGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+  .poseGrid button{padding:7px 4px;font-size:11px}
+  #poseValues{font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;color:#bcd8ff;margin:8px 0}
+  #posePanel .wide{width:100%;margin-top:6px}
+  .poseModeRow{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin:7px 0}
+  .poseModeRow button.active{background:#4a6078;border-color:#8fc8ff}
+  #poseHint{font:10px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;color:#9fb0c4;margin:7px 0}
+  #ikStatus{font:10px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;color:#8fffc8;margin:6px 0}
+  #poseJsonInput{width:100%;height:168px;box-sizing:border-box;resize:vertical;margin-top:7px;padding:7px 8px;border-radius:7px;border:1px solid rgba(255,255,255,.18);background:#080d13;color:#d8ecff;font:10px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;outline:none}
+  #poseJsonInput:focus{border-color:#78bfff;box-shadow:0 0 0 1px rgba(120,191,255,.25)}
+  #poseJsonStatus{font:10px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;color:#9fd6ff;margin-top:5px;min-height:14px}
+  .poseJsonRow{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px}
+  .poseJsonRow button{font-size:10px;padding:6px 4px}
+
+  #cameraBoundary{
+    position:fixed;
+    pointer-events:none;
+    border:1px dashed rgba(150,210,255,.34);
+    border-radius:10px;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.18);
+    display:none;
+    z-index:12;
+  }
+  #cameraBoundary.active{
+    display:block;
+    border-color:rgba(255,218,112,.78);
+    background:rgba(255,218,112,.025);
+  }
+  #cameraBoundary.hover{
+    display:block;
+  }
+  #cameraHint{
+    position:fixed;
+    left:18px;
+    bottom:82px;
+    z-index:13;
+    pointer-events:none;
+    font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;
+    color:#a9bfd3;
+    background:rgba(5,12,20,.72);
+    border:1px solid rgba(130,160,190,.22);
+    border-radius:7px;
+    padding:7px 9px;
+    display:none;
+  }
+  #cameraHint.show{display:block}
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <div id="brand">PLATFORMER CONTROLS</div>
+    <label for="folderInput" class="button">Upload Player Folder</label>
+    <input id="folderInput" type="file" webkitdirectory directory multiple />
+    <button id="poseEditBtn" type="button">Pose Edit</button>
+    <button id="resetAssetBtn" type="button">Use Placeholder Cube</button>
+    <span id="assetName">Player: placeholder cube</span>
+  </div>
+
+  <div id="hud">
+    <div id="status">
+      <div id="damage">0%</div>
+      <div id="state">IDLE | GROUND</div>
+      <div>POWER <span id="meter"><i></i></span></div>
+      <div id="assetStatus">Ready — choose a folder containing FBX, GLB, or GLTF.</div>
+    </div>
+    <div id="center">DRAG-AND-DROP STANDALONE 3D PLATFORMER — V44 — STABLE REFERENCE POSE + TRUE SOLE GROUNDING</div>
+    <div id="help">
+      A / D — move &nbsp; W / SPACE — jump &nbsp; S — crouch / fast fall<br>
+      J — light attack &nbsp; K — heavy attack &nbsp; L — attack &nbsp; Q — dash/tackle<br>
+      SHIFT — dodge/juke &nbsp; LEDGE: W/toward climb, J/K/L climb+attack, SPACE jump-off, S drop &nbsp; DOUBLE JUMP enabled &nbsp; R — reset
+    </div>
+  </div>
+  <div id="dropOverlay">DROP A PLAYER ASSET FOLDER</div>
+  <div id="errorBox"></div>
+  <div id="cameraBoundary"></div>
+  <div id="cameraHint">Wheel: zoom toward cursor &nbsp; G + LMB: grab camera</div>
+  <div id="posePanel">
+    <h3>JOINT POSE EDITOR</h3>
+    <div class="small">Click a blue joint cube to get rotation rings. Click a gold/green target to get translation arrows and automatic IK. R/G switch gizmo modes; L/W switch local/world.</div>
+    <div id="poseSelected">Selected: none</div>
+    <div id="poseValues">X 0.0° &nbsp; Y 0.0° &nbsp; Z 0.0°</div>
+    <div class="poseModeRow">
+      <button id="poseRotateMode">Rotate Joint (R)</button>
+      <button id="poseMoveMode">Move IK (G)</button>
+      <button id="poseLocalSpace">Local (L)</button>
+      <button id="poseWorldSpace">World (W)</button>
+    </div>
+    <div id="poseHint">Blue cubes = joints. Gold/green diamonds = hand/foot IK targets. Magenta diamonds = elbow/knee pole targets. V44 stabilizes reference-pose joint ownership and re-grounds the uploaded FBX from deformed body vertices so boots—not weapon tips—define the floor.</div>
+    <div id="ikStatus">IK targets: inactive</div>
+    <div class="poseGrid">
+      <button data-axis="x" data-sign="-1">X −</button>
+      <button data-axis="y" data-sign="-1">Y −</button>
+      <button data-axis="z" data-sign="-1">Z −</button>
+      <button data-axis="x" data-sign="1">X +</button>
+      <button data-axis="y" data-sign="1">Y +</button>
+      <button data-axis="z" data-sign="1">Z +</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:7px">
+      <button id="poseBindPose">Bind Pose</button>
+      <select id="poseReferenceSelect" style="min-width:0;background:#1c2733;color:#eef7ff;border:1px solid rgba(255,255,255,.18);border-radius:7px;padding:6px">
+        <option value="idle">Idle Reference</option>
+        <option value="run">Run Reference</option>
+        <option value="slash">Slash Reference</option>
+      </select>
+    </div>
+    <button id="poseReferencePreset" class="wide">Apply Selected Reference Pose</button>
+    <button id="poseCaptureReference" class="wide">Capture Reference Pose (Quaternion JSON)</button>
+    <button id="poseResetIK" class="wide">Reset IK / Pole Targets</button>
+    <button id="poseCopyIK" class="wide">Copy IK + Pole Target JSON</button>
+    <button id="poseResetJoint" class="wide">Reset Selected Joint</button>
+    <button id="poseResetAll" class="wide">Reset All Manual Edits</button>
+    <textarea id="poseJsonInput" spellcheck="false" aria-label="Pose JSON editor"></textarea>
+    <div id="poseJsonStatus">V44 Reference Pose Studio: absolute rest-relative idle pose joints, stable sword wrist, and true deformed-sole grounding.</div>
+    <button id="poseApplyJson" class="wide">Apply JSON Pose</button>
+    <div class="poseJsonRow">
+      <button id="poseSetResetJson">Set as Reset Pose</button>
+      <button id="poseResetToJson">Reset to JSON Pose</button>
+    </div>
+    <button id="poseCopyJson" class="wide">Copy Pose JSON</button>
+  </div>
+
+  <!-- Classic scripts intentionally used instead of ES modules so this page can be opened directly with file:// -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <!-- FBXLoader r128 expects the global `fflate` object when decoding compressed binary FBX arrays. -->
+  <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
+  <script>
+  (() => {
+    'use strict';
+
+    const errorBox = document.getElementById('errorBox');
+    function showError(err){
+      console.error(err);
+      errorBox.style.display='block';
+      errorBox.textContent = 'Runtime error:\n' + String(err && (err.stack || err.message) || err);
+    }
+    window.addEventListener('error', e => showError(e.error || e.message));
+    window.addEventListener('unhandledrejection', e => showError(e.reason));
+
+    if(!window.THREE){
+      showError('Three.js failed to load from the CDN. This standalone file does not need a local server, but it does need internet access for the Three.js library.');
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // THREE.JS SCENE
+    // -------------------------------------------------------------------------
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x101820);
+    scene.fog = new THREE.Fog(0x101820, 32, 90);
+
+    const camera = new THREE.PerspectiveCamera(48, innerWidth/innerHeight, .05, 160);
+    camera.position.set(0,7.5,18);
+
+    let renderer;
+    try{
+      renderer = new THREE.WebGLRenderer({antialias:true});
+    }catch(err){ showError(err); return; }
+    renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    renderer.setSize(innerWidth,innerHeight);
+    renderer.shadowMap.enabled=true;
+    renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+    renderer.outputEncoding=THREE.sRGBEncoding;
+    document.body.insertBefore(renderer.domElement, document.body.firstChild);
+
+    scene.add(new THREE.HemisphereLight(0xa7c7ff,0x17110b,1.4));
+    const sun=new THREE.DirectionalLight(0xffd2a6,2.15);
+    sun.position.set(-10,18,12); sun.castShadow=true;
+    sun.shadow.mapSize.set(2048,2048);
+    sun.shadow.camera.left=-35; sun.shadow.camera.right=35;
+    sun.shadow.camera.top=25; sun.shadow.camera.bottom=-10;
+    scene.add(sun);
+
+    const clock=new THREE.Clock();
+    const keys=Object.create(null), pressed=Object.create(null);
+    addEventListener('keydown',e=>{
+      const k=e.key.toLowerCase();
+      if(!keys[k]) pressed[k]=true;
+      keys[k]=true;
+      if([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault();
+    });
+    addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+    function consume(k){ const v=!!pressed[k]; delete pressed[k]; return v; }
+
+    function mat(color,rough=.75,metal=0){return new THREE.MeshStandardMaterial({color,roughness:rough,metalness:metal});}
+    const M={
+      steel:mat(0x343a40,.62,.72), dark:mat(0x151a1e,.55,.82), copper:mat(0xb46a32,.58,.72),
+      orange:mat(0xe47c2b,.5,.55), glow:mat(0xffc65a,.3,.3), red:mat(0xa92d27,.62,.5),
+      floor:mat(0x383a3d,.92,.45), edge:mat(0x68645d,.7,.65), target:mat(0x3e9bff,.45,.25)
+    };
+    function box(w,h,d,m){const x=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);x.castShadow=x.receiveShadow=true;return x;}
+    function cyl(r,h,m,rad=12){const x=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,rad),m);x.castShadow=x.receiveShadow=true;return x;}
+
+    // -------------------------------------------------------------------------
+    // STAGE
+    // Platform y is the top surface. Player root y is the feet/contact point.
+    // -------------------------------------------------------------------------
+    const stage=new THREE.Group(); scene.add(stage);
+    function platform(x,y,z,w,d,h=.6){
+      const p=box(w,h,d,M.floor); p.position.set(x,y-h/2,z); stage.add(p);
+      const rim=box(w+.08,.10,d+.08,M.edge); rim.position.set(x,y+.02,z); stage.add(rim);
+      for(let i=-Math.floor(w/2);i<=Math.floor(w/2);i+=2){
+        const bolt=cyl(.055,.08,M.copper,8); bolt.rotation.x=Math.PI/2; bolt.position.set(x+i,y+.075,z-d/2+.18); stage.add(bolt);
+      }
+      return {x,y,z,w,d,h,top:y};
+    }
+    const platforms=[
+      platform(0,0,0,24,5,.7), platform(-7,3,0,6,4,.7), platform(7,3,0,6,4,.7),
+      platform(0,5.4,0,4.5,3,.7), platform(-11,5,0,3.2,3,.7), platform(11,5,0,3.2,3,.7)
+    ];
+
+    const back=box(52,15,1.2,M.dark); back.position.set(0,6,-5); stage.add(back);
+    function tower(x,h=10){
+      const t=box(3.5,h,3.5,M.dark); t.position.set(x,h/2-1,-4.2); stage.add(t);
+      const band=box(3.8,.35,3.8,M.copper); band.position.set(x,h*.55-1,-4.2); stage.add(band);
+      for(let y=2;y<h-1;y+=2.2){const l=box(.25,.18,.08,M.glow);l.position.set(x-1.7,y-1,-2.4);stage.add(l);}
+    }
+    tower(-14,10);tower(14,12);tower(0,8);
+    for(let x=-20;x<=20;x+=4){const p=cyl(.24,3,M.steel,12);p.rotation.z=Math.PI/2;p.position.set(x,2.2,-4.1);stage.add(p);}
+
+    // -------------------------------------------------------------------------
+    // LIVE PLAYER ASSET MANAGER
+    // -------------------------------------------------------------------------
+    class PlayerVisual {
+      constructor(parent){
+        this.parent=parent;
+        this.object=null;
+        this.mixer=null;
+        this.actions={};
+        this.currentAction=null;
+        this.urls=[];
+        this.placeholder=null;
+        this.proc=null;
+        this.usePlaceholder();
+      }
+
+      clear(){
+        if(this.object){
+          this.parent.remove(this.object);
+          this.object.traverse(o=>{
+            if(o.geometry) o.geometry.dispose && o.geometry.dispose();
+            if(o.material){
+              const mats=Array.isArray(o.material)?o.material:[o.material];
+              mats.forEach(m=>{
+                for(const k in m){const v=m[k]; if(v && v.isTexture && v.dispose) v.dispose();}
+                m.dispose && m.dispose();
+              });
+            }
+          });
+        }
+        this.object=null; this.mixer=null; this.actions={}; this.currentAction=null; this.proc=null;
+        this.urls.forEach(URL.revokeObjectURL); this.urls.length=0;
+      }
+
+      usePlaceholder(){
+        this.clear();
+        const g=new THREE.Group();
+        const cube=box(1.15,2.4,1.0,new THREE.MeshStandardMaterial({color:0xff8a32,roughness:.55,metalness:.15}));
+        cube.position.y=1.2; g.add(cube);
+        const eye=box(.56,.18,.04,new THREE.MeshBasicMaterial({color:0x9eeeff})); eye.position.set(0,1.55,.52); g.add(eye);
+        this.parent.add(g); this.object=g; this.placeholder=g;
+        document.getElementById('assetName').textContent='Player: placeholder cube';
+        document.getElementById('assetStatus').textContent='Ready — choose a folder containing FBX, GLB, or GLTF.';
+      }
+
+      _pathVariants(path){
+        const p=decodeURIComponent(String(path||'')).replace(/\\/g,'/').replace(/^\.\//,'');
+        const parts=p.split('/');
+        return [p,p.toLowerCase(),parts[parts.length-1],parts[parts.length-1].toLowerCase()];
+      }
+
+      _normAssetName(s){
+        return String(s||'').toLowerCase().replace(/\\/g,'/').split('/').pop()
+          .replace(/\.[^.]+$/,'').replace(/_(col|nor|rgh|mtl|spc|ao|nor_a|nor_b)$/,'')
+          .replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+      }
+
+      _pickColorRecord(materialName,colorRecords,rootLower){
+        const mn=this._normAssetName(materialName); let best=null,bestScore=-Infinity;
+        for(const rec of colorRecords){
+          const stem=this._normAssetName(rec.file.name); let score=0;
+          if(stem===mn) score+=10000;
+          if(mn&&stem&&(mn.includes(stem)||stem.includes(mn))) score+=2500+Math.min(mn.length,stem.length);
+          const mt=new Set(mn.split('_').filter(t=>t.length>1));
+          for(const t of stem.split('_').filter(t=>t.length>1)) if(mt.has(t)) score+=35+t.length;
+          const dir=rec.relLower.includes('/')?rec.relLower.slice(0,rec.relLower.lastIndexOf('/')+1):'';
+          if(dir===rootLower) score+=700; else if(dir.startsWith(rootLower)) score+=150;
+          if(score>bestScore){bestScore=score;best=rec;}
+        }
+        return bestScore>=120?best:null;
+      }
+
+      _autoUpright(root){
+        const candidates=[[0,0,0],[-Math.PI/2,0,0],[Math.PI/2,0,0],[0,0,-Math.PI/2],[0,0,Math.PI/2]];
+        let head=null,feet=[]; const hp=new THREE.Vector3(),fp=new THREE.Vector3();
+        root.traverse(o=>{const n=(o.name||'').toLowerCase();if(!head&&/(head|neck)/.test(n))head=o;if(/(foot|ankle|toe)/.test(n))feet.push(o);});
+        let best=null;
+        for(const c of candidates){
+          root.rotation.set(c[0],c[1],c[2]); root.updateMatrixWorld(true);
+          const bb=new THREE.Box3().setFromObject(root), size=new THREE.Vector3(); bb.getSize(size);
+          let score=size.y*2.4-Math.max(size.x,size.z);
+          if(head&&feet.length){head.getWorldPosition(hp);let fy=0;for(const f of feet){f.getWorldPosition(fp);fy+=fp.y;}fy/=feet.length;score+=hp.y>fy?1000:-1000;}
+          if(!best||score>best.score)best={score,c:c.slice()};
+        }
+        root.rotation.set(best.c[0],best.c[1],best.c[2]);root.updateMatrixWorld(true);return best;
+      }
+
+      async loadFolder(fileList){
+        const files=Array.from(fileList||[]);
+        if(!files.length) return;
+        const status=document.getElementById('assetStatus');
+        status.textContent='Indexing selected asset folder…';
+
+        const modelFiles=files.filter(f=>/\.(glb|gltf|fbx)$/i.test(f.name));
+        if(!modelFiles.length) throw new Error('No .glb, .gltf, or .fbx model was found in that folder.');
+
+        // Prefer GLB, then GLTF, then FBX because GLB is the most self-contained browser format.
+        const priority={glb:0,gltf:1,fbx:2};
+        modelFiles.sort((a,b)=>(priority[a.name.split('.').pop().toLowerCase()]??9)-(priority[b.name.split('.').pop().toLowerCase()]??9));
+        const modelFile=modelFiles[0];
+
+        const urlByPath=new Map();
+        const filesByBase=new Map();
+        const fileRecords=[];
+        for(const f of files){
+          const rel=(f.webkitRelativePath||f.name).replace(/\\/g,'/');
+          const url=URL.createObjectURL(f); this.urls.push(url);
+          const relLower=rel.toLowerCase();
+          urlByPath.set(rel,url);
+          urlByPath.set(relLower,url);
+          const base=f.name.toLowerCase();
+          const rec={file:f,rel,relLower,url,base};
+          fileRecords.push(rec);
+          if(!filesByBase.has(base)) filesByBase.set(base,[]);
+          filesByBase.get(base).push(rec);
+        }
+
+        const colorRecords=fileRecords.filter(rec=>/_col\.(png|jpg|jpeg|webp)$/i.test(rec.file.name));
+        const modelRel=(modelFile.webkitRelativePath||modelFile.name).replace(/\\/g,'/');
+        const rootDir=modelRel.includes('/')?modelRel.slice(0,modelRel.lastIndexOf('/')+1):'';
+        const rootLower=rootDir.toLowerCase();
+        const missingSidecars=new Set();
+
+        // When several costumes contain the same texture name, choose the copy nearest
+        // to the selected model. For Hero/brave.fbx this strongly prefers Hero/foo.png
+        // over Hero/Alternate/c01/foo.png, etc.
+        const bestBasenameMatch=(base)=>{
+          const arr=filesByBase.get(base.toLowerCase());
+          if(!arr||!arr.length) return null;
+          const score=(rec)=>{
+            const dir=rec.relLower.includes('/')?rec.relLower.slice(0,rec.relLower.lastIndexOf('/')+1):'';
+            if(dir===rootLower) return -100000;               // exact model directory
+            if(dir.startsWith(rootLower)) return dir.length-rootLower.length; // child folder
+            // Prefer fewer path components and shorter paths as a general fallback.
+            return 10000 + dir.split('/').filter(Boolean).length*100 + dir.length;
+          };
+          return arr.slice().sort((a,b)=>score(a)-score(b))[0].url;
+        };
+
+        const manager=new THREE.LoadingManager();
+        manager.setURLModifier=(url)=>{
+          if(/^blob:|^data:|^https?:/i.test(url)) return url;
+          let clean=decodeURIComponent(url).replace(/\\/g,'/').replace(/^\.\//,'');
+          const resolve=(base,rel)=>{
+            const stack=(base+rel).split('/'); const out=[];
+            for(const s of stack){if(!s||s==='.')continue;if(s==='..')out.pop();else out.push(s);}
+            return out.join('/');
+          };
+          const resolved=resolve(rootDir,clean);
+          const direct=[resolved,resolved.toLowerCase(),clean,clean.toLowerCase()];
+          for(const k of direct){if(urlByPath.has(k)) return urlByPath.get(k);}
+
+          // FBX exporters frequently preserve an obsolete source-tree path. Resolve its
+          // basename against the selected folder, preferring the selected FBX directory.
+          const base=clean.split('/').pop().toLowerCase();
+          const nearest=bestBasenameMatch(base);
+          if(nearest) return nearest;
+
+          missingSidecars.add(url);
+          console.warn('Asset sidecar not found in selected folder:',url);
+          return url;
+        };
+
+        const modelURL=URL.createObjectURL(modelFile); this.urls.push(modelURL);
+        const ext=modelFile.name.split('.').pop().toLowerCase();
+        status.textContent='Loading '+modelFile.name+'…';
+
+        let loadedRoot, clips=[];
+        if(ext==='fbx'){
+          if(!THREE.FBXLoader) throw new Error('FBXLoader failed to load from the CDN.');
+          if(typeof window.fflate === 'undefined') throw new Error('fflate failed to load from the CDN. FBX binary decompression is unavailable.');
+          const fbx=await new Promise((resolve,reject)=>new THREE.FBXLoader(manager).load(modelURL,resolve,undefined,reject));
+          loadedRoot=fbx; clips=fbx.animations||[];
+        }else{
+          if(!THREE.GLTFLoader) throw new Error('GLTFLoader failed to load from the CDN.');
+          const gltf=await new Promise((resolve,reject)=>new THREE.GLTFLoader(manager).load(modelURL,resolve,undefined,reject));
+          loadedRoot=gltf.scene; clips=gltf.animations||[];
+        }
+
+        // IMPORTANT: keep the newly loaded asset DETACHED while normalizing it.
+        // Box3.setFromObject() is world-space. If loadedRoot is already parented beneath
+        // hero.visualRoot, the player's gameplay position is baked into the bounds and
+        // subtracting the bounds center cancels that position. Normalize first, parent last.
+        const old=this.object;
+
+        let meshCount=0, materialCount=0, mappedCount=0, explicitColorMaps=0;
+        const textureLoader=new THREE.TextureLoader(manager);
+        const textureCache=new Map();
+        const loadColorTexture=(rec)=>{
+          if(!rec)return null;if(textureCache.has(rec.url))return textureCache.get(rec.url);
+          const t=textureLoader.load(rec.url);t.encoding=THREE.sRGBEncoding;t.flipY=true;
+          t.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());t.needsUpdate=true;
+          textureCache.set(rec.url,t);return t;
+        };
+
+        loadedRoot.traverse(o=>{
+          if(!(o.isMesh||o.isSkinnedMesh))return;
+          meshCount++;o.visible=true;o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;
+          const sourceMats=Array.isArray(o.material)?o.material:[o.material], repaired=[];
+          sourceMats.forEach((src,idx)=>{
+            if(!src)return;materialCount++;let map=src.map||null;if(map)mappedCount++;
+            const rec=this._pickColorRecord(src.name||o.name||'',colorRecords,rootLower);
+            if(rec){const explicit=loadColorTexture(rec);if(explicit){map=explicit;explicitColorMaps++;}}
+            if(map){map.encoding=THREE.sRGBEncoding;map.flipY=true;map.needsUpdate=true;}
+            const mat=new THREE.MeshBasicMaterial({name:(src.name||('material_'+idx))+'_visible',color:0xffffff,map:map,side:THREE.DoubleSide,transparent:false,opacity:1,depthTest:true,depthWrite:true,alphaTest:0,skinning:!!o.isSkinnedMesh});
+            mat.vertexColors=false;mat.fog=true; if(o.isSkinnedMesh){mat.skinning=true;} mat.needsUpdate=true; repaired.push(mat);
+          });
+          if(repaired.length)o.material=Array.isArray(o.material)?repaired:repaired[0];
+        });
+
+        const upright=this._autoUpright(loadedRoot);
+        loadedRoot.updateMatrixWorld(true);
+        let bb=new THREE.Box3().setFromObject(loadedRoot);
+        const height=Math.max(.001,bb.max.y-bb.min.y),scale=3.25/height;
+        loadedRoot.scale.multiplyScalar(scale);loadedRoot.updateMatrixWorld(true);
+        bb=new THREE.Box3().setFromObject(loadedRoot);
+        loadedRoot.position.y-=bb.min.y;
+        loadedRoot.position.x-=(bb.min.x+bb.max.x)*.5;
+        loadedRoot.position.z-=(bb.min.z+bb.max.z)*.5;
+        loadedRoot.updateMatrixWorld(true);
+
+        // Only now replace the previous visual. The normalized model's local origin is
+        // feet-centered at (0,0,0), and hero.visualRoot supplies the full gameplay transform.
+        // This guarantees an upload visually replaces the cube at its exact current position.
+        if(old) this.parent.remove(old);
+        this.object=loadedRoot;
+        this.parent.add(loadedRoot);
+        this.placeholder=null;
+        loadedRoot.updateMatrixWorld(true);
+
+        // Build a procedural bone driver from the uploaded skeleton. This runs even
+        // when the asset contains zero embedded animation clips.
+        this.proc=new ProceduralSkeletonAnimator(loadedRoot);
+        const hiddenBackEquipment=this._hideBackMountedDuplicateWeapons(loadedRoot,this.proc);
+        const hiddenFaceArtifacts=this._cleanupHeadArtifacts(loadedRoot,this.proc,true);
+        this.equipmentVisibilityFrames=120;
+        const deformCount=this.proc.deformBones?this.proc.deformBones.size:0;
+        const mappedRoleCount=Object.values(this.proc.bones||{}).filter(a=>Array.isArray(a)&&a.length).length;
+        const controlledBoneCount=Object.values(this.proc.bones||{}).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0);
+        const validatedLegChains=(this.proc.legChains?.L?.length||0)+(this.proc.legChains?.R?.length||0);
+
+        this.mixer=clips.length?new THREE.AnimationMixer(loadedRoot):null;
+        this.actions={};
+        if(this.mixer){
+          clips.forEach(clip=>{
+            const name=(clip.name||'clip').toLowerCase();
+            this.actions[name]=this.mixer.clipAction(clip);
+          });
+          this.playBest('idle');
+        }
+
+        if(old){
+          old.traverse(o=>{ if(o.geometry&&o.geometry.dispose)o.geometry.dispose(); });
+        }
+        document.getElementById('assetName').textContent='Player: '+modelFile.name;
+        const missingText=missingSidecars.size?' — '+missingSidecars.size+' unresolved sidecar request(s)':'';
+        status.textContent='Loaded '+modelFile.name+' — '+meshCount+' meshes, '+explicitColorMaps+' explicit color maps, '+clips.length+' animation clip'+(clips.length===1?'':'s')+', deform bones '+deformCount+', mapped roles '+mappedRoleCount+', controlled bone instances '+controlledBoneCount+', leg chains '+validatedLegChains+', hidden stowed/back pieces '+hiddenBackEquipment+', face artifacts '+hiddenFaceArtifacts+', upright '+upright.c.map(v=>Math.round(THREE.MathUtils.radToDeg(v))).join('/')+'°'+missingText+'.';
+      }
+
+      _equipmentDescriptor(o){
+        const parts=[];
+        const add=v=>{
+          if(v===undefined||v===null)return;
+          if(Array.isArray(v)){for(const x of v)add(x);return;}
+          if(typeof v==='object'&&v.name!==undefined){add(v.name);return;}
+          const s=String(v).trim();
+          if(s)parts.push(s);
+        };
+
+        add(o.name); add(o.type);
+
+        if(o.geometry){
+          add(o.geometry.name);
+          add(o.geometry.type);
+        }
+
+        if(o.material){
+          const mats=Array.isArray(o.material)?o.material:[o.material];
+          for(const m of mats){
+            add(m&&m.name);
+            if(m&&m.map){
+              add(m.map.name);
+              add(m.map.image&&m.map.image.src);
+            }
+          }
+        }
+
+        if(o.userData){
+          for(const [k,v] of Object.entries(o.userData)){
+            add(k);
+            if(typeof v==='string'||typeof v==='number')add(v);
+          }
+        }
+
+        let p=o.parent,depth=0;
+        while(p&&depth++<8){
+          add(p.name);
+          if(p.geometry)add(p.geometry.name);
+          p=p.parent;
+        }
+
+        return parts.join(' | ').toLowerCase();
+      }
+
+      _applyHeroEquipmentVisibility(root,verbose=false){
+        if(!root)return {hidden:0,shown:0,matches:[],fallbackHidden:0};
+
+        const compact=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+
+        const identify=desc=>{
+          const n=compact(desc);
+
+          // Back/stowed items FIRST.
+          if(
+            n.includes('bravescabbardvisoobjshape') ||
+            n.includes('bravescabbardlowshape') ||
+            n.includes('bravescabbard')
+          ) return {kind:'scabbard',visible:false};
+
+          if(
+            n.includes('bravehiltvisoobjshape') ||
+            n.includes('bravehiltlowshape') ||
+            n.includes('bravehilt')
+          ) return {kind:'hilt',visible:false};
+
+          if(
+            n.includes('braveshieldbvisoobjshape') ||
+            n.includes('braveshieldblowshape') ||
+            n.includes('braveshieldb')
+          ) return {kind:'backShield',visible:false};
+
+          // Held items.
+          if(
+            n.includes('braveswordvisoobjshape') ||
+            n.includes('braveswordlowshape') ||
+            n.includes('bravesword')
+          ) return {kind:'heldSword',visible:true};
+
+          if(
+            n.includes('braveshieldvisoobjshape') ||
+            n.includes('braveshieldlowshape') ||
+            (n.includes('braveshield')&&!n.includes('braveshieldb'))
+          ) return {kind:'heldShield',visible:true};
+
+          return null;
+        };
+
+        let hidden=0,shown=0,fallbackHidden=0;
+        const matches=[];
+        const heldSwordMaterials=new Set();
+        const heldSwordMeshes=[];
+
+        const addMaterialIds=o=>{
+          if(!o||!o.material)return;
+          const mats=Array.isArray(o.material)?o.material:[o.material];
+          for(const m of mats)if(m&&m.uuid)heldSwordMaterials.add(m.uuid);
+        };
+
+        root.traverse(o=>{
+          const desc=this._equipmentDescriptor(o);
+          const hit=identify(desc);
+          if(!hit)return;
+
+          if(hit.visible){
+            o.visible=true;
+            delete o.userData.hiddenBackEquipment;
+            shown++;
+          }else if(!o.isBone){
+            o.visible=false;
+            o.userData.hiddenBackEquipment=true;
+            hidden++;
+          }
+
+          if(hit.kind==='heldSword'){
+            if(o.isMesh||o.isSkinnedMesh){
+              heldSwordMeshes.push(o);
+              addMaterialIds(o);
+            }
+            o.traverse?.(x=>{
+              if(x.isMesh||x.isSkinnedMesh){
+                heldSwordMeshes.push(x);
+                addMaterialIds(x);
+              }
+            });
+          }
+
+          matches.push({
+            object:o.name||'(unnamed)',
+            geometry:o.geometry&&o.geometry.name||'',
+            kind:hit.kind,
+            visible:hit.visible,
+            descriptor:desc.slice(0,240)
+          });
+        });
+
+        // Named hidden groups may wrap generic child meshes.
+        root.traverse(o=>{
+          if(o.isBone)return;
+          const hit=identify(this._equipmentDescriptor(o));
+          if(hit && !hit.visible){
+            o.visible=false;
+            o.traverse?.(x=>{
+              if(!x.isBone){
+                x.visible=false;
+                x.userData.hiddenBackEquipment=true;
+              }
+            });
+          }
+        });
+
+        // -----------------------------------------------------------------
+        // HIP/STOWED FALLBACK
+        // -----------------------------------------------------------------
+        // The remaining hip sword/sheath can arrive with a generic mesh name.
+        // Use the actual rig location + sword material family + elongated shape.
+        if(this.proc){
+          root.updateMatrixWorld(true);
+
+          const hips=this.proc.getRoleWorldPosition('hips',new THREE.Vector3());
+          const handR=this.proc.getEffectorWorld('handR',new THREE.Vector3());
+
+          if(hips&&handR&&heldSwordMaterials.size){
+            const box=new THREE.Box3();
+            const size=new THREE.Vector3();
+            const center=new THREE.Vector3();
+
+            root.traverse(o=>{
+              if(!(o.isMesh||o.isSkinnedMesh) || !o.visible)return;
+              if(heldSwordMeshes.includes(o))return;
+
+              const mats=Array.isArray(o.material)?o.material:[o.material];
+              const sharesSwordMaterial=mats.some(m=>m&&heldSwordMaterials.has(m.uuid));
+              const desc=this._equipmentDescriptor(o);
+              const n=compact(desc);
+              const weaponish=
+                n.includes('sword')||n.includes('blade')||
+                n.includes('hilt')||n.includes('scabbard')||
+                n.includes('sheath');
+
+              if(!sharesSwordMaterial && !weaponish)return;
+
+              box.setFromObject(o);
+              if(box.isEmpty())return;
+              box.getSize(size);box.getCenter(center);
+
+              const dims=[Math.abs(size.x),Math.abs(size.y),Math.abs(size.z)].sort((a,b)=>b-a);
+              const aspect=dims[0]/Math.max(.001,dims[1]);
+              const dHip=center.distanceTo(hips);
+              const dHand=center.distanceTo(handR);
+
+              // Keep the hand-held sword. Hide a long weapon-family object that
+              // lives around the pelvis and is substantially farther from the hand.
+              if(
+                dHip<1.15 &&
+                dHand>.65 &&
+                aspect>2.15 &&
+                dims[0]>.35
+              ){
+                o.visible=false;
+                o.userData.hiddenHipEquipment=true;
+                fallbackHidden++;
+                matches.push({
+                  object:o.name||'(unnamed)',
+                  geometry:o.geometry&&o.geometry.name||'',
+                  kind:'hipWeaponFallback',
+                  visible:false,
+                  dHip:+dHip.toFixed(3),
+                  dHand:+dHand.toFixed(3),
+                  aspect:+aspect.toFixed(2)
+                });
+              }
+            });
+          }
+        }
+
+        if(verbose){
+          console.table(matches);
+          console.log('V32 Hero equipment visibility',{
+            hidden,shown,fallbackHidden,matches
+          });
+        }
+
+        return {hidden:hidden+fallbackHidden,shown,matches,fallbackHidden};
+      }
+
+      _cleanupHeadArtifacts(root,proc,verbose=false){
+        // Conservative cleanup for the thin red strip/arrow visible across the face.
+        //
+        // The procedural rig already de-duplicates Head/Neck CONTROL bones, so a
+        // second Head control is not confirmed. The remaining artifact is more
+        // likely a small renderable face/helper/accessory mesh or overlapping shell.
+        if(!root||!proc)return 0;
+
+        const head=
+          proc.getRoleWorldPosition('head',new THREE.Vector3()) ||
+          proc.getRoleWorldPosition('neck',new THREE.Vector3());
+
+        if(!head)return 0;
+
+        root.updateMatrixWorld(true);
+        let hidden=0;
+        const report=[];
+        const box=new THREE.Box3();
+        const size=new THREE.Vector3();
+        const center=new THREE.Vector3();
+
+        const colorStats=o=>{
+          const mats=Array.isArray(o.material)?o.material:[o.material];
+          let best=null;
+          for(const m of mats){
+            if(!m||!m.color)continue;
+            const c=m.color;
+            const redDominant=c.r>.42 && c.r>c.g*1.35 && c.r>c.b*1.18;
+            if(redDominant)best={r:c.r,g:c.g,b:c.b};
+          }
+          return best;
+        };
+
+        root.traverse(o=>{
+          if(!(o.isMesh||o.isSkinnedMesh) || !o.visible)return;
+
+          box.setFromObject(o);
+          if(box.isEmpty())return;
+          box.getSize(size);box.getCenter(center);
+
+          const d=center.distanceTo(head);
+          if(d>.72)return;
+
+          const desc=this._equipmentDescriptor(o);
+          const n=String(desc||'').toLowerCase();
+          const suspiciousName=/(arrow|marker|cursor|indicator|target|debug|pointer|p1)/i.test(n);
+          const red=colorStats(o);
+
+          const dims=[Math.abs(size.x),Math.abs(size.y),Math.abs(size.z)].sort((a,b)=>b-a);
+          const thinAspect=dims[0]/Math.max(.001,dims[1]);
+          const small=dims[0]<.70 && dims[1]<.30;
+          const thinRed=!!red && thinAspect>2.2 && small;
+
+          // Only auto-hide a clearly suspicious helper or a small thin red strip.
+          // Main head/hair/face shells are intentionally left alone.
+          if(suspiciousName || thinRed){
+            o.visible=false;
+            o.userData.hiddenFaceArtifact=true;
+            hidden++;
+            report.push({
+              name:o.name||'(unnamed)',
+              geometry:o.geometry&&o.geometry.name||'',
+              distance:+d.toFixed(3),
+              thinAspect:+thinAspect.toFixed(2),
+              red:!!red,
+              reason:suspiciousName?'name':'thin-red-head-local'
+            });
+          }
+        });
+
+        // Detect near-identical overlapping head-local renderables. This specifically
+        // targets a second face/head shell that becomes obvious when the model rotates.
+        const headMeshes=[];
+        root.traverse(o=>{
+          if(!(o.isMesh||o.isSkinnedMesh)||!o.visible)return;
+          box.setFromObject(o);
+          if(box.isEmpty())return;
+          box.getSize(size);box.getCenter(center);
+          if(center.distanceTo(head)>.62)return;
+          if(size.length()<.10||size.length()>1.8)return;
+          headMeshes.push({
+            o,
+            center:center.clone(),
+            size:size.clone(),
+            volume:Math.max(.000001,size.x*size.y*size.z)
+          });
+        });
+
+        for(let i=0;i<headMeshes.length;i++){
+          const a=headMeshes[i];
+          if(!a.o.visible)continue;
+          for(let j=i+1;j<headMeshes.length;j++){
+            const b=headMeshes[j];
+            if(!b.o.visible)continue;
+
+            const centerD=a.center.distanceTo(b.center);
+            const sizeD=a.size.distanceTo(b.size);
+            const scale=Math.max(.001,a.size.length(),b.size.length());
+
+            // Nearly coincident shells of very similar dimensions are likely alternate
+            // face/head renderables. Keep the larger/first shell and hide the duplicate.
+            const aDims=[a.size.x,a.size.y,a.size.z].map(Math.abs).sort((x,y)=>x-y);
+            const bDims=[b.size.x,b.size.y,b.size.z].map(Math.abs).sort((x,y)=>x-y);
+            const aPlanar=aDims[0]/Math.max(.001,aDims[2])<.20;
+            const bPlanar=bDims[0]/Math.max(.001,bDims[2])<.20;
+
+            if(centerD<.12 && sizeD/scale<.22 && (aPlanar||bPlanar)){
+              // Prefer keeping the less-planar/larger shell. A drifting alternate
+              // face plane is typically the thinner of the overlapping pair.
+              let hide;
+              if(aPlanar!==bPlanar)hide=aPlanar?a:b;
+              else hide=a.volume>=b.volume?b:a;
+
+              hide.o.visible=false;
+              hide.o.userData.hiddenDuplicateHeadShell=true;
+              hidden++;
+              report.push({
+                name:hide.o.name||'(unnamed)',
+                geometry:hide.o.geometry&&hide.o.geometry.name||'',
+                reason:'overlapping-planar-head-shell'
+              });
+            }
+          }
+        }
+
+        if(verbose){
+          console.table(report);
+          console.log('V33 head artifact cleanup',{hidden,report});
+        }
+        return hidden;
+      }
+
+      _hideBackMountedDuplicateWeapons(root,proc){
+        const result=this._applyHeroEquipmentVisibility(root,true);
+
+        // FBX setup may touch visibility once after initial load. Reapply once on
+        // the next event turn.
+        setTimeout(()=>{
+          try{this._applyHeroEquipmentVisibility(root,false);}
+          catch(e){console.warn('Late equipment visibility pass failed',e);}
+        },0);
+
+        return result.hidden;
+      }
+
+      _setFireballEquipmentMode(active){
+        if(!this.root)return;
+        const compact=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+
+        this.root.traverse(o=>{
+          if(!(o.isMesh||o.isSkinnedMesh||o.isGroup||o.type==='Object3D'))return;
+          const n=compact(this._equipmentDescriptor(o));
+
+          // Held shield only: hidden during the cast because the reference uses
+          // an empty pointing/casting hand. Back/stowed shield remains hidden by
+          // the normal equipment cleanup.
+          const heldShield=
+            (
+              n.includes('braveshieldvisoobjshape') ||
+              n.includes('braveshieldlowshape') ||
+              (n.includes('braveshield')&&!n.includes('braveshieldb'))
+            );
+
+          if(heldShield){
+            o.visible=!active;
+            if(active)o.userData.hiddenDuringFireball=true;
+            else delete o.userData.hiddenDuringFireball;
+          }
+        });
+      }
+
+      playBest(state){
+        if(!this.mixer) return;
+        const patterns={
+          idle:['idle','wait','stand'], run:['run','sprint','walk','move'], jump:['jump','air','fall'],
+          attack_light:['attack','slash','punch','jab'], attack_heavy:['heavy','smash','attack'], attack:['special','skill','magic','attack'], dash_tackle:['dash','tackle','charge'], dodge_juke:['dodge','roll','evade'], crouch:['crouch','duck'], grab_ledge:['ledge','hang'], ledge_climb:['climb','roll'], ledge_jump:['jump','ledge'], fireball:['magic','cast','spell','special']
+        };
+        const names=Object.keys(this.actions);
+        const wants=patterns[state]||patterns.idle;
+        let name=null;
+        for(const p of wants){name=names.find(n=>n.includes(p));if(name)break;}
+        if(!name && state==='idle') name=names[0];
+        if(!name) return;
+        const next=this.actions[name];
+        if(next===this.currentAction) return;
+        next.reset().fadeIn(.14).play();
+        if(this.currentAction) this.currentAction.fadeOut(.14);
+        this.currentAction=next;
+      }
+      update(dt,state='idle',velocity=new THREE.Vector3(),grounded=true){
+        if(this.mixer)this.mixer.update(dt);
+
+        // Reassert normal equipment visibility first.
+        if(this.root && this.equipmentVisibilityFrames>0){
+          this._applyHeroEquipmentVisibility(this.root,false);
+          if(this.proc)this._cleanupHeadArtifacts(this.root,this.proc,false);
+          this.equipmentVisibilityFrames--;
+        }
+
+        // Then apply state-specific visibility.
+        this._setFireballEquipmentMode(state==='fireball');
+
+        if(this.proc)this.proc.update(dt,state,velocity,grounded);
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // PROCEDURAL SKELETON ANIMATOR
+    // Works with uploaded rigs even when the FBX contains zero animation clips.
+    // Bone names are matched heuristically; unknown bones simply remain at rest.
+    // -------------------------------------------------------------------------
+    class ProceduralSkeletonAnimator {
+      constructor(root){
+        this.root=root; this.time=0; this.state='idle'; this.stateTime=0;
+        this.rest=new Map(); this.meta=new Map(); this.deformBones=new Set(); this.bones={};
+        this._discover(); this._captureRigMeta(); this._buildLegChains();
+
+        // V44 grounding calibration.
+        //
+        // Earlier versions normalized the entire FBX with Box3 before duplicate
+        // equipment was hidden. A sword/scabbard tip could therefore become the
+        // lowest point of the asset and lift the boots above Y=0.
+        //
+        // Re-ground from sampled DEFORMED BODY vertices while explicitly excluding
+        // sword/shield/scabbard/hilt renderables.
+        this._footScratch=new THREE.Vector3();
+        this._footLocalScratch=new THREE.Vector3();
+        this._groundVertex=new THREE.Vector3();
+        this._groundWorld=new THREE.Vector3();
+
+        this.root.updateMatrixWorld(true);
+        let initialBodyMin=this._measureBodyMinYInVisualFrame();
+        if(Number.isFinite(initialBodyMin)){
+          this.root.position.y-=initialBodyMin;
+          this.root.updateMatrixWorld(true);
+        }
+
+        this.assetBasePosition=this.root.position.clone();
+        this.restFootY=this._measureFootYInVisualFrame();
+        this.restBodyMinY=this._measureBodyMinYInVisualFrame();
+        if(!Number.isFinite(this.restBodyMinY))this.restBodyMinY=0;
+        this.footLockY=0;
+        // Additive manual joint rotations from the live pose editor.
+        // Stored by anatomical ROLE so all duplicate deform-bone instances move together.
+        this.manualOffsets={};
+        // World-space IK targets authored by the pose editor.
+        // Target names: handL, handR, footL, footR.
+        this.ikTargets={};
+      }
+      _norm(name){return String(name||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+      _discover(){
+        this.root.traverse(o=>{if(o.isSkinnedMesh&&o.skeleton&&Array.isArray(o.skeleton.bones)) for(const b of o.skeleton.bones) if(b&&b.isBone)this.deformBones.add(b);});
+        if(!this.deformBones.size)this.root.traverse(o=>{if(o.isBone)this.deformBones.add(o);});
+        const all=[...this.deformBones]; for(const b of all)this.rest.set(b,{q:b.quaternion.clone(),p:b.position.clone(),s:b.scale.clone()});
+        const group=(names,rx=[])=>{const wanted=new Set(names.map(n=>this._norm(n)));let hits=all.filter(b=>wanted.has(this._norm(b.name)));if(!hits.length)hits=all.filter(b=>rx.some(r=>r.test(this._norm(b.name))));return [...new Set(hits)];};
+        this.bones.hips=group(['UHIp','UHIP','Hips','Pelvis','Root'],[/hip/,/pelvis/]);
+        this.bones.spine=group(['Waist','Spine','Spine1'],[/waist/,/^spine1?$/]);
+        this.bones.chest=group(['Bust','Chest','Spine2','UpperChest'],[/bust/,/chest/,/spine2/]);
+        this.bones.neck=group(['Neck'],[/^neck$/]); this.bones.head=group(['Head'],[/^head$/]);
+        this.bones.shoulderL=group(['ShoulderL','ClavicleL'],[/(shoulder|clavicle)l$/]); this.bones.shoulderR=group(['ShoulderR','ClavicleR'],[/(shoulder|clavicle)r$/]);
+        this.bones.upperArmL=group(['ArmL','UpperArmL','LeftArm'],[/(upperarm|arm)l$/]); this.bones.upperArmR=group(['ArmR','UpperArmR','RightArm'],[/(upperarm|arm)r$/]);
+        // Avoid claiming HandL/HandR as forearms when possible. This prevents one bone from being driven twice.
+        this.bones.foreArmL=group(['ForeArmL','LowerArmL','ElbowL'],[/(forearm|lowerarm|elbow)l$/]); this.bones.foreArmR=group(['ForeArmR','LowerArmR','ElbowR'],[/(forearm|lowerarm|elbow)r$/]);
+        this.bones.handL=group(['HandL','LeftHand'],[/handl$/]); this.bones.handR=group(['HandR','RightHand'],[/handr$/]);
+        this.bones.thighL=group(['LegL','UpLegL','ThighL'],[/(upleg|thigh|leg)l$/]); this.bones.thighR=group(['LegR','UpLegR','ThighR'],[/(upleg|thigh|leg)r$/]);
+        this.bones.shinL=group(['KneeL','LowerLegL','ShinL'],[/(knee|lowerleg|shin|calf)l$/]); this.bones.shinR=group(['KneeR','LowerLegR','ShinR'],[/(knee|lowerleg|shin|calf)r$/]);
+        this.bones.footL=group(['FootL','LeftFoot'],[/footl$/]); this.bones.footR=group(['FootR','RightFoot'],[/footr$/]);
+        // If forearm names are absent, Hand is the next link in this particular game rig; use it as forearm but not as hand too.
+        if(!this.bones.foreArmL.length){this.bones.foreArmL=this.bones.handL;this.bones.handL=[];}
+        if(!this.bones.foreArmR.length){this.bones.foreArmR=this.bones.handR;this.bones.handR=[];}
+        const claimed=new Set();
+        for(const role of ['head','neck']) this.bones[role]=this.bones[role].filter(b=>{if(claimed.has(b))return false;claimed.add(b);return true;});
+
+        // V34: do not procedurally drive Head at all. This multipart FBX has at
+        // least one face/head skin cluster whose local orientation does not match
+        // the other duplicate skeletons; driving all Head bones caused the upside-
+        // down drifting face when facing/right-running.
+        this.faceHeadBones=[...(this.bones.head||[])];
+        this.bones.head=[];
+
+        console.log('V34 procedural role groups',Object.fromEntries(Object.entries(this.bones).map(([k,v])=>[k,v.map(b=>b.name)])));
+      }
+      _firstBoneChild(bone){if(!bone)return null;for(const c of bone.children)if(c.isBone&&c.position.lengthSq()>1e-10)return c;let f=null;bone.traverse(c=>{if(!f&&c!==bone&&c.isBone&&c.position.lengthSq()>1e-10)f=c;});return f;}
+      _captureRigMeta(){this.root.updateMatrixWorld(true);for(const bone of this.deformBones){const r=this.rest.get(bone),c=this._firstBoneChild(bone);let restDirParent=null;if(c&&r&&c.position.lengthSq()>1e-10)restDirParent=c.position.clone().normalize().applyQuaternion(r.q).normalize();this.meta.set(bone,{child:c,restDirParent});}}
+      _buildLegChains(){
+        // Validate legs from the actual hierarchy instead of assuming that every
+        // similarly-named bone belongs to the same anatomical chain.
+        //
+        // A chain is accepted only when:
+        //   foot -> ancestor shin -> ancestor thigh
+        //
+        // This is especially important for multipart game FBX files where many
+        // meshes contain duplicated skeletons and helper nodes.
+        this.legChains={L:[],R:[]};
+        const findAncestorIn=(bone,set)=>{
+          let p=bone&&bone.parent;
+          while(p&&p!==this.root){
+            if(set.has(p))return p;
+            p=p.parent;
+          }
+          return null;
+        };
+        for(const side of ['L','R']){
+          const thighSet=new Set(this.bones['thigh'+side]||[]);
+          const shinSet=new Set(this.bones['shin'+side]||[]);
+          const footSet=new Set(this.bones['foot'+side]||[]);
+          const seen=new Set();
+          for(const foot of footSet){
+            const shin=findAncestorIn(foot,shinSet);
+            if(!shin)continue;
+            const thigh=findAncestorIn(shin,thighSet);
+            if(!thigh)continue;
+            const key=thigh.uuid+'|'+shin.uuid+'|'+foot.uuid;
+            if(seen.has(key))continue;
+            seen.add(key);
+            this.legChains[side].push({thigh,shin,foot});
+          }
+        }
+        console.log('V24 validated leg chains',{
+          left:this.legChains.L.map(c=>[c.thigh.name,c.shin.name,c.foot.name]),
+          right:this.legChains.R.map(c=>[c.thigh.name,c.shin.name,c.foot.name])
+        });
+      }
+      _stableLegLocal(side,pose,dt){
+        // Deliberately use local offsets from bind/rest pose for the lower body.
+        // Unlike _aimRole(), this does NOT independently solve each segment in
+        // world space, so it cannot corkscrew the knee/ankle chain.
+        const s=side==='L'?-1:1;
+        const thigh=pose.thigh||[0,0,0];
+        const shin=pose.shin||[0,0,0];
+        const foot=pose.foot||[0,0,0];
+
+        this._eulerRole('thigh'+side,
+          thigh[0], thigh[1]*s, thigh[2]*s,
+          pose.speed||70,dt);
+        this._eulerRole('shin'+side,
+          shin[0], shin[1]*s, shin[2]*s,
+          pose.speed||70,dt);
+
+        // Foot rotation is intentionally tiny and rest-relative.
+        this._eulerRole('foot'+side,
+          foot[0], foot[1]*s, foot[2]*s,
+          pose.speed||70,dt);
+      }
+      _stableUpperLocal(side,pose,dt){
+        // Stable rest-relative upper-body chain.
+        //
+        // Do NOT world-aim Shoulder/UpperArm/ForeArm independently. Doing so on
+        // this multipart rig caused clavicle/shoulder helper bones to visually pull
+        // away from the torso. Keep shoulder near bind pose and articulate the arm
+        // downstream in local space.
+        const shoulder=pose.shoulder||[0,0,0];
+        const upper=pose.upper||[0,0,0];
+        const fore=pose.fore||[0,0,0];
+        const hand=pose.hand||[0,0,0];
+        const speed=pose.speed||70;
+
+        this._eulerRole('shoulder'+side,
+          shoulder[0],shoulder[1],shoulder[2],
+          speed,dt);
+        this._eulerRole('upperArm'+side,
+          upper[0],upper[1],upper[2],
+          speed,dt);
+        this._eulerRole('foreArm'+side,
+          fore[0],fore[1],fore[2],
+          speed,dt);
+        this._eulerRole('hand'+side,
+          hand[0],hand[1],hand[2],
+          speed,dt);
+      }
+      _rightFacingUpperIdle(dt){
+        // V41 — idle torso only.
+        //
+        // IMPORTANT:
+        // The Pose JSON editor is now the authoritative source for idle
+        // shoulder/upperArm/foreArm/hand rotations. Previous versions posed
+        // the same arm joints procedurally AND then added JSON offsets, which
+        // produced the horizontal sword / twisted shield double-pose.
+        //
+        // Keep only the mild reference torso presentation here.
+
+        const t=this.time;
+        const breathe=Math.sin(t*.72);
+
+        this._eulerRole('hips',
+          .003*breathe,
+          -.016,
+          .010,
+          110,dt);
+
+        this._eulerRole('spine',
+          -.012+.002*breathe,
+          .018,
+          -.006,
+          110,dt);
+
+        this._eulerRole('chest',
+          .006,
+          .032,
+          .006,
+          112,dt);
+
+        this._eulerRole('neck',
+          -.010,
+          .028,
+          -.002,
+          114,dt);
+
+        // Arms intentionally return to imported bind/rest before manual Pose
+        // JSON offsets are composited by _applyManual().  This makes the editor
+        // numerically predictable.
+        this._stableUpperLocal('R',{
+          shoulder:[0,0,0],
+          upper:[0,0,0],
+          fore:[0,0,0],
+          hand:[0,0,0],
+          speed:150
+        },dt);
+
+        this._stableUpperLocal('L',{
+          shoulder:[0,0,0],
+          upper:[0,0,0],
+          fore:[0,0,0],
+          hand:[0,0,0],
+          speed:150
+        },dt);
+      }
+      _footBones(){
+        const out=[],seen=new Set();
+        for(const role of ['footL','footR']){
+          for(const b of this.bones[role]||[]){
+            if(b&&!seen.has(b)){seen.add(b);out.push(b);}
+          }
+        }
+        return out;
+      }
+      _measureFootYInVisualFrame(){
+        const feet=this._footBones();
+        if(!feet.length)return 0;
+        const frame=this.root.parent||this.root;
+        frame.updateMatrixWorld(true);
+        const inv=frame.matrixWorld.clone().invert();
+        let minY=Infinity;
+        for(const b of feet){
+          b.updateWorldMatrix(true,false);
+          b.getWorldPosition(this._footScratch);
+          this._footLocalScratch.copy(this._footScratch).applyMatrix4(inv);
+          minY=Math.min(minY,this._footLocalScratch.y);
+        }
+        return Number.isFinite(minY)?minY:0;
+      }
+      _groundDescriptor(o){
+        const parts=[];
+        let n=o,depth=0;
+        while(n&&depth++<4){
+          if(n.name)parts.push(n.name);
+          if(n.geometry&&n.geometry.name)parts.push(n.geometry.name);
+          if(n.material){
+            const mats=Array.isArray(n.material)?n.material:[n.material];
+            for(const m of mats){
+              if(!m)continue;
+              if(m.name)parts.push(m.name);
+              if(m.map&&m.map.name)parts.push(m.map.name);
+            }
+          }
+          n=n.parent;
+        }
+        return parts.join(' ').toLowerCase();
+      }
+
+      _excludeFromGroundProbe(o){
+        const d=this._groundDescriptor(o);
+        return (
+          /sword|blade|scabbard|sheath|hilt|shield|weapon|bow|arrow/.test(d) ||
+          o.userData.hiddenBackEquipment ||
+          o.userData.hiddenHipEquipment ||
+          o.userData.hiddenDuringFireball
+        );
+      }
+
+      _measureBodyMinYInVisualFrame(){
+        const frame=this.root.parent||this.root;
+        frame.updateMatrixWorld(true);
+        const inv=frame.matrixWorld.clone().invert();
+        let minY=Infinity;
+        let samples=0;
+
+        this.root.updateMatrixWorld(true);
+
+        this.root.traverse(o=>{
+          if(!(o.isSkinnedMesh||o.isMesh) || !o.visible)return;
+          if(this._excludeFromGroundProbe(o))return;
+
+          const pos=o.geometry&&o.geometry.attributes&&o.geometry.attributes.position;
+          if(!pos||!pos.count)return;
+
+          // Sample enough vertices for an accurate sole estimate without turning
+          // grounding into a full-mesh CPU skinning pass every frame.
+          const stride=Math.max(1,Math.floor(pos.count/320));
+          for(let i=0;i<pos.count;i+=stride){
+            this._groundVertex.fromBufferAttribute(pos,i);
+
+            // SkinnedMesh.boneTransform returns the deformed vertex in mesh-local space.
+            if(o.isSkinnedMesh && typeof o.boneTransform==='function'){
+              try{o.boneTransform(i,this._groundVertex);}
+              catch(_){continue;}
+            }
+
+            this._groundWorld.copy(this._groundVertex).applyMatrix4(o.matrixWorld).applyMatrix4(inv);
+            minY=Math.min(minY,this._groundWorld.y);
+            samples++;
+          }
+        });
+
+        return samples&&Number.isFinite(minY)?minY:NaN;
+      }
+
+      _applyGroundFootLock(dt,state,grounded){
+        // True visual sole lock for planted poses. This measures the CURRENT
+        // deformed body mesh rather than assuming ankle-bone origins equal soles.
+        const lock=grounded&&(state==='idle'||state==='crouch');
+
+        let target=0;
+        if(lock){
+          const currentMin=this._measureBodyMinYInVisualFrame();
+          if(Number.isFinite(currentMin)){
+            target=this.restBodyMinY-currentMin;
+          }else{
+            // Fallback to the older ankle-origin method if CPU skin sampling fails.
+            target=this.restFootY-this._measureFootYInVisualFrame();
+          }
+        }
+
+        // Snappy enough to eliminate a visible hovering gap, but still smooth
+        // across crouch/idle transitions.
+        this.footLockY=THREE.MathUtils.damp(this.footLockY,target,42,dt);
+        this.root.position.y=this.assetBasePosition.y+this.footLockY;
+        this.root.updateMatrixWorld(true);
+      }
+      setState(s){if(this.state!==s){this.state=s;this.stateTime=0;}}
+      getManualOffset(role){
+        if(!this.manualOffsets[role]) this.manualOffsets[role]=new THREE.Euler(0,0,0,'XYZ');
+        return this.manualOffsets[role];
+      }
+      setManualOffset(role,x,y,z){
+        const e=this.getManualOffset(role);
+        e.set(x,y,z,'XYZ');
+      }
+      resetManualOffset(role){
+        if(this.manualOffsets[role]) this.manualOffsets[role].set(0,0,0,'XYZ');
+      }
+      resetManualOffsets(){
+        for(const e of Object.values(this.manualOffsets)) e.set(0,0,0,'XYZ');
+      }
+      setIKTarget(name,position,enabled=true){
+        if(!position)return;
+        this.ikTargets[name]={position:position.clone(),enabled:!!enabled};
+      }
+      disableIKTarget(name){
+        if(this.ikTargets[name])this.ikTargets[name].enabled=false;
+      }
+      disableAllIK(){
+        for(const t of Object.values(this.ikTargets))t.enabled=false;
+      }
+      ikTargetJSON(){
+        const out={};
+        for(const [name,t] of Object.entries(this.ikTargets)){
+          if(!t||!t.enabled)continue;
+          out[name]={
+            x:+t.position.x.toFixed(4),
+            y:+t.position.y.toFixed(4),
+            z:+t.position.z.toFixed(4)
+          };
+        }
+        return out;
+      }
+      _representative(role){
+        const a=this.bones[role]||[];
+        return a.length?a[0]:null;
+      }
+      getRoleWorldPosition(role,target=new THREE.Vector3()){
+        const b=this._representative(role);
+        if(!b)return null;
+        b.updateWorldMatrix(true,false);
+        return b.getWorldPosition(target);
+      }
+      getEffectorWorld(name,target=new THREE.Vector3()){
+        // A hand/foot bone origin is the preferred end effector. If a hand bone
+        // is absent in this export, use the first child of the forearm.
+        let role=name;
+        let b=this._representative(role);
+        if(!b&&name==='handL')b=this._firstBoneChild(this._representative('foreArmL'));
+        if(!b&&name==='handR')b=this._firstBoneChild(this._representative('foreArmR'));
+        if(!b&&name==='footL')b=this._firstBoneChild(this._representative('shinL'))||this._representative('shinL');
+        if(!b&&name==='footR')b=this._firstBoneChild(this._representative('shinR'))||this._representative('shinR');
+        if(!b)return null;
+        b.updateWorldMatrix(true,false);
+        return b.getWorldPosition(target);
+      }
+      _applyWorldCCDDelta(role,effectorWorld,targetWorld,strength=.72){
+        const rep=this._representative(role);
+        if(!rep||!rep.parent)return false;
+
+        const joint=new THREE.Vector3();
+        rep.updateWorldMatrix(true,false);
+        rep.getWorldPosition(joint);
+
+        const a=effectorWorld.clone().sub(joint);
+        const b=targetWorld.clone().sub(joint);
+        if(a.lengthSq()<1e-8||b.lengthSq()<1e-8)return false;
+        a.normalize();b.normalize();
+
+        let qWorld=new THREE.Quaternion().setFromUnitVectors(a,b);
+        // Damp each CCD step to avoid violent flips on game-exported rigs.
+        qWorld=new THREE.Quaternion().slerp(qWorld,THREE.MathUtils.clamp(strength,0,1));
+
+        const repWorldQ=new THREE.Quaternion();
+        const parentWorldQ=new THREE.Quaternion();
+        rep.getWorldQuaternion(repWorldQ);
+        rep.parent.getWorldQuaternion(parentWorldQ);
+
+        const desiredWorld=qWorld.clone().multiply(repWorldQ);
+        const desiredLocal=parentWorldQ.clone().invert().multiply(desiredWorld);
+        const localDelta=desiredLocal.clone().multiply(rep.quaternion.clone().invert());
+
+        // Apply the same local-space delta to every duplicate deform bone in this role.
+        this._forRole(role,bone=>{
+          bone.quaternion.premultiply(localDelta);
+          bone.updateMatrix();
+        });
+        this.root.updateMatrixWorld(true);
+        return true;
+      }
+      _applyPoleTarget(poleName,rootRole,midRole,endName,strength=.58){
+        const pole=this.ikTargets[poleName];
+        if(!pole||!pole.enabled)return;
+
+        const rootBone=this._representative(rootRole);
+        const midBone=this._representative(midRole);
+        if(!rootBone||!midBone)return;
+
+        const rootP=this.getRoleWorldPosition(rootRole,new THREE.Vector3());
+        const midP=this.getRoleWorldPosition(midRole,new THREE.Vector3());
+        const endP=this.getEffectorWorld(endName,new THREE.Vector3());
+        if(!rootP||!midP||!endP)return;
+
+        const axis=endP.clone().sub(rootP);
+        if(axis.lengthSq()<1e-8)return;
+        axis.normalize();
+
+        const current=midP.clone().sub(rootP);
+        const desired=pole.position.clone().sub(rootP);
+
+        // Project both vectors onto the plane normal to the root->effector axis.
+        current.addScaledVector(axis,-current.dot(axis));
+        desired.addScaledVector(axis,-desired.dot(axis));
+        if(current.lengthSq()<1e-8||desired.lengthSq()<1e-8)return;
+        current.normalize();desired.normalize();
+
+        const cross=current.clone().cross(desired);
+        const sin=THREE.MathUtils.clamp(axis.dot(cross),-1,1);
+        const cos=THREE.MathUtils.clamp(current.dot(desired),-1,1);
+        const angle=Math.atan2(sin,cos)*strength;
+        if(Math.abs(angle)<1e-5)return;
+
+        const qWorld=new THREE.Quaternion().setFromAxisAngle(axis,angle);
+
+        const rep=rootBone;
+        const repWorldQ=new THREE.Quaternion();
+        const parentWorldQ=new THREE.Quaternion();
+        rep.getWorldQuaternion(repWorldQ);
+        rep.parent.getWorldQuaternion(parentWorldQ);
+
+        const desiredWorld=qWorld.clone().multiply(repWorldQ);
+        const desiredLocal=parentWorldQ.clone().invert().multiply(desiredWorld);
+        const localDelta=desiredLocal.clone().multiply(rep.quaternion.clone().invert());
+
+        this._forRole(rootRole,bone=>{
+          bone.quaternion.premultiply(localDelta);
+          bone.updateMatrix();
+        });
+        this.root.updateMatrixWorld(true);
+      }
+
+      manualPoseQuaternionJSON(){
+        const pose={};
+        for(const [role,e] of Object.entries(this.manualOffsets)){
+          if(Math.abs(e.x)+Math.abs(e.y)+Math.abs(e.z)<=1e-6)continue;
+          const q=new THREE.Quaternion().setFromEuler(e);
+          pose[role]={
+            quaternion:[
+              +q.x.toFixed(7),+q.y.toFixed(7),
+              +q.z.toFixed(7),+q.w.toFixed(7)
+            ]
+          };
+        }
+        return {
+          format:'platformer-reference-pose-quaternion-v1',
+          stanceYawDeg:28,
+          facing:'right',
+          pose,
+          targets:this.ikTargetJSON()
+        };
+      }
+
+      loadManualQuaternionPoseJSON(data,{clear=true}={}){
+        if(!data||data.format!=='platformer-reference-pose-quaternion-v1')
+          throw new Error('Unsupported quaternion pose JSON format.');
+        if(clear)this.resetManualOffsets();
+
+        const applied=[],ignored=[];
+        for(const [role,item] of Object.entries(data.pose||{})){
+          if(!this.manualOffsets[role]){ignored.push(role);continue;}
+          const a=item&&item.quaternion;
+          if(!Array.isArray(a)||a.length!==4){ignored.push(role);continue;}
+          const q=new THREE.Quaternion(Number(a[0]),Number(a[1]),Number(a[2]),Number(a[3])).normalize();
+          const e=new THREE.Euler().setFromQuaternion(q,'XYZ');
+          this.setManualOffset(role,e.x,e.y,e.z);
+          applied.push(role);
+        }
+
+        this.disableAllIK();
+        for(const [name,p] of Object.entries(data.targets||{})){
+          if(!p)continue;
+          this.setIKTarget(name,new THREE.Vector3(Number(p.x)||0,Number(p.y)||0,Number(p.z)||0),true);
+        }
+        return {applied,ignored};
+      }
+
+      _solveCCD(targetName,chainRoles,iterations=5){
+        const t=this.ikTargets[targetName];
+        if(!t||!t.enabled)return;
+
+        const target=t.position;
+        const scratch=new THREE.Vector3();
+
+        for(let iter=0;iter<iterations;iter++){
+          for(const role of chainRoles){
+            const eff=this.getEffectorWorld(targetName,scratch);
+            if(!eff)return;
+            if(eff.distanceToSquared(target)<0.00008)return;
+            this._applyWorldCCDDelta(role,eff,target,iter<2?.78:.58);
+          }
+        }
+      }
+      _applyIK(){
+        // Endpoint solve.
+        this._solveCCD('handR',['foreArmR','upperArmR'],6);
+        this._solveCCD('handL',['foreArmL','upperArmL'],6);
+        this._solveCCD('footR',['shinR','thighR'],5);
+        this._solveCCD('footL',['shinL','thighL'],5);
+
+        // Bend-plane solve. Pole targets rotate the proximal segment around the
+        // root->effector axis, eliminating twisted elbows/knees.
+        this._applyPoleTarget('elbowR','upperArmR','foreArmR','handR',.64);
+        this._applyPoleTarget('elbowL','upperArmL','foreArmL','handL',.64);
+        this._applyPoleTarget('kneeR','thighR','shinR','footR',.58);
+        this._applyPoleTarget('kneeL','thighL','shinL','footL',.58);
+
+        // Re-converge the endpoint after changing the bend plane.
+        this._solveCCD('handR',['foreArmR','upperArmR'],3);
+        this._solveCCD('handL',['foreArmL','upperArmL'],3);
+        this._solveCCD('footR',['shinR','thighR'],2);
+        this._solveCCD('footL',['shinL','thighL'],2);
+      }
+      manualPoseJSON(){
+        const out={};
+        for(const [role,e] of Object.entries(this.manualOffsets)){
+          if(Math.abs(e.x)+Math.abs(e.y)+Math.abs(e.z)>1e-6){
+            out[role]={
+              x:+THREE.MathUtils.radToDeg(e.x).toFixed(2),
+              y:+THREE.MathUtils.radToDeg(e.y).toFixed(2),
+              z:+THREE.MathUtils.radToDeg(e.z).toFixed(2)
+            };
+          }
+        }
+        return out;
+      }
+      loadManualPoseJSON(data,{clear=true}={}){
+        if(!data||typeof data!=='object'||Array.isArray(data))
+          throw new Error('Pose JSON must be an object keyed by joint role.');
+
+        if(clear)this.resetManualOffsets();
+
+        const applied=[];
+        const ignored=[];
+        for(const [role,v] of Object.entries(data)){
+          if(!v||typeof v!=='object'){ignored.push(role);continue;}
+          if(!(this.bones[role]&&this.bones[role].length)){ignored.push(role);continue;}
+
+          const x=Number(v.x??0),y=Number(v.y??0),z=Number(v.z??0);
+          if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(z)){
+            throw new Error(`Joint ${role} has a non-numeric x/y/z value.`);
+          }
+          this.setManualOffset(
+            role,
+            THREE.MathUtils.degToRad(x),
+            THREE.MathUtils.degToRad(y),
+            THREE.MathUtils.degToRad(z)
+          );
+          applied.push(role);
+        }
+        return {applied,ignored};
+      }
+      _applyManualOffsets(state=this.state){
+        // V44: Reference-pose editing must not continuously multiply large Euler
+        // corrections on top of a damped procedural parent chain. That produced
+        // the visible sword-hand rotation flicker.
+        //
+        // In IDLE/reference mode, authored joints are ABSOLUTE REST-RELATIVE:
+        //     finalLocalQ = bindLocalQ * authoredOffsetQ
+        //
+        // Other gameplay states retain additive corrections so the editor can
+        // still layer small tweaks over animation if desired.
+        const absolute=(state==='idle');
+
+        for(const [role,e] of Object.entries(this.manualOffsets)){
+          if(!e || (Math.abs(e.x)+Math.abs(e.y)+Math.abs(e.z)<1e-8))continue;
+          const q=new THREE.Quaternion().setFromEuler(e);
+
+          this._forRole(role,b=>{
+            if(absolute){
+              const r=this.rest.get(b);
+              if(!r)return;
+              b.position.copy(r.p);
+              b.quaternion.copy(r.q).multiply(q);
+              b.scale.copy(r.s);
+            }else{
+              b.quaternion.multiply(q);
+            }
+            b.updateMatrix();
+          });
+        }
+      }
+      _forRole(role,fn){for(const b of this.bones[role]||[])fn(b);}
+      _restore(k){
+        // Rotation blends can be soft, but bone POSITION must stay on the imported bind
+        // locations unless a state explicitly opts in.  Moving every duplicated UHIp/
+        // pelvis instance was able to leave pieces of the multipart FBX below the
+        // controller even after the state returned to idle.
+        for(const[b,r]of this.rest){
+          b.quaternion.slerp(r.q,k);
+          b.position.copy(r.p);
+          b.scale.copy(r.s);
+        }
+      }
+      _eulerBone(b,rx=0,ry=0,rz=0,s=16,dt=.016){const r=this.rest.get(b);if(!r)return;const q=r.q.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rx,ry,rz,'XYZ')));b.quaternion.slerp(q,1-Math.exp(-s*dt));}
+      _eulerRole(role,rx=0,ry=0,rz=0,s=16,dt=.016){this._forRole(role,b=>this._eulerBone(b,rx,ry,rz,s,dt));}
+      _offsetRole(role,x=0,y=0,z=0,s=14,dt=.016){this._forRole(role,b=>{const r=this.rest.get(b);if(r)b.position.lerp(r.p.clone().add(new THREE.Vector3(x,y,z)),1-Math.exp(-s*dt));});}
+      _aimBone(b,d,s=22,dt=.016){if(!b||!b.parent||!d||d.lengthSq()<1e-10)return;const r=this.rest.get(b),m=this.meta.get(b);if(!r||!m||!m.restDirParent)return;const frame=this.root.parent||this.root;frame.updateMatrixWorld(true);const world=d.clone().normalize().transformDirection(frame.matrixWorld).normalize();b.parent.updateWorldMatrix(true,false);const local=world.clone().transformDirection(b.parent.matrixWorld.clone().invert()).normalize();const target=new THREE.Quaternion().setFromUnitVectors(m.restDirParent,local).multiply(r.q.clone());b.quaternion.slerp(target,1-Math.exp(-s*dt));b.updateMatrix();}
+      _aimRole(role,d,s=22,dt=.016){this._forRole(role,b=>this._aimBone(b,d,s,dt));}
+      _phase(duration){return THREE.MathUtils.clamp(this.stateTime/duration,0,1);}
+      _idle(dt){
+        // All upper-body values are authored for FACING RIGHT.
+        this._rightFacingUpperIdle(dt);
+
+        // Stable platformer base.
+        // Reference: wider planted feet, very mild knee flex.
+        this._stableLegLocal('R',{
+          thigh:[-.035,-.010,.205],
+          shin:[ .070,-.006,-.020],
+          foot:[-.004,-.008,.020],
+          speed:132
+        },dt);
+
+        this._stableLegLocal('L',{
+          thigh:[-.060,.010,.185],
+          shin:[ .095,.006,-.018],
+          foot:[-.006,.008,.018],
+          speed:132
+        },dt);
+      }
+      _run(dt,v){
+        const speed=THREE.MathUtils.clamp(Math.abs(v.x)/6.5,.35,1.35);
+        const t=this.time*(9.2+speed*2.8);
+        const swing=Math.sin(t);
+        const liftL=Math.max(0,swing);
+        const liftR=Math.max(0,-swing);
+
+        // Same right-facing authored frame as idle; facingRoot rotates the model.
+        this._eulerRole('hips',-.050,-.025,-.025*swing,52,dt);
+        this._eulerRole('spine',-.095,.035,.022*swing,52,dt);
+        this._eulerRole('chest',.042,.060,-.028*swing,52,dt);
+        this._eulerRole('neck',-.015,.045,.008*swing,50,dt);
+
+        // Stable connected arm chains. Counter-swing happens in upperArm/foreArm;
+        // clavicles remain almost at bind pose.
+        this._stableUpperLocal('R',{
+          shoulder:[.012,-.008,.050],
+          upper:[.040+.16*swing,-.035,.90],
+          fore:[.03-.08*swing,-.008,.055],
+          hand:[-.31,-.09,.52],
+          speed:88
+        },dt);
+
+        this._stableUpperLocal('L',{
+          shoulder:[.010,.008,-.048],
+          upper:[.055-.06*swing,.105,-.83],
+          fore:[-1.14-.04*swing,.028,-.024],
+          hand:[-.02,-.03,-.03],
+          speed:88
+        },dt);
+
+        // Stable rest-relative leg locomotion.
+        this._stableLegLocal('L',{
+          thigh:[ .47*swing,0,.055],
+          shin:[-.58*liftL+.12*liftR,0,-.018],
+          foot:[ .12*liftL,0,.010],
+          speed:72
+        },dt);
+
+        this._stableLegLocal('R',{
+          thigh:[-.47*swing,0,.060],
+          shin:[-.58*liftR+.12*liftL,0,-.018],
+          foot:[ .12*liftR,0,.010],
+          speed:72
+        },dt);
+
+        this._offsetRole('hips',0,.035*Math.abs(Math.cos(t)),0,30,dt);
+      }
+      _crouch(dt){
+        // V16 compact squat. Previous targets folded one knee too high and could
+        // visually lift the character. Use moderate, mirrored leg bends and let
+        // the post-pose foot-lock keep the soles on the controller ground plane.
+        this._stableUpperLocal('R',{
+          shoulder:[.10,-.018,.46],
+          upper:[.14,-.03,.70],
+          fore:[-.34,0,.07],
+          hand:[-.18,-.065,.58],
+          speed:82
+        },dt);
+        this._stableUpperLocal('L',{
+          shoulder:[.08,.012,-.45],
+          upper:[.13,.085,-.61],
+          fore:[-1.06,.018,-.035],
+          hand:[-.035,-.045,-.065],
+          speed:84
+        },dt);
+
+        // Both thighs move forward by the same amount; both shins fold backward
+        // by the same amount. X signs only preserve left/right separation.
+        this._aimRole('thighL',new THREE.Vector3(-.16,-.72,.67),56,dt);
+        this._aimRole('thighR',new THREE.Vector3( .16,-.72,.67),56,dt);
+        this._aimRole('shinL',new THREE.Vector3(-.08,-.76,-.64),56,dt);
+        this._aimRole('shinR',new THREE.Vector3( .08,-.76,-.64),56,dt);
+        this._aimRole('footL',new THREE.Vector3(-.05,-.998,.035),52,dt);
+        this._aimRole('footR',new THREE.Vector3( .05,-.998,.035),52,dt);
+
+        // Lower the pelvis enough to read as a squat, but not so far that the
+        // multipart FBX folds into itself. Foot lock compensates the visual height.
+        this._offsetRole('hips',0,-.30,0,48,dt);
+        this._eulerRole('spine',.16,0,0,38,dt);
+        this._eulerRole('chest',-.055,0,0,38,dt);
+      }
+      _jump(dt,v){
+        const rise=v.y>=0;
+        this._stableUpperLocal('R',{
+          shoulder:[.09,-.018,.44],
+          upper:[rise?-.10:.02,-.025,.68],
+          fore:[-.26,0,.08],
+          hand:[-.17,-.06,.56],
+          speed:70
+        },dt);
+        this._stableUpperLocal('L',{
+          shoulder:[.07,.012,-.43],
+          upper:[.06-(rise?.04:.02),.080,-.60],
+          fore:[-.96,.018,-.035],
+          hand:[-.035,-.045,-.065],
+          speed:72
+        },dt);
+        this._aimRole('thighL',new THREE.Vector3(-.18,-.45,.78),38,dt);
+        this._aimRole('thighR',new THREE.Vector3(.18,-.62,.58),38,dt);
+        this._aimRole('shinL',new THREE.Vector3(-.06,-.45,-.74),38,dt);
+        this._aimRole('shinR',new THREE.Vector3(.06,-.58,-.58),38,dt);
+        this._eulerRole('spine',rise?-.14:.14,0,0,28,dt);
+      }
+      _dash(dt){
+        const u=this._phase(.34),pulse=Math.sin(u*Math.PI);
+        this._stableUpperLocal('R',{shoulder:[0,0,.01],upper:[-.45,0,1.02],fore:[-.18,0,.08],hand:[-.18,-.06,.55],speed:72},dt);
+        this._stableUpperLocal('L',{shoulder:[-.01,.006,-.006],upper:[.02,.10,-.70],fore:[-1.00,.02,-.05],hand:[-.045,-.05,-.08],speed:76},dt);
+        this._aimRole('thighL',new THREE.Vector3(-.08,-.78,.52),42,dt);
+        this._aimRole('thighR',new THREE.Vector3(.08,-.78,-.52),42,dt);
+        this._eulerRole('spine',-.52,0,0,42,dt);this._eulerRole('chest',-.20,0,0,42,dt);
+        this._offsetRole('hips',0,-.08*pulse,.12*pulse,36,dt);
+      }
+      _dodge(dt){
+        const u=this._phase(.44),spin=Math.sin(u*Math.PI);
+        this._stableUpperLocal('R',{shoulder:[0,0,.01],upper:[.35,0,1.00],fore:[-.20,0,.08],hand:[-.16,-.05,.52],speed:66},dt);
+        this._stableUpperLocal('L',{shoulder:[-.01,.006,-.006],upper:[.08,.10,-.70],fore:[-1.02,.02,-.05],hand:[-.045,-.05,-.08],speed:72},dt);
+        this._aimRole('thighL',new THREE.Vector3(-.20,-.52,.78),40,dt);
+        this._aimRole('thighR',new THREE.Vector3(.20,-.52,-.78),40,dt);
+        this._eulerRole('spine',.05,1.25*spin,.28*spin,40,dt);
+        this._eulerRole('chest',0,1.55*spin,-.22*spin,40,dt);
+      }
+      _light(dt){
+        const u=this._phase(.28),strike=Math.sin(Math.min(1,u)*Math.PI);
+        this._stableUpperLocal('R',{
+          shoulder:[0,-.005,.015],
+          upper:[-.35+.55*strike,-.05,.92-.35*strike],
+          fore:[-.12+.65*strike,0,.05],
+          hand:[-.18,-.08,.42],
+          speed:88
+        },dt);
+        this._stableUpperLocal('L',{shoulder:[-.01,.006,-.006],upper:[.08,.10,-.70],fore:[-1.02,.02,-.05],hand:[-.045,-.05,-.08],speed:82},dt);
+        this._eulerRole('chest',0,-.55+.95*strike,0,46,dt);
+        this._eulerRole('spine',-.06,-.22+.42*strike,0,42,dt);
+      }
+      _heavy(dt){
+        const u=this._phase(.48),wind=THREE.MathUtils.clamp(u/.42,0,1),hit=THREE.MathUtils.clamp((u-.38)/.38,0,1);
+        this._stableUpperLocal('R',{
+          shoulder:[0,-.005,.015],
+          upper:[-.65*wind+.45*hit,-.08,.80-.50*hit],
+          fore:[-.55*wind+.80*hit,0,.04],
+          hand:[-.22,-.10,.38],
+          speed:84
+        },dt);
+        this._stableUpperLocal('L',{shoulder:[-.01,.006,-.006],upper:[.08,.10,-.70],fore:[-1.03,.02,-.05],hand:[-.045,-.05,-.08],speed:78},dt);
+        this._eulerRole('spine',-.12,-.70*wind+1.20*hit,0,46,dt);
+        this._eulerRole('chest',0,-1.0*wind+1.70*hit,0,50,dt);
+      }
+      _attack(dt){
+        const u=this._phase(.62),s=Math.sin(u*Math.PI);
+        this._stableUpperLocal('R',{shoulder:[0,-.005,.015],upper:[-.20+.55*s,-.06,.88-.30*s],fore:[-.20+.65*s,0,.06],hand:[-.18,-.08,.42],speed:82},dt);
+        this._stableUpperLocal('L',{shoulder:[-.01,.006,-.006],upper:[.08-.08*s,.10,-.70+.05*s],fore:[-1.03+.10*s,.02,-.05],hand:[-.045,-.05,-.08],speed:86},dt);
+        this._eulerRole('spine',-.08,1.15*s,0,44,dt);
+        this._eulerRole('chest',0,1.45*s,0,44,dt);
+      }
+      _fireball(dt){
+        // V40 — fully authored reference fireball pose.
+        //
+        // Reference silhouette:
+        //  * wide planted base
+        //  * torso twisted strongly toward target
+        //  * LEFT/casting arm fully extended toward screen-right
+        //  * RIGHT/sword arm hanging low with sword pointing toward floor
+        //  * held shield hidden for this state
+        //
+        // Keep shoulders conservative; world-aim only the downstream arm bones.
+
+        const u=this._phase(.72);
+
+        // Windup -> release hold -> recovery.
+        const wind=THREE.MathUtils.smoothstep(
+          THREE.MathUtils.clamp(u/.24,0,1),0,1
+        );
+        const release=THREE.MathUtils.clamp((u-.18)/.14,0,1);
+        const recover=THREE.MathUtils.clamp((u-.72)/.28,0,1);
+        const pose=Math.max(wind,release)*(1-recover);
+
+        // ---------------------------------------------------------------
+        // TORSO
+        // ---------------------------------------------------------------
+        // Strong three-quarter attack twist and slight forward lean.
+        this._eulerRole('hips',
+          -.055*pose,
+          -.10*pose,
+          .060*pose,
+          120,dt);
+
+        this._eulerRole('spine',
+          -.13*pose,
+          .32*pose,
+          -.055*pose,
+          124,dt);
+
+        this._eulerRole('chest',
+          -.055*pose,
+          .58*pose,
+          .020*pose,
+          130,dt);
+
+        this._eulerRole('neck',
+          -.020,
+          .06+.12*pose,
+          -.005,
+          120,dt);
+
+        // ---------------------------------------------------------------
+        // RIGHT / SWORD ARM — relaxed downward
+        // ---------------------------------------------------------------
+        // Shoulder stays close to socket/bind.
+        this._eulerRole('shoulderR',
+          .015,
+          -.018,
+          .060,
+          138,dt);
+
+        // Aim upper arm and forearm DOWN instead of rotating them through a
+        // large local Z angle. This keeps the hand under the shoulder.
+        this._aimRole(
+          'upperArmR',
+          new THREE.Vector3(-.08,-.98,.12),
+          150,dt
+        );
+        this._aimRole(
+          'foreArmR',
+          new THREE.Vector3(-.10,-.99,.05),
+          154,dt
+        );
+
+        // Wrist makes the sword blade fall diagonally toward the floor.
+        this._eulerRole(
+          'handR',
+          -.42,
+          -.10,
+          .34,
+          150,dt
+        );
+
+        // ---------------------------------------------------------------
+        // LEFT / CASTING ARM — fully extended toward target
+        // ---------------------------------------------------------------
+        // Keep shoulder physically attached; rotate only slightly forward/down.
+        this._eulerRole('shoulderL',
+          -.015,
+          -.045,
+          -.055,
+          140,dt);
+
+        // Upper arm points almost exactly screen-right with a tiny downward slope.
+        this._aimRole(
+          'upperArmL',
+          new THREE.Vector3(.995,-.055,.055),
+          164,dt
+        );
+
+        // Forearm continues the same line: nearly straight elbow.
+        this._aimRole(
+          'foreArmL',
+          new THREE.Vector3(.999,-.025,.020),
+          168,dt
+        );
+
+        // Palm/fingers point toward target rather than rolling like a shield grip.
+        this._eulerRole(
+          'handL',
+          .02,
+          -.04,
+          .02,
+          160,dt
+        );
+
+        // ---------------------------------------------------------------
+        // LEGS — wide, asymmetrical planted attack stance
+        // ---------------------------------------------------------------
+        // Sword-side/right leg extends farther outward and carries the rear side.
+        this._stableLegLocal('R',{
+          thigh:[-.12,-.04,.34],
+          shin:[ .16,-.02,-.035],
+          foot:[-.018,-.02,.050],
+          speed:136
+        },dt);
+
+        // Casting-side/left leg bends more strongly, producing the low grounded
+        // neutral-special stance visible in the reference screenshot.
+        this._stableLegLocal('L',{
+          thigh:[-.30,.04,.40],
+          shin:[ .34,.03,-.050],
+          foot:[-.025,.02,.055],
+          speed:136
+        },dt);
+
+        // Lower/shift the pelvis slightly into the planted stance.
+        this._offsetRole(
+          'hips',
+          -.10*pose,
+          -.13*pose,
+          0,
+          110,dt
+        );
+      }
+      _ledge(dt){
+        const sway=Math.sin(this.time*2.4)*.025;
+
+        // Start from a plausible two-handed hang; active hand IK then places the
+        // wrists exactly on the platform lip.
+        // Keep shoulder sockets attached; hand IK handles final wrist contact.
+        this._stableUpperLocal('R',{
+          shoulder:[0,-.004,.012],
+          upper:[-1.20,-.02,1.02],
+          fore:[-.28,0,.08],
+          hand:[-.08,-.05,.22],
+          speed:96
+        },dt);
+        this._stableUpperLocal('L',{
+          shoulder:[0,.006,-.014],
+          upper:[-1.18,.03,-.94],
+          fore:[-.34,.02,-.12],
+          hand:[-.05,-.07,-.10],
+          speed:96
+        },dt);
+
+        // Body hangs below the hands with a small knee tuck.
+        this._eulerRole('spine',.075,0,0,62,dt);
+        this._eulerRole('chest',-.030,0,0,62,dt);
+        this._stableLegLocal('L',{
+          thigh:[-.34+sway,0,.045],
+          shin:[ .62,0,-.015],
+          foot:[-.04,0,.008],
+          speed:70
+        },dt);
+        this._stableLegLocal('R',{
+          thigh:[-.27-sway,0,.050],
+          shin:[ .54,0,-.015],
+          foot:[-.035,0,.008],
+          speed:70
+        },dt);
+      }
+      _ledgeClimb(dt){
+        const u=this._phase(.62);
+        this._stableUpperLocal('R',{shoulder:[0,-.004,.012],upper:[-1.15+.85*u,-.02,1.00],fore:[-.30+.22*u,0,.08],hand:[-.08,-.05,.20],speed:78},dt);
+        this._stableUpperLocal('L',{shoulder:[0,.006,-.014],upper:[-1.12+.82*u,.03,-.92],fore:[-.34+.25*u,.02,-.12],hand:[-.05,-.07,-.10],speed:78},dt);
+        this._aimRole('thighL',new THREE.Vector3(-.24,-.35,.82-.55*u),42,dt);
+        this._aimRole('thighR',new THREE.Vector3(.24,-.42,.70-.45*u),42,dt);
+        this._eulerRole('spine',.30-.55*u,0,.25*Math.sin(u*Math.PI),42,dt);
+      }
+      update(dt,state,velocity,grounded){
+        this.setState(state);this.time+=dt;this.stateTime+=dt;
+        // Begin every frame at the normalized visual-root transform so pose-specific
+        // ground compensation cannot accumulate from one state into the next.
+        this.root.position.copy(this.assetBasePosition);
+        this._restore(1-Math.exp(-1.6*dt));
+        switch(state){
+          case'run':this._run(dt,velocity);break;
+          case'crouch':this._crouch(dt);break;
+          case'jump':case'ledge_jump':this._jump(dt,velocity);break;
+          case'dash_tackle':this._dash(dt);break;
+          case'dodge_juke':this._dodge(dt);break;
+          case'attack_light':this._light(dt);break;
+          case'attack_heavy':this._heavy(dt);break;
+          case'attack':case'special':this._attack(dt);break;
+          case'fireball':this._fireball(dt);break;
+          case'grab_ledge':this._ledge(dt);break;
+          case'ledge_climb':this._ledgeClimb(dt);break;
+          default:this._idle(dt);break;
+        }
+        // User-authored pose corrections are always additive to the procedural state.
+        this._applyManualOffsets(state);
+        this.root.updateMatrixWorld(true);
+
+        // Automatic target-marker IK is layered last so the end effectors converge
+        // on the authored hand/foot target locations.
+        this._applyIK();
+        this.root.updateMatrixWorld(true);
+        const sk=new Set();
+        this.root.traverse(o=>{if(o.isSkinnedMesh&&o.skeleton&&!sk.has(o.skeleton)){sk.add(o.skeleton);o.skeleton.update();}});
+        this._applyGroundFootLock(dt,state,grounded);
+        // Skeleton matrices depend on the root/world transform too.
+        for(const s of sk)s.update();
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // PLAYER CONTROLLER
+    // -------------------------------------------------------------------------
+    class Hero{
+      constructor(){
+        this.root=new THREE.Group(); scene.add(this.root); this.root.position.set(-7,3,0);
+
+        // facingRoot owns persistent LEFT/RIGHT facing using ROTATION, never
+        // negative scale. Negative scale on this multipart skinned FBX caused
+        // overlapping/culling artifacts around the head when facing left.
+        this.facingRoot=new THREE.Group();
+        this.root.add(this.facingRoot);
+
+        // visualRoot owns temporary action rotations such as dodge / ledge roll.
+        this.visualRoot=new THREE.Group();
+        this.facingRoot.add(this.visualRoot);
+
+        // stanceRoot owns the permanent authored three-quarter presentation.
+        this.stanceRoot=new THREE.Group();
+        this.visualRoot.add(this.stanceRoot);
+
+        // Imported Hero faces generally toward camera at 0 yaw. Rotate the whole
+        // visual about 28 degrees toward screen-right for the reference stance.
+        this.stanceYaw=THREE.MathUtils.degToRad(28);
+        this.stanceRoot.rotation.y=this.stanceYaw;
+
+        this.visual=new PlayerVisual(this.stanceRoot);
+        this.velocity=new THREE.Vector3(); this.grounded=false; this.canDoubleJump=true;
+        this.coyote=.12; this.jumpBuffer=0; this.damage=0; this.state='idle';
+        this.attackTimer=0; this.attackType=''; this.attackHit=false; this.invuln=0; this.dodgeTimer=0;
+        this.facing=1;
+        this.lastMoveFacing=1;
+        this.specialCooldown=0; this.previousY=this.root.position.y; this.previousX=this.root.position.x;
+        this.dashTimer=0; this.jukeTimer=0; this.ledgeGrab=null; this.ledgeCooldown=0; this.jukeStartZ=0;
+        this.ledgeClimb=null;
+        this.ledgeJumpTimer=0;
+        this.ledgeInputArmed=false;
+        this.fireballTimer=0; this.fireballReleased=false; this.fireballCooldown=0;
+        this.jumpCount=0; this.maxJumps=2;
+      }
+      setState(s){if(this.state!==s){this.state=s;this.visual.playBest(s);}}
+      setMoveFacing(dir){
+        if(!dir)return;
+        const next=dir>0?1:-1;
+        this.lastMoveFacing=next;
+        this.facing=next;
+      }
+      applyDirectionalFacing(){
+        // V33: rotate the whole character 180 degrees instead of using scale.x=-1.
+        // This preserves positive determinant skinning and eliminates the duplicated
+        // face/head shell artifact seen specifically while moving left.
+        this.facingRoot.scale.set(1,1,1);
+        this.facingRoot.rotation.y=this.facing>0 ? 0 : Math.PI;
+      }
+      startAttack(type){
+        if(this.attackTimer>0||this.dodgeTimer>0)return;
+        this.attackType=type; this.attackTimer=type==='light'?.28:type==='heavy'?.48:.62; this.attackHit=false;
+        this.setState(type==='light'?'attack_light':type==='heavy'?'attack_heavy':'special');
+      }
+      startFireball(){
+        if(this.attackTimer>0||this.dodgeTimer>0||this.fireballTimer>0||this.ledgeClimb||this.fireballCooldown>0)return;
+        this.attackTimer=0;
+        this.fireballTimer=.72;
+        this.fireballReleased=false;
+        this.fireballCooldown=.28;
+        this.velocity.x*=.30;
+        this.setState('fireball');
+      }
+      jump(){
+        if(this.dodgeTimer>0||this.ledgeClimb)return;
+        if(this.grounded||this.coyote>0){
+          this.velocity.y=8.9;this.grounded=false;this.coyote=0;this.jumpBuffer=0;this.jumpCount=1;this.canDoubleJump=true;this.setState('jump');
+        } else if(this.jumpCount<this.maxJumps || this.canDoubleJump){
+          this.velocity.y=8.35;this.jumpCount=Math.max(1,this.jumpCount)+1;this.canDoubleJump=false;this.jumpBuffer=0;this.setState('jump');
+          spawnBurst(this.root.position.clone().add(new THREE.Vector3(0,.15,0)),0xbfe8ff,8);
+        }
+      }
+      _clearLedgeHandIK(){
+        const proc=this.visual&&this.visual.proc;
+        if(!proc)return;
+        proc.disableIKTarget('handL');
+        proc.disableIKTarget('handR');
+      }
+      _applyLedgeHandIK(){
+        const proc=this.visual&&this.visual.proc;
+        const g=this.ledgeGrab;
+        if(!proc||!g)return;
+
+        const p=g.p,side=g.side;
+        const edgeX=side<0?p.x-p.w/2:p.x+p.w/2;
+
+        // Move slightly onto the platform side of the edge so the palms visually
+        // wrap over the lip instead of hovering outside it.
+        const inward=side<0?.10:-.10;
+
+        // Separate hands in Z so the two wrists do not collapse into one point.
+        // In the side camera this remains visually subtle but gives the IK solver
+        // a stable two-handed hanging configuration.
+        const leftTarget=new THREE.Vector3(
+          edgeX+inward,
+          p.top+.055,
+          p.z-.22
+        );
+        const rightTarget=new THREE.Vector3(
+          edgeX+inward,
+          p.top+.055,
+          p.z+.22
+        );
+
+        proc.setIKTarget('handL',leftTarget,true);
+        proc.setIKTarget('handR',rightTarget,true);
+      }
+      _snapLedgeRootToHandContact(){
+        const proc=this.visual&&this.visual.proc;
+        const g=this.ledgeGrab;
+        if(!proc||!g)return;
+
+        const p=g.p,side=g.side;
+        const edgeX=side<0?p.x-p.w/2:p.x+p.w/2;
+        const inward=side<0?.10:-.10;
+
+        const desiredL=new THREE.Vector3(edgeX+inward,p.top+.035,p.z-.22);
+        const desiredR=new THREE.Vector3(edgeX+inward,p.top+.035,p.z+.22);
+
+        const actualL=proc.getEffectorWorld('handL',new THREE.Vector3());
+        const actualR=proc.getEffectorWorld('handR',new THREE.Vector3());
+        if(!actualL||!actualR)return;
+
+        const errL=desiredL.clone().sub(actualL);
+        const errR=desiredR.clone().sub(actualR);
+
+        // Average translational error puts both wrists onto the lip without letting
+        // one mis-mapped hand dominate the whole body.
+        const error=errL.add(errR).multiplyScalar(.5);
+
+        // Stronger correction than V32; this is a contact constraint, not animation.
+        this.root.position.x+=THREE.MathUtils.clamp(error.x,-.32,.32);
+        this.root.position.y+=THREE.MathUtils.clamp(error.y,-.32,.32);
+
+        this.root.updateMatrixWorld(true);
+      }
+
+      beginLedgeClimb(postAction=null){
+        if(!this.ledgeGrab)return;
+        const g=this.ledgeGrab,p=g.p,side=g.side;
+
+        this.ledgeClimb={
+          p,side,t:0,duration:.62,
+          start:this.root.position.clone(),
+          end:new THREE.Vector3(
+            side<0?p.x-p.w/2+.8:p.x+p.w/2-.8,
+            p.top,
+            p.z
+          ),
+          postAction
+        };
+
+        this._clearLedgeHandIK();
+        this.ledgeInputArmed=false;
+        this.ledgeGrab=null;
+        this.velocity.set(0,0,0);
+        this.grounded=false;
+        this.setState('ledge_climb');
+      }
+      beginLedgeJump(){
+        if(!this.ledgeGrab)return;
+        const side=this.ledgeGrab.side;this._clearLedgeHandIK();this.ledgeGrab=null;this.ledgeCooldown=.32;this.grounded=false;
+        this.jumpCount=1;this.canDoubleJump=true;this.velocity.set(-side*4.4,9.2,0);this.ledgeJumpTimer=.34;this.setState('ledge_jump');
+      }
+      dashTackle(){
+        if(this.attackTimer>0||this.dodgeTimer>0||this.dashTimer>0||this.ledgeGrab)return;
+        this.dashTimer=.34;this.invuln=.12;this.velocity.x=this.facing*17;this.velocity.y=this.grounded?0:Math.max(this.velocity.y,-1);this.setState('dash_tackle');
+      }
+      dodge(){
+        if(this.dodgeTimer>0||this.dashTimer>0||this.ledgeGrab)return;
+        this.dodgeTimer=.44;this.jukeTimer=.44;this.invuln=.48;this.jukeStartZ=this.root.position.z;
+        this.velocity.x=this.facing*10;this.velocity.y=this.grounded?1.2:1.5;this.setState('dodge_juke');
+      }
+      dropLedge(){
+        if(!this.ledgeGrab)return;const dir=this.ledgeGrab.side;this._clearLedgeHandIK();this.ledgeGrab=null;this.ledgeCooldown=.32;this.grounded=false;
+        this.velocity.x=dir*.8;this.velocity.y=-1.5;this.setState('jump');
+      }
+      update(dt){
+        if(window.__poseEditing){
+          this.velocity.set(0,0,0);
+          this.setState('idle');
+          this.applyDirectionalFacing();
+          this.visual.update(dt,'idle',this.velocity,this.grounded);
+          return;
+        }
+        this.previousY=this.root.position.y;
+        this.previousX=this.root.position.x;
+        this.specialCooldown=Math.max(0,this.specialCooldown-dt);this.invuln=Math.max(0,this.invuln-dt);this.coyote=Math.max(0,this.coyote-dt);
+        if(!this.ledgeGrab&&!this.ledgeClimb&&(consume(' ')||consume('w')))this.jumpBuffer=.12;
+        this.jumpBuffer=Math.max(0,this.jumpBuffer-dt);if(this.jumpBuffer>0&&!this.ledgeGrab&&!this.ledgeClimb)this.jump();
+        this.ledgeCooldown=Math.max(0,this.ledgeCooldown-dt);
+        this.fireballCooldown=Math.max(0,this.fireballCooldown-dt);
+
+        // ---------------------------------------------------------------
+        // LEDGE-SPECIFIC INPUTS — V30 FRESH-PRESS GATE
+        // ---------------------------------------------------------------
+        if(this.ledgeGrab){
+          this.velocity.set(0,0,0);
+
+          const side=this.ledgeGrab.side;
+          const towardKey=side<0?'d':'a';
+
+          // Do not allow the movement key that CAUSED the ledge grab to
+          // immediately trigger a climb. The hang becomes armed only after all
+          // ledge-action inputs have first returned to neutral.
+          const anyLedgeInputHeld =
+            !!keys[towardKey] ||
+            !!keys.w ||
+            !!keys.j ||
+            !!keys.k ||
+            !!keys.l ||
+            !!keys[';'] ||
+            !!keys[' '] ||
+            !!keys.s;
+
+          if(!this.ledgeInputArmed){
+            // Continuously discard stale edge-trigger events until neutral.
+            for(const k of [towardKey,'w','j','k','l',';',' ','s']) delete pressed[k];
+
+            if(!anyLedgeInputHeld){
+              this.ledgeInputArmed=true;
+            }
+
+            this.setState('grab_ledge');
+            this.applyDirectionalFacing();
+            this._applyLedgeHandIK();
+            this.visual.update(dt,this.state,this.velocity,false);
+            this._snapLedgeRootToHandContact();
+            this.visual.update(0,this.state,this.velocity,false);
+            return;
+          }
+
+          // From here on, only a NEW keydown can trigger an action.
+          if(consume('w') || consume(towardKey)){
+            this.ledgeInputArmed=false;
+            this.beginLedgeClimb();
+          }
+          else if(consume('j')){
+            this.ledgeInputArmed=false;
+            this.beginLedgeClimb('light');
+          }
+          else if(consume('k')){
+            this.ledgeInputArmed=false;
+            this.beginLedgeClimb('heavy');
+          }
+          else if(consume('l')){
+            this.ledgeInputArmed=false;
+            this.beginLedgeClimb('special');
+          }
+          else if(consume(';')){
+            this.ledgeInputArmed=false;
+            this.beginLedgeClimb('fireball');
+          }
+          else if(consume(' ')){
+            this.ledgeInputArmed=false;
+            this.beginLedgeJump();
+          }
+          else if(consume('s')){
+            this.ledgeInputArmed=false;
+            this.dropLedge();
+          }
+          else {
+            this.setState('grab_ledge');
+            this.applyDirectionalFacing();
+            this._applyLedgeHandIK();
+            this.visual.update(dt,this.state,this.velocity,false);
+            this._snapLedgeRootToHandContact();
+            this.visual.update(0,this.state,this.velocity,false);
+            return;
+          }
+        }
+
+        // Normal combat inputs after ledge-specific actions are handled.
+        if(consume('shift'))this.dodge();
+        if(consume('q'))this.dashTackle();
+        if(consume('j'))this.startAttack('light');
+        if(consume('k'))this.startAttack('heavy');
+        if(consume('l')&&this.specialCooldown<=0){
+          this.startAttack('special');
+          this.specialCooldown=1;
+        }
+        if(consume(';'))this.startFireball();
+        if(this.ledgeClimb){
+          const c=this.ledgeClimb;c.t+=dt;const u=THREE.MathUtils.clamp(c.t/c.duration,0,1);
+          // Smooth pull-up followed by a small forward roll onto the platform.
+          const e=u*u*(3-2*u);
+          this.root.position.lerpVectors(c.start,c.end,e);
+          this.root.position.y+=Math.sin(u*Math.PI)*.42;
+          this.visualRoot.rotation.z=-c.side*Math.sin(u*Math.PI)*.72;
+          this.velocity.set(0,0,0);this.setState('ledge_climb');
+          if(u>=1){
+            const postAction=c.postAction;
+
+            this.root.position.copy(c.end);
+            this.visualRoot.rotation.z=0;
+            this.ledgeClimb=null;
+            this.ledgeCooldown=.22;
+
+            this.grounded=true;
+            this.coyote=.12;
+            this.jumpCount=0;
+            this.canDoubleJump=true;
+            this.setState('idle');
+
+            // Attack requested while hanging: complete the climb first, then strike.
+            if(postAction){
+              if(postAction==='special'){
+                if(this.specialCooldown<=0){
+                  this.startAttack('special');
+                  this.specialCooldown=1;
+                }
+              }else if(postAction==='fireball'){
+                this.startFireball();
+              }else{
+                this.startAttack(postAction);
+              }
+            }
+          }
+
+          this.applyDirectionalFacing();
+          this.visual.update(dt,this.state,this.velocity,this.grounded);
+          return;
+        }
+        if(this.ledgeJumpTimer>0){
+          this.ledgeJumpTimer=Math.max(0,this.ledgeJumpTimer-dt);
+          this.setState(this.ledgeJumpTimer>0?'ledge_jump':'jump');
+        }
+
+        if(this.dashTimer>0){
+          this.dashTimer-=dt;this.root.position.x+=this.velocity.x*dt;this.velocity.x*=Math.pow(.08,dt);
+          // Tackle can hit once during the middle of the burst.
+          if(this.dashTimer<.22&&!this.attackHit){this.attackHit=true;this.attackType='heavy';spawnHitbox(this);}
+          if(this.dashTimer<=0){this.attackHit=false;this.setState(this.grounded?'idle':'jump');}
+          this.resolvePlatforms();this.applyDirectionalFacing();this.visual.update(dt,this.state,this.velocity,this.grounded);return;
+        }
+        if(this.dodgeTimer>0){
+          this.dodgeTimer-=dt;this.jukeTimer=Math.max(0,this.jukeTimer-dt);
+          const u=1-this.dodgeTimer/.44;
+          this.root.position.x+=this.velocity.x*dt;this.velocity.x*=Math.pow(.08,dt);
+          // Arc briefly into Z to sell a juke around the opponent, then return to the lane.
+          this.root.position.z=this.jukeStartZ+Math.sin(u*Math.PI)*1.35*this.facing;
+          this.visualRoot.rotation.y=u*Math.PI*2*this.facing;
+          if(this.dodgeTimer<=0){this.root.position.z=this.jukeStartZ;this.visualRoot.rotation.y=0;this.setState(this.grounded?'idle':'jump');}
+          this.resolvePlatforms();this.applyDirectionalFacing();this.visual.update(dt,this.state,this.velocity,this.grounded);return;
+        }
+
+        const move=(keys.a?-1:0)+(keys.d?1:0);
+        if(move){this.setMoveFacing(move);this.velocity.x=THREE.MathUtils.damp(this.velocity.x,move*(keys.shift?9:6.5),14,dt);}
+        else this.velocity.x=THREE.MathUtils.damp(this.velocity.x,0,18,dt);
+        if(keys.s&&!this.grounded)this.velocity.y-=20*dt;
+        this.velocity.y-=22*dt;this.root.position.x+=this.velocity.x*dt;this.root.position.y+=this.velocity.y*dt;
+        this.resolvePlatforms();
+
+        if(this.fireballTimer>0){
+          const prev=this.fireballTimer;
+          this.fireballTimer=Math.max(0,this.fireballTimer-dt);
+          this.velocity.x=THREE.MathUtils.damp(this.velocity.x,0,16,dt);
+          this.setState('fireball');
+
+          // Release ~0.27 s into the cast, after the pointing pose has formed.
+          if(!this.fireballReleased && prev>.45 && this.fireballTimer<=.45){
+            this.fireballReleased=true;
+            spawnHeroFireball(this);
+          }
+
+          if(this.fireballTimer<=0){
+            this.setState(this.grounded?(Math.abs(this.velocity.x)>1?'run':'idle'):'jump');
+          }
+        }
+        else         if(this.attackTimer>0){
+          this.attackTimer-=dt;
+          if(!this.attackHit&&this.attackTimer<(this.attackType==='light'?.19:this.attackType==='heavy'?.30:.34)){this.attackHit=true;spawnHitbox(this);}
+          if(this.attackTimer<=0){this.attackTimer=0;this.setState(this.grounded?(Math.abs(this.velocity.x)>1?'run':'idle'):'jump');}
+        }else if(this.dodgeTimer<=0){
+          if(this.grounded&&keys.s)this.setState('crouch');
+          else this.setState(this.grounded?(Math.abs(this.velocity.x)>1?'run':'idle'):'jump');
+        }
+        if(this.attackTimer>0&&this.attackType==='special')this.setState('attack');
+        if(this.fireballTimer>0)this.setState('fireball');
+        this.applyDirectionalFacing();
+        this.visual.update(dt,this.state,this.velocity,this.grounded);
+      }
+      _insidePlatformXZ(p,x=this.root.position.x,z=this.root.position.z,margin=.22){
+        return x>=p.x-p.w/2+margin && x<=p.x+p.w/2-margin && Math.abs(z-p.z)<=p.d/2+.20;
+      }
+      _platformUnderPlayer(maxDrop=1.15){
+        let best=null;
+        for(const p of platforms){
+          if(!this._insidePlatformXZ(p))continue;
+          const drop=this.root.position.y-p.top;
+          if(drop>=-.14&&drop<=maxDrop&&(!best||p.top>best.top))best=p;
+        }
+        return best;
+      }
+      _sweptGroundHit(){
+        // Continuous feet-vs-platform-top test.  Instead of asking whether the CURRENT
+        // feet position happens to be near a thin top plane, test the full vertical
+        // segment traveled this frame.  This prevents tunneling at high fall speed.
+        if(this.velocity.y>0)return null;
+        let best=null;
+        const x=this.root.position.x,z=this.root.position.z;
+        const hi=Math.max(this.previousY,this.root.position.y)+.035;
+        const lo=Math.min(this.previousY,this.root.position.y)-.035;
+        for(const p of platforms){
+          if(!this._insidePlatformXZ(p,x,z,.20))continue;
+          if(p.top<=hi&&p.top>=lo&&(!best||p.top>best.top))best=p;
+        }
+        return best;
+      }
+      _rescueGroundBelow(maxDrop=2.25){
+        // Last-resort downward contact test used only while descending.  It deliberately
+        // ignores rendered FBX bounds and operates from the controller feet point.
+        let best=null;
+        for(const p of platforms){
+          if(!this._insidePlatformXZ(p,this.root.position.x,this.root.position.z,.18))continue;
+          const drop=this.root.position.y-p.top;
+          if(drop>=-maxDrop&&drop<=maxDrop&&p.top<=this.previousY+.08&&(!best||p.top>best.top))best=p;
+        }
+        return best;
+      }
+      _ledgeGrabHeight(){
+        // Controller root is the feet contact point. The imported Hero is normalized
+        // to roughly 3.25 units tall. A stable hand/shoulder grab probe sits around
+        // 2.45 units above the controller feet.
+        //
+        // If a live rig is loaded, softly derive a better value from the current
+        // shoulder/hand world positions, but clamp it so attack/jump arm animation
+        // cannot make detection disappear for a frame.
+        const proc=this.visual&&this.visual.proc;
+        let h=2.45;
+
+        if(proc){
+          const pL=proc.getRoleWorldPosition('shoulderL',new THREE.Vector3());
+          const pR=proc.getRoleWorldPosition('shoulderR',new THREE.Vector3());
+          if(pL&&pR){
+            const avgY=(pL.y+pR.y)*.5;
+            const measured=avgY-this.root.position.y+.55; // shoulder + reach allowance
+            h=THREE.MathUtils.clamp(measured,2.20,2.72);
+          }
+        }
+        return h;
+      }
+
+      _sweptLedgeCandidate(p){
+        if(this.grounded||this.ledgeGrab||this.ledgeClimb||this.ledgeCooldown>0)return null;
+        if(Math.abs(this.root.position.z-p.z)>p.d/2+.55)return null;
+
+        const left=p.x-p.w/2;
+        const right=p.x+p.w/2;
+        const handH=this._ledgeGrabHeight();
+
+        // Sweep the approximate hand-height point from previous to current frame.
+        // This works while ASCENDING or DESCENDING, unlike the old velocity.y<0 test.
+        const prevHandY=this.previousY+handH;
+        const currHandY=this.root.position.y+handH;
+        const yLo=Math.min(prevHandY,currHandY)-.42;
+        const yHi=Math.max(prevHandY,currHandY)+.34;
+
+        if(p.top<yLo||p.top>yHi)return null;
+
+        // Sweep horizontal controller position too. This allows a fast jump to cross
+        // into the grab window between frames.
+        const xLo=Math.min(this.previousX,this.root.position.x)-.18;
+        const xHi=Math.max(this.previousX,this.root.position.x)+.18;
+
+        const nearLeft =
+          (left>=xLo-.62 && left<=xHi+.62) &&
+          Math.min(Math.abs(this.previousX-left),Math.abs(this.root.position.x-left))<.68;
+
+        const nearRight =
+          (right>=xLo-.62 && right<=xHi+.62) &&
+          Math.min(Math.abs(this.previousX-right),Math.abs(this.root.position.x-right))<.68;
+
+        if(!nearLeft&&!nearRight)return null;
+
+        // Prefer the closer edge at the current frame.
+        const dl=Math.abs(this.root.position.x-left);
+        const dr=Math.abs(this.root.position.x-right);
+        const side=(nearLeft&&(!nearRight||dl<=dr))?-1:1;
+
+        // The feet/body center should be outside, or only barely inside, the platform.
+        // This prevents grabbing a ledge while already landing normally on top.
+        const edge=side<0?left:right;
+        const outward=side<0 ? this.root.position.x<=left+.18 : this.root.position.x>=right-.18;
+        if(!outward)return null;
+
+        return {p,side,left,right,edge,handH};
+      }
+
+      _enterLedgeGrab(candidate){
+        const {p,side,left,right}=candidate;
+        this.ledgeGrab={p,side};
+        this.facing=this.lastMoveFacing;
+
+        // Initial root placement is only a starting estimate. The measured wrist
+        // contact solver corrects the remaining X/Y error each hanging frame.
+        this.root.position.set(
+          side<0?left-.38:right+.38,
+          p.top-2.62,
+          p.z
+        );
+
+        this.velocity.set(0,0,0);
+        this.setState('grab_ledge');
+
+        this.ledgeInputArmed=false;
+        for(const k of ['a','d','w','j','k','l',' ','s']) delete pressed[k];
+
+        this.applyDirectionalFacing();
+        this._applyLedgeHandIK();
+      }
+
+      resolvePlatforms(){
+        let landing=this._sweptGroundHit();
+
+        // Near-surface support catches ordinary low-speed landings and seam jitter.
+        if(!landing&&this.velocity.y<=0){
+          const fallDistance=Math.max(0,this.previousY-this.root.position.y);
+          landing=this._platformUnderPlayer(Math.max(.30,Math.min(1.25,fallDistance+.18)));
+        }
+
+        // If the feet have already ended a little BELOW a platform because a frame was
+        // late, rescue them to the highest platform directly underneath/through which
+        // they passed.  Limit this to descending motion so jumping upward through a
+        // one-way platform still works.
+        if(!landing&&this.velocity.y<=0){
+          const rescue=this._rescueGroundBelow(Math.max(1.4,Math.abs(this.velocity.y)*.08+.55));
+          if(rescue&&this.previousY>=rescue.top-.10)landing=rescue;
+        }
+
+        if(landing){
+          this.root.position.y=landing.top;
+          this.velocity.y=0;
+          this.grounded=true;
+          this.coyote=.12;
+          this.jumpCount=0;
+          this.canDoubleJump=true;
+        }else if(this.grounded){
+          const support=this._platformUnderPlayer(.22);
+          if(support&&Math.abs(this.root.position.y-support.top)<=.22){
+            this.root.position.y=support.top;
+            this.velocity.y=0;
+            this.grounded=true;
+          }else{
+            this.grounded=false;
+            this.coyote=.12;
+          }
+        }
+
+        // Absolute support invariant: if state says GROUNDED, the controller feet must
+        // actually coincide with a platform top.  This is the requested below-player
+        // test and prevents a stale grounded state while the visible player is beneath
+        // the floor.
+        if(this.grounded){
+          const support=this._platformUnderPlayer(.28);
+          if(support){
+            this.root.position.y=support.top;
+            this.velocity.y=0;
+          }else{
+            this.grounded=false;
+          }
+        }
+
+        // V33 swept hand-height ledge detection.
+        // Works while rising or falling, and catches edges crossed between frames.
+        if(!landing&&!this.grounded&&!this.ledgeGrab&&!this.ledgeClimb&&this.ledgeCooldown<=0){
+          for(const p of platforms){
+            const candidate=this._sweptLedgeCandidate(p);
+            if(!candidate)continue;
+            this._enterLedgeGrab(candidate);
+            break;
+          }
+        }
+        if(this.root.position.y<-10)this.reset();
+      }
+      reset(){this._clearLedgeHandIK();this.ledgeInputArmed=false;this.root.position.set(-7,3.1,0);this.velocity.set(0,0,0);this.damage=0;this.grounded=false;this.canDoubleJump=true;this.attackTimer=0;this.dashTimer=0;this.dodgeTimer=0;this.ledgeGrab=null;this.ledgeClimb=null;this.ledgeJumpTimer=0;this.jumpCount=0;this.canDoubleJump=true;this.visualRoot.rotation.set(0,0,0);this.root.position.z=0;this.setState('jump');}
+    }
+    const hero=new Hero();
+
+    // -------------------------------------------------------------------------
+    // V23 RIG POSE LAB
+    // - one selectable joint handle per anatomical ROLE
+    // - TransformControls rotation rings for selected joints
+    // - translation arrows for hand/foot IK targets
+    // - CCD solver inside ProceduralSkeletonAnimator
+    // -------------------------------------------------------------------------
+    class RigPoseEditor{
+      constructor(hero){
+        this.hero=hero;
+        this.enabled=false;
+        this.boundProc=null;
+        this.joints=new Map();
+        this.targets=new Map();
+        this.selected=null;
+        this.selectedType=null;
+        this.history=[];
+
+        this.overlayGroup=new THREE.Group();
+        scene.add(this.overlayGroup);
+
+        this.raycaster=new THREE.Raycaster();
+        this.mouse=new THREE.Vector2();
+
+        this.roles=[
+          'neck','chest','spine','hips',
+          'shoulderL','upperArmL','foreArmL','handL',
+          'shoulderR','upperArmR','foreArmR','handR',
+          'thighL','shinL','footL',
+          'thighR','shinR','footR'
+        ];
+
+        // Explicit joint data API. This is analogous to the troll editor's
+        // bones/selectable mapping, but role-based so multipart FBX skeletons
+        // remain synchronized.
+        this.jointAPI={
+          get:(role)=>this.joints.get(role)||null,
+          roles:()=>[...this.joints.keys()],
+          select:(role)=>this.selectJoint(role),
+          representative:(role)=>this._representativeBone(role)
+        };
+
+        this.panel=document.getElementById('posePanel');
+        this.selectedEl=document.getElementById('poseSelected');
+        this.valuesEl=document.getElementById('poseValues');
+        this.ikStatus=document.getElementById('ikStatus');
+        this.toggleBtn=document.getElementById('poseEditBtn');
+        this.poseJsonInput=document.getElementById('poseJsonInput');
+        this.poseJsonStatus=document.getElementById('poseJsonStatus');
+        this.referenceSelect=document.getElementById('poseReferenceSelect');
+        this.defaultPoseJSON={
+  "shoulderL": {
+    "x": -6.0,
+    "y": -24.0,
+    "z": 13.0
+  },
+  "upperArmL": {
+    "x": -3.0,
+    "y": -14.0,
+    "z": 47.0
+  },
+  "foreArmL": {
+    "x": -3.0,
+    "y": 4.0,
+    "z": 14.0
+  },
+  "handL": {
+    "x": -2.0,
+    "y": -4.0,
+    "z": -3.0
+  },
+  "shoulderR": {
+    "x": -12.0,
+    "y": -8.0,
+    "z": 8.0
+  },
+  "upperArmR": {
+    "x": -20.0,
+    "y": -8.0,
+    "z": 72.0
+  },
+  "foreArmR": {
+    "x": 6.0,
+    "y": 1.0,
+    "z": 8.0
+  },
+  "handR": {
+    "x": -28.0,
+    "y": -8.0,
+    "z": 58.0
+  }
+};
+        this.referencePoseLibrary={
+  "idle": {
+    "hips": {
+      "x": 0,
+      "y": -2,
+      "z": 1
+    },
+    "spine": {
+      "x": -1,
+      "y": 2,
+      "z": -0.5
+    },
+    "chest": {
+      "x": 0.5,
+      "y": 3,
+      "z": 0.5
+    },
+    "neck": {
+      "x": -1,
+      "y": 3,
+      "z": 0
+    },
+    "shoulderL": {
+      "x": -6.2,
+      "y": -25.6,
+      "z": 14.1
+    },
+    "upperArmL": {
+      "x": -2.5,
+      "y": -14.2,
+      "z": 46.7
+    },
+    "foreArmL": {
+      "x": -2.5,
+      "y": 4,
+      "z": 13.6
+    },
+    "handL": {
+      "x": -2,
+      "y": -3,
+      "z": -2
+    },
+    "shoulderR": {
+      "x": -48,
+      "y": -12,
+      "z": 9
+    },
+    "upperArmR": {
+      "x": -168,
+      "y": -18,
+      "z": 22
+    },
+    "foreArmR": {
+      "x": 34,
+      "y": 22,
+      "z": -4
+    },
+    "handR": {
+      "x": -22,
+      "y": -10,
+      "z": -118
+    },
+    "thighL": {
+      "x": -2,
+      "y": 1,
+      "z": 8
+    },
+    "shinL": {
+      "x": 5,
+      "y": 0,
+      "z": -2
+    },
+    "footL": {
+      "x": 0,
+      "y": 2,
+      "z": 1
+    },
+    "thighR": {
+      "x": -1,
+      "y": -1,
+      "z": -8
+    },
+    "shinR": {
+      "x": 4,
+      "y": 0,
+      "z": 2
+    },
+    "footR": {
+      "x": 0,
+      "y": -2,
+      "z": 1
+    }
+  },
+  "run": {
+    "hips": {
+      "x": -13,
+      "y": -4,
+      "z": 4
+    },
+    "spine": {
+      "x": -20,
+      "y": 8,
+      "z": -4
+    },
+    "chest": {
+      "x": -13,
+      "y": 10,
+      "z": 2
+    },
+    "neck": {
+      "x": 8,
+      "y": 3,
+      "z": 0
+    },
+    "shoulderL": {
+      "x": -10,
+      "y": -18,
+      "z": 10
+    },
+    "upperArmL": {
+      "x": -12,
+      "y": -10,
+      "z": 36
+    },
+    "foreArmL": {
+      "x": -20,
+      "y": 5,
+      "z": 20
+    },
+    "handL": {
+      "x": -3,
+      "y": -3,
+      "z": -4
+    },
+    "shoulderR": {
+      "x": -34,
+      "y": -8,
+      "z": 8
+    },
+    "upperArmR": {
+      "x": -152,
+      "y": -10,
+      "z": 15
+    },
+    "foreArmR": {
+      "x": 18,
+      "y": 14,
+      "z": -6
+    },
+    "handR": {
+      "x": -28,
+      "y": -10,
+      "z": -105
+    },
+    "thighR": {
+      "x": -8,
+      "y": -2,
+      "z": 38
+    },
+    "shinR": {
+      "x": 28,
+      "y": 0,
+      "z": -30
+    },
+    "footR": {
+      "x": -10,
+      "y": -3,
+      "z": 8
+    },
+    "thighL": {
+      "x": 8,
+      "y": 2,
+      "z": -30
+    },
+    "shinL": {
+      "x": 18,
+      "y": 0,
+      "z": 22
+    },
+    "footL": {
+      "x": 5,
+      "y": 2,
+      "z": -5
+    }
+  },
+  "slash": {
+    "hips": {
+      "x": -18,
+      "y": -18,
+      "z": 8
+    },
+    "spine": {
+      "x": -26,
+      "y": -34,
+      "z": -8
+    },
+    "chest": {
+      "x": -16,
+      "y": -48,
+      "z": 6
+    },
+    "neck": {
+      "x": 10,
+      "y": 18,
+      "z": 0
+    },
+    "shoulderL": {
+      "x": -14,
+      "y": -22,
+      "z": 18
+    },
+    "upperArmL": {
+      "x": -15,
+      "y": -20,
+      "z": 52
+    },
+    "foreArmL": {
+      "x": -38,
+      "y": 6,
+      "z": 24
+    },
+    "handL": {
+      "x": -8,
+      "y": -5,
+      "z": -6
+    },
+    "shoulderR": {
+      "x": -68,
+      "y": -18,
+      "z": 15
+    },
+    "upperArmR": {
+      "x": -118,
+      "y": -30,
+      "z": 54
+    },
+    "foreArmR": {
+      "x": 72,
+      "y": 30,
+      "z": 12
+    },
+    "handR": {
+      "x": 18,
+      "y": -12,
+      "z": 72
+    },
+    "thighR": {
+      "x": -24,
+      "y": -6,
+      "z": 58
+    },
+    "shinR": {
+      "x": 48,
+      "y": 0,
+      "z": -48
+    },
+    "footR": {
+      "x": -14,
+      "y": -4,
+      "z": 12
+    },
+    "thighL": {
+      "x": 10,
+      "y": 5,
+      "z": -42
+    },
+    "shinL": {
+      "x": 24,
+      "y": 0,
+      "z": 20
+    },
+    "footL": {
+      "x": 8,
+      "y": 4,
+      "z": -10
+    }
+  }
+};
+        this.referencePoseJSON=this.referencePoseLibrary.idle;
+        this.resetPoseJSON=JSON.parse(JSON.stringify(this.referencePoseJSON));
+        this.poseJsonInput.value=JSON.stringify(this.referencePoseJSON,null,2);
+        this.defaultPoseAppliedProc=null;
+
+        // Rotation proxy receives TransformControls rotation. Its Euler is copied
+        // into the additive role offset after each objectChange event.
+        this.rotationProxy=new THREE.Object3D();
+        scene.add(this.rotationProxy);
+        this.rotationProxy.visible=false;
+
+        if(!THREE.TransformControls){
+          throw new Error('TransformControls failed to load. Check the Three.js r128 controls CDN.');
+        }
+        this.transform=new THREE.TransformControls(camera,renderer.domElement);
+        this.transform.setMode('rotate');
+        this.transform.setSpace('local');
+        this.transform.size=.72;
+        scene.add(this.transform);
+
+        this.transform.addEventListener('dragging-changed',e=>{
+          this.transformDragging=!!e.value;
+        });
+        this.transform.addEventListener('mouseDown',()=>this._saveUndo());
+        this.transform.addEventListener('objectChange',()=>this._onTransformChanged());
+
+        this.toggleBtn.addEventListener('click',()=>this.setEnabled(!this.enabled));
+
+        renderer.domElement.addEventListener('pointerdown',e=>this._pointerDown(e));
+
+        // Precise Euler buttons from V22.
+        this.panel.querySelectorAll('[data-axis]').forEach(btn=>{
+          btn.addEventListener('click',()=>{
+            if(this.selectedType!=='joint'||!this.selected)return;
+            const proc=this.hero.visual.proc;if(!proc)return;
+            const axis=btn.dataset.axis,sign=Number(btn.dataset.sign)||1;
+            const e=proc.getManualOffset(this.selected.role);
+            e[axis]+=THREE.MathUtils.degToRad(5)*sign;
+            this._syncRotationProxyFromRole();
+            this._refreshReadout();
+          });
+        });
+
+        document.getElementById('poseRotateMode').addEventListener('click',()=>this.setRotateMode());
+        document.getElementById('poseMoveMode').addEventListener('click',()=>this.setMoveMode());
+        document.getElementById('poseLocalSpace').addEventListener('click',()=>this.setSpace('local'));
+        document.getElementById('poseWorldSpace').addEventListener('click',()=>this.setSpace('world'));
+
+        document.getElementById('poseBindPose').addEventListener('click',()=>{
+          try{this._applyBindPose();}
+          catch(err){this.poseJsonStatus.textContent=err.message;}
+        });
+
+        this.referenceSelect.addEventListener('change',()=>{
+          try{this._applyReferencePoseByName(this.referenceSelect.value);}
+          catch(err){this.poseJsonStatus.textContent=err.message;}
+        });
+
+        document.getElementById('poseReferencePreset').addEventListener('click',()=>{
+          try{this._applyReferencePoseByName(this.referenceSelect.value);}
+          catch(err){this.poseJsonStatus.textContent=err.message;}
+        });
+
+        document.getElementById('poseCaptureReference').addEventListener('click',async()=>{
+          try{await this._captureReferencePose();}
+          catch(err){this.poseJsonStatus.textContent=err.message;}
+        });
+
+        document.getElementById('poseResetJoint').addEventListener('click',()=>{
+          const proc=this.hero.visual.proc;
+          if(proc&&this.selectedType==='joint'&&this.selected){
+            proc.resetManualOffset(this.selected.role);
+            this._syncRotationProxyFromRole();
+            this._refreshReadout();
+          }
+        });
+
+        document.getElementById('poseResetAll').addEventListener('click',()=>{
+          const proc=this.hero.visual.proc;
+          if(proc){
+            proc.resetManualOffsets();
+            this._syncRotationProxyFromRole();
+            this._refreshReadout();
+          }
+        });
+
+        document.getElementById('poseApplyJson').addEventListener('click',()=>{
+          try{this._applyPoseJsonFromTextbox('Pose applied');}
+          catch(err){this.poseJsonStatus.textContent=err.message;}
+        });
+
+        document.getElementById('poseSetResetJson').addEventListener('click',()=>{
+          try{
+            const data=this._parsePoseJsonText();
+            this.resetPoseJSON=JSON.parse(JSON.stringify(data));
+            this._applyPoseJsonData(this.resetPoseJSON,'Reset pose saved + applied');
+          }catch(err){this.poseJsonStatus.textContent=err.message;}
+        });
+
+        document.getElementById('poseResetToJson').addEventListener('click',()=>{
+          try{
+            this.poseJsonInput.value=JSON.stringify(this.resetPoseJSON,null,2);
+            this._applyPoseJsonData(this.resetPoseJSON,'Reset JSON pose reapplied');
+          }catch(err){this.poseJsonStatus.textContent=err.message;}
+        });
+
+        document.getElementById('poseResetIK').addEventListener('click',()=>{
+          const proc=this.hero.visual.proc;
+          if(proc){
+            proc.disableAllIK();
+            this._resetTargetMarkersToRig();
+            this.ikStatus.textContent='IK targets: reset / inactive';
+          }
+        });
+
+        document.getElementById('poseCopyJson').addEventListener('click',async()=>{
+          const proc=this.hero.visual.proc;if(!proc)return;
+          const text=JSON.stringify(proc.manualPoseJSON(),null,2);
+          this.poseJsonInput.value=text;
+          await this._copyText(text,'Pose JSON copied + loaded into editor');
+        });
+
+        document.getElementById('poseCopyIK').addEventListener('click',async()=>{
+          const proc=this.hero.visual.proc;if(!proc)return;
+          await this._copyText(JSON.stringify(proc.ikTargetJSON(),null,2),'IK target JSON copied');
+        });
+
+        // Forest-troll style editor hotkeys, active only while Pose Edit is on.
+        addEventListener('keydown',e=>{
+          if(!this.enabled)return;
+          const k=e.key.toLowerCase();
+
+          if(e.ctrlKey&&k==='z'){
+            e.preventDefault();e.stopImmediatePropagation();
+            this.undo();return;
+          }
+          if(k==='r'){
+            e.preventDefault();e.stopImmediatePropagation();
+            this.setRotateMode();return;
+          }
+          if(k==='g'){
+            e.preventDefault();e.stopImmediatePropagation();
+            this.setMoveMode();return;
+          }
+          if(k==='l'){
+            e.preventDefault();e.stopImmediatePropagation();
+            this.setSpace('local');return;
+          }
+          if(k==='w'){
+            e.preventDefault();e.stopImmediatePropagation();
+            this.setSpace('world');return;
+          }
+          if(k==='escape'){
+            e.preventDefault();e.stopImmediatePropagation();
+            this.deselect();return;
+          }
+
+          // Don't let normal platform controls perturb the character while editing.
+          if(['a','d','s','q','j','k',' ','shift'].includes(k)){
+            e.preventDefault();e.stopImmediatePropagation();
+          }
+        },true);
+
+        this.setEnabled(false);
+      }
+
+      async _copyText(text,message){
+        try{await navigator.clipboard.writeText(text);this.selectedEl.textContent=message;}
+        catch(_){console.log(message,text);this.selectedEl.textContent=message+' (console fallback)';}
+      }
+
+      setEnabled(on){
+        this.enabled=!!on;
+        window.__poseEditing=this.enabled;
+        this.panel.style.display=this.enabled?'block':'none';
+        this.overlayGroup.visible=this.enabled;
+        this.transform.visible=this.enabled&&!!this.selected;
+        this.toggleBtn.textContent=this.enabled?'Exit Pose Edit':'Pose Edit';
+
+        if(this.enabled){
+          // Clear any gameplay key state that might have been held while entering.
+          for(const k in keys)keys[k]=false;
+          for(const k in pressed)delete pressed[k];
+          this.hero.velocity.set(0,0,0);
+          this.hero.setState('idle');
+          this._ensureRigObjects();
+        }else{
+          this.transform.detach();
+          const proc=this.hero.visual.proc;
+          if(proc)proc.disableAllIK();
+        }
+      }
+
+      _applyBindPose(){
+        const proc=this.hero.visual.proc;
+        if(!proc)throw new Error('Upload/bind a player rig first.');
+
+        proc.disableAllIK();
+        proc.resetManualOffsets();
+
+        // Restore exact imported local transforms immediately.
+        for(const [bone,r] of proc.rest){
+          bone.position.copy(r.p);
+          bone.quaternion.copy(r.q);
+          bone.scale.copy(r.s);
+          bone.updateMatrix();
+        }
+        proc.root.updateMatrixWorld(true);
+
+        this.hero.facing=1;
+        this.hero.lastMoveFacing=1;
+        this.hero.applyDirectionalFacing();
+        this.hero.stanceRoot.rotation.set(0,THREE.MathUtils.degToRad(28),0);
+        this.hero.visualRoot.rotation.set(0,0,0);
+        this._resetTargetMarkersToRig();
+        this.hero.setState('idle');
+        this._syncRotationProxyFromRole();
+        this._refreshReadout();
+        this.poseJsonStatus.textContent='Imported bind pose restored. Move joints/IK targets or apply a reference preset.';
+      }
+
+      _applyReferencePoseByName(name){
+        const pose=this.referencePoseLibrary[name];
+        if(!pose)throw new Error('Unknown reference pose: '+name);
+        const proc=this.hero.visual.proc;
+        if(!proc)throw new Error('Upload/bind a player rig first.');
+
+        this.hero.facing=1;
+        this.hero.lastMoveFacing=1;
+        this.hero.applyDirectionalFacing();
+        this.hero.stanceRoot.rotation.set(0,THREE.MathUtils.degToRad(28),0);
+        this.hero.visualRoot.rotation.set(0,0,0);
+        this.hero.visualRoot.scale.set(1,1,1);
+
+        proc.disableAllIK();
+        proc.loadManualPoseJSON(pose,{clear:true});
+        this._resetTargetMarkersToRig();
+
+        this.referencePoseJSON=pose;
+        this.resetPoseJSON=JSON.parse(JSON.stringify(pose));
+        this.poseJsonInput.value=JSON.stringify(pose,null,2);
+
+        this.hero.velocity.set(0,0,0);
+        this.hero.setState('idle');
+        this._syncRotationProxyFromRole();
+        this._refreshReadout();
+        this.poseJsonStatus.textContent=
+          name.toUpperCase()+' reference applied. Fine-tune with joints, hand/foot IK and elbow/knee poles.';
+      }
+
+      async _captureReferencePose(){
+        const proc=this.hero.visual.proc;
+        if(!proc)throw new Error('Upload/bind a player rig first.');
+
+        const data=proc.manualPoseQuaternionJSON();
+        data.name=this.referenceSelect.value;
+        data.capturedAt=new Date().toISOString();
+
+        const text=JSON.stringify(data,null,2);
+        this.poseJsonInput.value=text;
+        await this._copyText(text,'Quaternion reference pose copied + loaded into editor');
+        this.poseJsonStatus.textContent=
+          'Captured '+this.referenceSelect.value.toUpperCase()+
+          ' as quaternion JSON with '+Object.keys(data.pose||{}).length+
+          ' joint offsets and '+Object.keys(data.targets||{}).length+' active targets.';
+      }
+
+      _defaultTargetPosition(name){
+        const proc=this.hero.visual.proc;
+        if(!proc)return null;
+
+        if(name==='handR'||name==='handL'||name==='footR'||name==='footL')
+          return proc.getEffectorWorld(name,new THREE.Vector3());
+
+        const roleMap={
+          elbowR:'foreArmR',elbowL:'foreArmL',
+          kneeR:'shinR',kneeL:'shinL'
+        };
+        const p=proc.getRoleWorldPosition(roleMap[name],new THREE.Vector3());
+        if(!p)return null;
+
+        // Pole target is offset slightly toward camera so it controls bend plane.
+        const side=name.endsWith('R')?1:-1;
+        p.z+=.65*side;
+        if(name.startsWith('elbow'))p.x+=.12*side;
+        else p.x+=.08*side;
+        return p;
+      }
+
+      _parsePoseJsonText(){
+        let data;
+        try{data=JSON.parse(this.poseJsonInput.value);}
+        catch(err){throw new Error('Pose JSON parse error: '+err.message);}
+        if(!data||typeof data!=='object'||Array.isArray(data))
+          throw new Error('Pose JSON must be an object keyed by joint role.');
+        return data;
+      }
+      _applyPoseJsonData(data,label='JSON pose applied'){
+        const proc=this.hero.visual.proc;
+        if(!proc)throw new Error('Upload/bind a player rig before applying pose JSON.');
+
+        let result;
+        if(data&&data.format==='platformer-reference-pose-quaternion-v1'){
+          result=proc.loadManualQuaternionPoseJSON(data,{clear:true});
+        }else{
+          result=proc.loadManualPoseJSON(data,{clear:true});
+          proc.disableAllIK();
+        }
+
+        this._resetTargetMarkersToRig();
+
+        // If quaternion JSON included targets, restore those marker positions/active states.
+        if(data&&data.format==='platformer-reference-pose-quaternion-v1'){
+          for(const [name,p] of Object.entries(data.targets||{})){
+            const t=this.targets.get(name);
+            if(!t)continue;
+            t.marker.position.set(Number(p.x)||0,Number(p.y)||0,Number(p.z)||0);
+            t.active=true;
+          }
+        }
+
+        this.hero.setState('idle');
+        this._syncRotationProxyFromRole();
+        this._refreshReadout();
+        this.poseJsonStatus.textContent=`${label}: ${result.applied.length} joints`+(result.ignored.length?` (${result.ignored.length} ignored)`:``);
+        return result;
+      }
+      _applyPoseJsonFromTextbox(label='JSON pose applied'){
+        return this._applyPoseJsonData(this._parsePoseJsonText(),label);
+      }
+
+      _ensureRigObjects(){
+        const proc=this.hero.visual.proc;
+        if(!proc){
+          this.overlayGroup.clear();
+          this.joints.clear();this.targets.clear();this.boundProc=null;
+          return;
+        }
+        if(proc===this.boundProc&&this.joints.size)return;
+
+        this.boundProc=proc;
+
+        // Apply the V38 textbox preset once to every newly uploaded/bound rig.
+        if(this.defaultPoseAppliedProc!==proc){
+          try{
+            // New rigs start in the same canonical orientation as the reference.
+            this.hero.facing=1;
+            this.hero.lastMoveFacing=1;
+            this.hero.applyDirectionalFacing();
+            this.hero.stanceRoot.rotation.set(0,THREE.MathUtils.degToRad(28),0);
+            this.hero.visualRoot.rotation.set(0,0,0);
+
+            this.referenceSelect.value='idle';
+            this.referencePoseJSON=this.referencePoseLibrary.idle;
+            proc.loadManualPoseJSON(this.referencePoseJSON,{clear:true});
+            this.resetPoseJSON=JSON.parse(JSON.stringify(this.referencePoseJSON));
+            this.poseJsonInput.value=JSON.stringify(this.referencePoseJSON,null,2);
+
+            this.defaultPoseAppliedProc=proc;
+            this.poseJsonStatus.textContent='V43 IDLE reference pose auto-applied. Use selector for RUN / SLASH and fine-tune with IK/poles.';
+          }catch(err){
+            this.poseJsonStatus.textContent='Default pose could not be applied: '+err.message;
+          }
+        }
+
+        this.overlayGroup.clear();
+        this.joints.clear();
+        this.targets.clear();
+        this.selected=null;this.selectedType=null;
+        this.transform.detach();
+
+        // Joint marker cube geometry.
+        const jointGeo=new THREE.BoxGeometry(.18,.18,.18);
+        for(const role of this.roles){
+          const bones=proc.bones[role]||[];
+          if(!bones.length)continue;
+          const material=new THREE.MeshBasicMaterial({
+            color:0x39d7ff,transparent:true,opacity:.82,
+            depthTest:false,depthWrite:false
+          });
+          const marker=new THREE.Mesh(jointGeo,material);
+          marker.renderOrder=1000;
+          marker.userData.editorType='joint';
+          marker.userData.role=role;
+          this.overlayGroup.add(marker);
+          this.joints.set(role,{
+            role,
+            bones,
+            representative:bones[0],
+            marker
+          });
+        }
+
+        // IK end-effectors. Gold octahedra make targets visually distinct.
+        const targetGeo=new THREE.OctahedronGeometry(.16,0);
+        const targetDefs=[
+          ['handR',0xffc857,'ik'],['handL',0xffc857,'ik'],
+          ['footR',0x8dff89,'ik'],['footL',0x8dff89,'ik'],
+          ['elbowR',0xff5ad9,'pole'],['elbowL',0xff5ad9,'pole'],
+          ['kneeR',0xff5ad9,'pole'],['kneeL',0xff5ad9,'pole']
+        ];
+        for(const [name,color,targetType] of targetDefs){
+          const pos=this._defaultTargetPosition(name);
+          if(!pos)continue;
+          const material=new THREE.MeshBasicMaterial({
+            color,transparent:true,opacity:.92,
+            depthTest:false,depthWrite:false
+          });
+          const marker=new THREE.Mesh(targetGeo,material);
+          marker.position.copy(pos);
+          if(targetType==='pole')marker.scale.setScalar(.82);
+          marker.userData.editorType='target';
+          marker.userData.targetName=name;
+          marker.userData.targetType=targetType;
+          marker.renderOrder=1001;
+          this.overlayGroup.add(marker);
+
+          // Helper line from current effector to target.
+          const lineGeo=new THREE.BufferGeometry().setFromPoints([pos,pos]);
+          const lineMat=new THREE.LineBasicMaterial({
+            color,transparent:true,opacity:.55,depthTest:false
+          });
+          const line=new THREE.Line(lineGeo,lineMat);
+          line.renderOrder=999;
+          this.overlayGroup.add(line);
+
+          this.targets.set(name,{name,marker,line,active:false});
+        }
+
+        this._refreshReadout();
+      }
+
+      _representativeBone(role){
+        const j=this.joints.get(role);
+        return j?j.representative:null;
+      }
+
+      _rayPick(e){
+        const rect=renderer.domElement.getBoundingClientRect();
+        this.mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
+        this.mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
+        this.raycaster.setFromCamera(this.mouse,camera);
+
+        const objects=[
+          ...[...this.joints.values()].map(j=>j.marker),
+          ...[...this.targets.values()].map(t=>t.marker)
+        ];
+        const hits=this.raycaster.intersectObjects(objects,false);
+        return hits.length?hits[0].object:null;
+      }
+
+      _pointerDown(e){
+        if(!this.enabled)return;
+        // TransformControls owns its own pointer interaction. Do not change
+        // selection while the pointer is over/dragging the directional gizmo.
+        if(this.transform.dragging||this.transform.axis)return;
+
+        const hit=this._rayPick(e);
+        if(!hit)return;
+        e.preventDefault();
+
+        if(hit.userData.editorType==='joint'){
+          this.selectJoint(hit.userData.role);
+        }else if(hit.userData.editorType==='target'){
+          this.selectTarget(hit.userData.targetName);
+        }
+      }
+
+      selectJoint(role){
+        const j=this.joints.get(role);if(!j)return;
+        this.selected=j;this.selectedType='joint';
+        this._highlightSelection();
+
+        const proc=this.hero.visual.proc;
+        const bone=j.representative;
+        const p=new THREE.Vector3();
+        bone.getWorldPosition(p);
+        this.rotationProxy.position.copy(p);
+
+        const e=proc.getManualOffset(role);
+        this.rotationProxy.rotation.copy(e);
+
+        this.transform.attach(this.rotationProxy);
+        this.transform.setMode('rotate');
+        this.transform.setSpace('local');
+        this.transform.visible=true;
+        this._refreshReadout();
+      }
+
+      selectTarget(name){
+        const t=this.targets.get(name);if(!t)return;
+        this.selected=t;this.selectedType='target';
+        this._highlightSelection();
+
+        this.transform.attach(t.marker);
+        this.transform.setMode('translate');
+        this.transform.setSpace('world');
+        this.transform.visible=true;
+        this._refreshReadout();
+      }
+
+      deselect(){
+        this.selected=null;this.selectedType=null;
+        this.transform.detach();
+        this._highlightSelection();
+        this._refreshReadout();
+      }
+
+      _highlightSelection(){
+        for(const j of this.joints.values())j.marker.material.color.setHex(0x39d7ff);
+        for(const t of this.targets.values()){
+          const isPole=t.name.startsWith('elbow')||t.name.startsWith('knee');
+          const base=isPole?0xff5ad9:(t.name.startsWith('hand')?0xffc857:0x8dff89);
+          t.marker.material.color.setHex(base);
+        }
+        if(!this.selected)return;
+        if(this.selectedType==='joint')this.selected.marker.material.color.setHex(0xffffff);
+        else this.selected.marker.material.color.setHex(0xff6bf0);
+      }
+
+      setRotateMode(){
+        if(this.selectedType==='joint'){
+          this.transform.setMode('rotate');
+          this.transform.setSpace(this.transform.space||'local');
+        }
+        this._updateModeButtons();
+      }
+
+      setMoveMode(){
+        if(this.selectedType==='target'){
+          this.transform.setMode('translate');
+          this.transform.setSpace('world');
+        }
+        this._updateModeButtons();
+      }
+
+      setSpace(space){
+        this.transform.setSpace(space);
+        this._updateModeButtons();
+      }
+
+      _updateModeButtons(){
+        const rot=document.getElementById('poseRotateMode');
+        const mov=document.getElementById('poseMoveMode');
+        const loc=document.getElementById('poseLocalSpace');
+        const wor=document.getElementById('poseWorldSpace');
+        rot.classList.toggle('active',this.selectedType==='joint'&&this.transform.mode==='rotate');
+        mov.classList.toggle('active',this.selectedType==='target'&&this.transform.mode==='translate');
+        loc.classList.toggle('active',this.transform.space==='local');
+        wor.classList.toggle('active',this.transform.space==='world');
+      }
+
+      _syncRotationProxyFromRole(){
+        if(this.selectedType!=='joint'||!this.selected)return;
+        const proc=this.hero.visual.proc;if(!proc)return;
+        const e=proc.getManualOffset(this.selected.role);
+        this.rotationProxy.rotation.copy(e);
+      }
+
+      _onTransformChanged(){
+        const proc=this.hero.visual.proc;
+        if(!proc||!this.selected)return;
+
+        if(this.selectedType==='joint'){
+          // TransformControls edits the invisible role proxy. Copy its local Euler
+          // into the additive role offset, which is then applied to every duplicate bone.
+          proc.setManualOffset(
+            this.selected.role,
+            this.rotationProxy.rotation.x,
+            this.rotationProxy.rotation.y,
+            this.rotationProxy.rotation.z
+          );
+        }else if(this.selectedType==='target'){
+          this.selected.active=true;
+          proc.setIKTarget(this.selected.name,this.selected.marker.position,true);
+          this.ikStatus.textContent='IK active: '+this.selected.name;
+        }
+        this._refreshReadout();
+      }
+
+      _saveUndo(){
+        const proc=this.hero.visual.proc;if(!proc||!this.selected)return;
+        let state;
+        if(this.selectedType==='joint'){
+          const e=proc.getManualOffset(this.selected.role);
+          state={type:'joint',role:this.selected.role,euler:e.clone()};
+        }else{
+          state={
+            type:'target',
+            name:this.selected.name,
+            position:this.selected.marker.position.clone(),
+            active:this.selected.active
+          };
+        }
+        this.history.push(state);
+        if(this.history.length>40)this.history.shift();
+      }
+
+      undo(){
+        const proc=this.hero.visual.proc;
+        const s=this.history.pop();
+        if(!proc||!s)return;
+
+        if(s.type==='joint'){
+          proc.setManualOffset(s.role,s.euler.x,s.euler.y,s.euler.z);
+          this.selectJoint(s.role);
+        }else{
+          const t=this.targets.get(s.name);
+          if(t){
+            t.marker.position.copy(s.position);
+            t.active=s.active;
+            proc.setIKTarget(s.name,t.marker.position,s.active);
+            this.selectTarget(s.name);
+          }
+        }
+        this._refreshReadout();
+      }
+
+      _resetTargetMarkersToRig(){
+        const proc=this.hero.visual.proc;if(!proc)return;
+        for(const t of this.targets.values()){
+          const pos=this._defaultTargetPosition(t.name);
+          if(pos)t.marker.position.copy(pos);
+          t.active=false;
+        }
+      }
+
+      _refreshReadout(){
+        const proc=this.hero.visual.proc;
+        if(!proc||!this.selected){
+          this.selectedEl.textContent='Selected: none';
+          this.valuesEl.textContent='X 0.0°   Y 0.0°   Z 0.0°';
+          this._updateModeButtons();
+          return;
+        }
+
+        if(this.selectedType==='joint'){
+          const e=proc.getManualOffset(this.selected.role);
+          const d=n=>THREE.MathUtils.radToDeg(n).toFixed(1);
+          this.selectedEl.textContent='Joint: '+this.selected.role;
+          this.valuesEl.textContent=`X ${d(e.x)}°   Y ${d(e.y)}°   Z ${d(e.z)}°`;
+        }else{
+          const p=this.selected.marker.position;
+          this.selectedEl.textContent='IK target: '+this.selected.name;
+          this.valuesEl.textContent=`X ${p.x.toFixed(2)}   Y ${p.y.toFixed(2)}   Z ${p.z.toFixed(2)}`;
+        }
+        this._updateModeButtons();
+      }
+
+      update(){
+        if(!this.enabled){
+          this.overlayGroup.visible=false;
+          this.transform.visible=false;
+          return;
+        }
+        this.overlayGroup.visible=true;
+        this._ensureRigObjects();
+
+        const proc=this.hero.visual.proc;if(!proc)return;
+
+        // Joint cubes track the actual currently deformed joints.
+        const p=new THREE.Vector3();
+        for(const j of this.joints.values()){
+          j.representative.getWorldPosition(p);
+          j.marker.position.copy(p);
+          const dist=camera.position.distanceTo(p);
+          j.marker.scale.setScalar(THREE.MathUtils.clamp(dist*.018,.8,1.8));
+        }
+
+        // Keep the rotation gizmo located at the selected joint while leaving its
+        // proxy quaternion under user control.
+        if(this.selectedType==='joint'&&this.selected&&!this.transform.dragging){
+          this.selected.representative.getWorldPosition(p);
+          this.rotationProxy.position.copy(p);
+        }
+
+        // Update target helper lines and feed active marker positions to IK.
+        let activeNames=[];
+        for(const t of this.targets.values()){
+          const eff=proc.getEffectorWorld(t.name,new THREE.Vector3());
+          if(!eff)continue;
+
+          if(t.active){
+            proc.setIKTarget(t.name,t.marker.position,true);
+            activeNames.push(t.name);
+          }
+
+          const a=t.line.geometry.attributes.position.array;
+          a[0]=eff.x;a[1]=eff.y;a[2]=eff.z;
+          a[3]=t.marker.position.x;a[4]=t.marker.position.y;a[5]=t.marker.position.z;
+          t.line.geometry.attributes.position.needsUpdate=true;
+
+          const dist=camera.position.distanceTo(t.marker.position);
+          t.marker.scale.setScalar(THREE.MathUtils.clamp(dist*.017,.85,1.7));
+        }
+        this.ikStatus.textContent=activeNames.length?'IK active: '+activeNames.join(', '):'IK targets: inactive';
+      }
+    }
+
+    const poseEditor=new RigPoseEditor(hero);
+
+    // -------------------------------------------------------------------------
+    // TARGET + COMBAT
+    // -------------------------------------------------------------------------
+    const dummy=new THREE.Group();scene.add(dummy);dummy.position.set(7,3,0);
+    const db=box(1,2.1,.72,M.target);db.position.y=1.05;dummy.add(db);
+    const dh=cyl(.38,.55,M.glow,12);dh.position.y=2.42;dummy.add(dh);
+    let dummyDamage=0,dummyVel=new THREE.Vector3();
+    function spawnHitbox(owner){
+      const reach=owner.attackType==='light'?1.45:owner.attackType==='heavy'?1.9:2.25;
+      const damage=owner.attackType==='light'?5:owner.attackType==='heavy'?13:10;
+      const hitPos=owner.root.position.clone().add(new THREE.Vector3(owner.facing*reach,1.3,0));
+      if(hitPos.distanceTo(dummy.position.clone().add(new THREE.Vector3(0,1.2,0)))<2){
+        dummyDamage=Math.min(999,dummyDamage+damage);const kb=owner.attackType==='heavy'?8:owner.attackType==='special'?7:4;
+        dummyVel.x=owner.facing*kb;dummyVel.y=owner.attackType==='heavy'?5:2.5;spawnBurst(hitPos,owner.attackType==='heavy'?0xffb12b:0xffffff,10);
+      }
+    }
+    function updateDummy(dt){dummyVel.y-=22*dt;dummy.position.addScaledVector(dummyVel,dt);dummyVel.x=THREE.MathUtils.damp(dummyVel.x,0,5,dt);if(dummy.position.y<3){dummy.position.y=3;dummyVel.y=0;}}
+    const particles=[];
+    function spawnBurst(pos,color,n){for(let i=0;i<n;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(.06,.06,.06),new THREE.MeshBasicMaterial({color}));m.position.copy(pos);scene.add(m);particles.push({m,life:.4+Math.random()*.3,v:new THREE.Vector3((Math.random()-.5)*7,Math.random()*6,(Math.random()-.5)*2)});}}
+    function updateParticles(dt){for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.life-=dt;p.v.y-=15*dt;p.m.position.addScaledVector(p.v,dt);p.m.scale.multiplyScalar(.96);if(p.life<=0){scene.remove(p.m);p.m.geometry.dispose();p.m.material.dispose();particles.splice(i,1);}}}
+
+
+    // -------------------------------------------------------------------------
+    // HERO FIREBALL PROJECTILES
+    // -------------------------------------------------------------------------
+    const fireballs=[];
+    function makeFireballMesh(){
+      const g=new THREE.Group();
+      const core=new THREE.Mesh(
+        new THREE.SphereGeometry(.22,14,10),
+        new THREE.MeshBasicMaterial({color:0xfff08a})
+      );
+      const glow=new THREE.Mesh(
+        new THREE.SphereGeometry(.36,12,8),
+        new THREE.MeshBasicMaterial({color:0xff8b22,transparent:true,opacity:.52,depthWrite:false})
+      );
+      const tail=new THREE.Mesh(
+        new THREE.ConeGeometry(.24,.85,10),
+        new THREE.MeshBasicMaterial({color:0xffb229,transparent:true,opacity:.72,depthWrite:false})
+      );
+      tail.rotation.z=Math.PI/2;
+      tail.position.x=-.48;
+      g.add(core,glow,tail);
+      return g;
+    }
+    function spawnHeroFireball(owner){
+      const proc=owner.visual&&owner.visual.proc;
+      let pos=owner.root.position.clone().add(new THREE.Vector3(owner.facing*1.35,1.75,0));
+      if(proc){
+        const hand=proc.getEffectorWorld('handL',new THREE.Vector3());
+        if(hand)pos.copy(hand);
+      }
+      pos.x+=owner.facing*.24;
+      const m=makeFireballMesh();
+      m.position.copy(pos);
+      m.scale.x=owner.facing;
+      scene.add(m);
+      fireballs.push({m,v:new THREE.Vector3(owner.facing*11.5,.10,0),life:2.2,owner,hit:false});
+      spawnBurst(pos,0xffd33d,12);
+    }
+    function updateFireballs(dt){
+      for(let i=fireballs.length-1;i>=0;i--){
+        const f=fireballs[i];
+        f.life-=dt;
+        f.m.position.addScaledVector(f.v,dt);
+        f.m.rotation.x+=dt*6;
+        f.m.rotation.z+=dt*4;
+
+        if(!f.hit){
+          const target=dummy.position.clone().add(new THREE.Vector3(0,1.2,0));
+          if(f.m.position.distanceTo(target)<.82){
+            f.hit=true;
+            dummyDamage=Math.min(999,dummyDamage+11);
+            dummyVel.x=f.owner.facing*7.5;
+            dummyVel.y=3.2;
+            spawnBurst(f.m.position.clone(),0xffa21f,20);
+            f.life=0;
+          }
+        }
+
+        // Stage/platform impact.
+        if(f.m.position.y<.3)f.life=0;
+
+        if(f.life<=0){
+          scene.remove(f.m);
+          f.m.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});
+          fireballs.splice(i,1);
+        }
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // CAMERA / HUD / FILE PICKER
+    // -------------------------------------------------------------------------
+    const camTarget=new THREE.Vector3();
+
+    const cameraBoundaryEl=document.getElementById('cameraBoundary');
+    const cameraHintEl=document.getElementById('cameraHint');
+
+    const cameraControl={
+      zoomOffset:0,             // + farther out, - closer in
+      pan:new THREE.Vector2(0,0),
+      dragging:false,
+      dragLast:new THREE.Vector2(),
+      hover:false,
+      gHeld:false,
+      minZoom:-6.5,
+      maxZoom:10.0,
+      maxPanX:8.5,
+      maxPanY:5.0
+    };
+
+    function getPlayerScreenBoundary(){
+      const p=hero.root.position.clone();
+      p.y+=1.55;
+      p.project(camera);
+
+      const cx=(p.x*.5+.5)*innerWidth;
+      const cy=(-p.y*.5+.5)*innerHeight;
+
+      // Box grows slightly with viewport but remains player-centered.
+      const w=Math.max(330,Math.min(560,innerWidth*.34));
+      const h=Math.max(280,Math.min(470,innerHeight*.46));
+
+      return {
+        left:cx-w*.5,
+        right:cx+w*.5,
+        top:cy-h*.5,
+        bottom:cy+h*.5,
+        width:w,height:h,cx,cy
+      };
+    }
+
+    function pointInsideCameraBoundary(x,y){
+      const b=getPlayerScreenBoundary();
+      return x>=b.left&&x<=b.right&&y>=b.top&&y<=b.bottom;
+    }
+
+    function refreshCameraBoundary(mouseX=null,mouseY=null){
+      const b=getPlayerScreenBoundary();
+      cameraBoundaryEl.style.left=b.left+'px';
+      cameraBoundaryEl.style.top=b.top+'px';
+      cameraBoundaryEl.style.width=b.width+'px';
+      cameraBoundaryEl.style.height=b.height+'px';
+
+      const hover=mouseX!==null&&pointInsideCameraBoundary(mouseX,mouseY);
+      cameraControl.hover=hover;
+
+      cameraBoundaryEl.classList.toggle('hover',hover||cameraControl.gHeld||cameraControl.dragging);
+      cameraBoundaryEl.classList.toggle('active',cameraControl.gHeld||cameraControl.dragging);
+      cameraHintEl.classList.toggle('show',hover||cameraControl.gHeld||cameraControl.dragging);
+    }
+
+    function cameraCursorWorld(clientX,clientY){
+      // Intersect cursor ray with the gameplay Z=0 plane.
+      const ndc=new THREE.Vector2(
+        clientX/innerWidth*2-1,
+        -(clientY/innerHeight)*2+1
+      );
+      const ray=new THREE.Raycaster();
+      ray.setFromCamera(ndc,camera);
+      const plane=new THREE.Plane(new THREE.Vector3(0,0,1),0);
+      const hit=new THREE.Vector3();
+      return ray.ray.intersectPlane(plane,hit)?hit:null;
+    }
+
+    function clampCameraControl(){
+      cameraControl.zoomOffset=THREE.MathUtils.clamp(
+        cameraControl.zoomOffset,
+        cameraControl.minZoom,
+        cameraControl.maxZoom
+      );
+      cameraControl.pan.x=THREE.MathUtils.clamp(
+        cameraControl.pan.x,-cameraControl.maxPanX,cameraControl.maxPanX
+      );
+      cameraControl.pan.y=THREE.MathUtils.clamp(
+        cameraControl.pan.y,-cameraControl.maxPanY,cameraControl.maxPanY
+      );
+    }
+
+    renderer.domElement.addEventListener('wheel',e=>{
+      if(window.__poseEditing)return;
+      if(!pointInsideCameraBoundary(e.clientX,e.clientY))return;
+
+      e.preventDefault();
+
+      const before=cameraCursorWorld(e.clientX,e.clientY);
+      const delta=THREE.MathUtils.clamp(e.deltaY,-160,160);
+      const oldZoom=cameraControl.zoomOffset;
+
+      // Scroll down = zoom out; scroll up = zoom in.
+      cameraControl.zoomOffset+=delta*.018;
+      clampCameraControl();
+
+      // Pull/push pan toward cursor so zoom feels cursor-anchored.
+      if(before){
+        const amount=(oldZoom-cameraControl.zoomOffset)*.075;
+        cameraControl.pan.x+=(before.x-(hero.root.position.x+cameraControl.pan.x))*amount;
+        cameraControl.pan.y+=(before.y-(3.0+cameraControl.pan.y))*amount;
+        clampCameraControl();
+      }
+
+      refreshCameraBoundary(e.clientX,e.clientY);
+    },{passive:false});
+
+    renderer.domElement.addEventListener('pointermove',e=>{
+      refreshCameraBoundary(e.clientX,e.clientY);
+
+      if(!cameraControl.dragging)return;
+
+      const dx=e.clientX-cameraControl.dragLast.x;
+      const dy=e.clientY-cameraControl.dragLast.y;
+      cameraControl.dragLast.set(e.clientX,e.clientY);
+
+      // Convert screen pixels to world movement at the current camera distance.
+      const dist=Math.max(7,camera.position.z);
+      const worldPerPixel=
+        2*Math.tan(THREE.MathUtils.degToRad(camera.fov*.5))*dist/innerHeight;
+
+      cameraControl.pan.x-=dx*worldPerPixel;
+      cameraControl.pan.y+=dy*worldPerPixel;
+      clampCameraControl();
+    });
+
+    renderer.domElement.addEventListener('pointerdown',e=>{
+      if(window.__poseEditing)return;
+      if(e.button!==0||!cameraControl.gHeld)return;
+      if(!pointInsideCameraBoundary(e.clientX,e.clientY))return;
+
+      cameraControl.dragging=true;
+      cameraControl.dragLast.set(e.clientX,e.clientY);
+      renderer.domElement.setPointerCapture?.(e.pointerId);
+      e.preventDefault();
+    });
+
+    const endCameraDrag=e=>{
+      if(!cameraControl.dragging)return;
+      cameraControl.dragging=false;
+      try{renderer.domElement.releasePointerCapture?.(e.pointerId);}catch(_){}
+      refreshCameraBoundary(e.clientX||0,e.clientY||0);
+    };
+    renderer.domElement.addEventListener('pointerup',endCameraDrag);
+    renderer.domElement.addEventListener('pointercancel',endCameraDrag);
+
+    addEventListener('keydown',e=>{
+      if(window.__poseEditing)return;
+      if(e.key.toLowerCase()==='g'){
+        cameraControl.gHeld=true;
+        refreshCameraBoundary();
+      }
+    });
+    addEventListener('keyup',e=>{
+      if(e.key.toLowerCase()==='g'){
+        cameraControl.gHeld=false;
+        cameraControl.dragging=false;
+        refreshCameraBoundary();
+      }
+    });
+
+    function updateCamera(dt){
+      const focus=new THREE.Vector3(
+        (hero.root.position.x+dummy.position.x)*.5 + cameraControl.pan.x,
+        3.2 + cameraControl.pan.y,
+        0
+      );
+      camTarget.lerp(focus,1-Math.pow(.001,dt));
+
+      const span=Math.abs(hero.root.position.x-dummy.position.x);
+      const desiredZ=
+        15+Math.min(span*.35,7)+cameraControl.zoomOffset;
+      const desiredY=
+        6.5+Math.min(span*.08,2)+cameraControl.pan.y*.20;
+
+      camera.position.x=THREE.MathUtils.damp(camera.position.x,camTarget.x,4,dt);
+      camera.position.y=THREE.MathUtils.damp(camera.position.y,desiredY,4,dt);
+      camera.position.z=THREE.MathUtils.damp(camera.position.z,desiredZ,4,dt);
+
+      camera.lookAt(
+        camTarget.x,
+        3+cameraControl.pan.y,
+        0
+      );
+
+      refreshCameraBoundary();
+    }
+    function updateHUD(){
+      document.querySelector('#damage').textContent=Math.round(dummyDamage)+'%';document.querySelector('#meter i').style.width=Math.min(dummyDamage,100)+'%';
+      document.querySelector('#state').textContent=hero.state.toUpperCase()+' | '+(hero.grounded?'GROUND':'AIR')+' | JUMPS '+hero.jumpCount+'/'+hero.maxJumps;
+    }
+    addEventListener('keydown',e=>{
+      if(!window.__poseEditing&&e.key.toLowerCase()==='r'){
+        hero.reset();
+        dummy.position.set(7,3,0);
+        dummyDamage=0;
+        dummyVel.set(0,0,0);
+        cameraControl.zoomOffset=0;
+        cameraControl.pan.set(0,0);
+      }
+    });
+
+    const folderInput=document.getElementById('folderInput');
+    async function loadPlayerFolderPreservingController(files){
+      // FBX parsing + hundreds of textures can take several seconds.  The render loop
+      // continues during that time, so preserve the exact controller state occupied by
+      // the placeholder and restore it once the visual swap is complete.
+      const snap={
+        position:hero.root.position.clone(),
+        velocity:hero.velocity.clone(),
+        grounded:hero.grounded,
+        facing:hero.facing,
+        lastMoveFacing:hero.lastMoveFacing,
+        previousY:hero.previousY,
+        jumpCount:hero.jumpCount,
+        canDoubleJump:hero.canDoubleJump,
+        state:hero.state,
+        visualRot:hero.visualRoot.rotation.clone(),
+        facingRot:hero.facingRoot.rotation.clone(),
+        stanceRot:hero.stanceRoot.rotation.clone()
+      };
+      hero.velocity.set(0,0,0);
+      await hero.visual.loadFolder(files);
+      hero.root.position.copy(snap.position);
+      hero.velocity.copy(snap.velocity);
+      hero.grounded=snap.grounded;
+      hero.facing=snap.facing;
+      hero.lastMoveFacing=snap.lastMoveFacing??snap.facing;
+      hero.previousY=snap.position.y;
+      hero.jumpCount=snap.jumpCount;
+      hero.canDoubleJump=snap.canDoubleJump;
+      hero.visualRoot.rotation.copy(snap.visualRot);
+      if(snap.facingRot)hero.facingRoot.rotation.copy(snap.facingRot);
+      if(snap.stanceRot)hero.stanceRoot.rotation.copy(snap.stanceRot);
+      hero.applyDirectionalFacing();
+      hero.applyDirectionalFacing();
+      hero.setState(snap.grounded ? (keys.s?'crouch':'idle') : snap.state);
+      hero.root.updateMatrixWorld(true);
+    }
+
+    folderInput.addEventListener('change',async e=>{
+      try{errorBox.style.display='none';await loadPlayerFolderPreservingController(e.target.files);}
+      catch(err){showError(err);document.getElementById('assetStatus').textContent='Player load failed — placeholder/previous player kept.';}
+      finally{folderInput.value='';}
+    });
+    document.getElementById('resetAssetBtn').addEventListener('click',()=>hero.visual.usePlaceholder());
+
+    // Folder drag/drop works in Chromium browsers when directory entries are exposed.
+    const overlay=document.getElementById('dropOverlay');
+    addEventListener('dragover',e=>{e.preventDefault();overlay.style.display='grid';});
+    addEventListener('dragleave',e=>{if(e.clientX===0||e.clientY===0||e.clientX===innerWidth||e.clientY===innerHeight)overlay.style.display='none';});
+    addEventListener('drop',async e=>{
+      e.preventDefault();overlay.style.display='none';
+      // A flat file drop can be loaded; for complete texture folders use the top menu folder picker.
+      if(e.dataTransfer.files&&e.dataTransfer.files.length){
+        try{await loadPlayerFolderPreservingController(e.dataTransfer.files);}catch(err){showError(err);}
+      }
+    });
+
+    function animate(){
+      requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.033);hero.update(dt);poseEditor.update();updateDummy(dt);updateParticles(dt);updateFireballs(dt);updateCamera(dt);updateHUD();renderer.render(scene,camera);
+    }
+    animate();
+    addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+  })();
+  </script>
+</body>
+</html>
