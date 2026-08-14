@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Monolithic Platform Fighter Prototype</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#111;font-family:Arial}
+#hud{position:absolute;left:10px;top:10px;color:#fff;background:rgba(0,0,0,.55);padding:10px}
+#timeline{position:absolute;left:0;right:0;bottom:0;height:120px;background:rgba(20,20,20,.95);color:#fff;padding:8px;border-top:1px solid #444}
+#graph{position:absolute;right:10px;top:10px;width:240px;background:rgba(0,0,0,.65);color:#fff;padding:10px}
+</style>
+</head>
+<body>
+<div id="hud">
+<b>Platform Fighter Engine Prototype</b><br>
+`/~ : mouse mode<br>
+A/D move • Space jump • C crouch<br>
+Right Mouse: sword attack<br>
+Near target = melee<br>
+Far target = green blade beam
+</div>
+
+<div id="graph">
+<b>Compiled Systems</b>
+<ul>
+<li>ECS</li><li>Animation Graph</li><li>State Machine</li>
+<li>IK</li><li>Motion Matching</li><li>Combat</li>
+</ul>
+</div>
+
+<div id="timeline">
+<b>Blender-style Timeline</b><br>
+Spine ● ● ●<br>
+Arms ● ● ●<br>
+Legs ● ●
+</div>
+
+<script type="importmap">
+{
+"imports":{
+"three":"https://esm.sh/three@0.165.0",
+"orbit":"https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js"
+}}
+</script>
+
+<script type="module">
+import * as THREE from "three";
+import {OrbitControls} from "orbit";
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x89a8d8);
+
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,.1,100);
+camera.position.set(0,6,14);
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enablePan=false;
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x554433,2));
+const sun=new THREE.DirectionalLight(0xffffff,2);
+sun.position.set(10,15,10);
+scene.add(sun);
+
+const arena=new THREE.Mesh(
+ new THREE.CylinderGeometry(8,8,.5,48),
+ new THREE.MeshStandardMaterial({color:0xc8b08d})
+);
+arena.position.y=-.25;
+scene.add(arena);
+
+/* Character */
+const hero=new THREE.Group(); scene.add(hero);
+
+const body=new THREE.Mesh(
+ new THREE.CapsuleGeometry(.6,1.8,6,10),
+ new THREE.MeshStandardMaterial({color:0x7388d8})
+);
+body.position.y=1.8; hero.add(body);
+
+const sword=new THREE.Mesh(
+ new THREE.BoxGeometry(.12,1.5,.12),
+ new THREE.MeshStandardMaterial({color:0xcfcfcf})
+);
+sword.position.set(.7,2.0,0);
+hero.add(sword);
+
+const enemy=new THREE.Group(); scene.add(enemy);
+enemy.position.set(5,0,0);
+
+const eBody=new THREE.Mesh(
+ new THREE.BoxGeometry(1.3,2.6,1.0),
+ new THREE.MeshStandardMaterial({color:0xb35642})
+);
+eBody.position.y=1.3;
+enemy.add(eBody);
+
+let keys={};
+let mouseMode=false;
+let vy=0;
+let attackTimer=0;
+
+const projectiles=[];
+
+addEventListener("keydown",e=>{
+ const k=e.key.toLowerCase();
+ keys[k]=true;
+ if(k==="`" || k==="~"){
+   mouseMode=!mouseMode;
+   renderer.domElement.style.cursor=mouseMode?"crosshair":"default";
+ }
+});
+
+addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+
+renderer.domElement.addEventListener("contextmenu",e=>e.preventDefault());
+
+renderer.domElement.addEventListener("mousedown",e=>{
+ if(e.button!==2)return;
+ performAttack();
+});
+
+function spawnBeam(){
+ const g=new THREE.TorusGeometry(.8,.08,8,18,1.8);
+ const m=new THREE.MeshBasicMaterial({color:0x44ff66});
+ const beam=new THREE.Mesh(g,m);
+
+ beam.rotation.y=Math.PI/2;
+ beam.position.copy(hero.position).add(new THREE.Vector3(.9,2.0,0));
+
+ scene.add(beam);
+
+ projectiles.push({
+  mesh:beam,
+  vel:new THREE.Vector3(
+   enemy.position.x>hero.position.x?12:-12,
+   0,0
+  ),
+  life:2
+ });
+}
+
+function performAttack(){
+ if(attackTimer>0)return;
+
+ attackTimer=.35;
+
+ const d=hero.position.distanceTo(enemy.position);
+
+ if(d<2.4){
+   enemy.position.x+=hero.position.x<enemy.position.x?1.2:-1.2;
+ }else{
+   spawnBeam();
+ }
+}
+
+const clock=new THREE.Clock();
+
+function updateAnimation(t){
+ const walk=Math.sin(t*8);
+
+ if(Math.abs((keys["a"]?-1:0)+(keys["d"]?1:0))>0){
+   body.rotation.z=walk*0.08;
+ }
+
+ if(keys["c"]){
+   body.scale.y=.75;
+ }else{
+   body.scale.y=1;
+ }
+
+ if(attackTimer>0){
+   const p=1-attackTimer/.35;
+   sword.rotation.z=-2.6*Math.sin(p*Math.PI);
+ }
+ else{
+   sword.rotation.z*=0.8;
+ }
+}
+
+function updateProjectiles(dt){
+ for(let i=projectiles.length-1;i>=0;i--){
+   const p=projectiles[i];
+   p.mesh.position.addScaledVector(p.vel,dt);
+   p.life-=dt;
+
+   if(p.mesh.position.distanceTo(enemy.position)<1.5){
+      enemy.position.x+=p.vel.x>0?2:-2;
+      p.life=0;
+   }
+
+   if(p.life<=0){
+      scene.remove(p.mesh);
+      projectiles.splice(i,1);
+   }
+ }
+}
+
+function loop(){
+ requestAnimationFrame(loop);
+
+ const dt=Math.min(clock.getDelta(),.033);
+ const t=clock.elapsedTime;
+
+ let move=(keys["a"]?-1:0)+(keys["d"]?1:0);
+
+ hero.position.x+=move*5*dt;
+
+ if(keys[" "]&&hero.position.y===0)vy=7;
+ vy-=14*dt;
+ hero.position.y+=vy*dt;
+ if(hero.position.y<0){hero.position.y=0;vy=0;}
+
+ attackTimer=Math.max(0,attackTimer-dt);
+
+ updateAnimation(t);
+ updateProjectiles(dt);
+
+ camera.lookAt(hero.position.x,2,0);
+
+ renderer.render(scene,camera);
+}
+
+loop();
+
+addEventListener("resize",()=>{
+ camera.aspect=innerWidth/innerHeight;
+ camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
