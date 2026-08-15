@@ -1,0 +1,641 @@
+<div id="graph-editor">
+    <canvas id="graph-canvas"></canvas>
+</div>
+
+#graph-editor {
+
+    position: absolute;
+
+    inset: 0;
+
+    overflow: hidden;
+
+    background: #1e1e1e;
+}
+
+#graph-canvas {
+
+    width: 100%;
+
+    height: 100%;
+
+    display: block;
+
+    cursor: default;
+}
+
+<script>
+export class EditorCamera {
+
+    constructor() {
+
+        this.x = 0;
+
+        this.y = 0;
+
+        this.zoom = 1;
+
+        this.minZoom = 0.25;
+
+        this.maxZoom = 4;
+    }
+
+    worldToScreen(x, y) {
+
+        return {
+
+            x: (x + this.x) * this.zoom,
+
+            y: (y + this.y) * this.zoom
+        };
+    }
+
+    screenToWorld(x, y) {
+
+        return {
+
+            x: x / this.zoom - this.x,
+
+            y: y / this.zoom - this.y
+        };
+    }
+
+    zoomAt(amount) {
+
+        this.zoom *= amount;
+
+        this.zoom = Math.max(
+
+            this.minZoom,
+
+            Math.min(
+
+                this.maxZoom,
+
+                this.zoom
+            )
+        );
+    }
+
+}
+
+export class GraphEditor {
+
+    constructor(canvas, graph) {
+
+        this.canvas = canvas;
+
+        this.ctx = canvas.getContext("2d");
+
+        this.graph = graph;
+
+        this.camera = new EditorCamera();
+
+        this.selectedNodes = [];
+
+        this.dragNode = null;
+
+        this.dragOffsetX = 0;
+
+        this.dragOffsetY = 0;
+
+        this.connectingSocket = null;
+
+        this.selectionBox = null;
+
+        this.mouse = {
+
+            x: 0,
+
+            y: 0
+        };
+
+        this.resize();
+
+        this.installEvents();
+
+        requestAnimationFrame(
+
+            () => this.render()
+        );
+    }
+
+    resize() {
+
+        this.canvas.width =
+            window.innerWidth;
+
+        this.canvas.height =
+            window.innerHeight;
+    }
+
+    installEvents() {
+
+    window.addEventListener(
+
+        "resize",
+
+        () => this.resize()
+    );
+
+    this.canvas.addEventListener(
+
+        "mousedown",
+
+        e => this.onMouseDown(e)
+    );
+
+    this.canvas.addEventListener(
+
+        "mousemove",
+
+        e => this.onMouseMove(e)
+    );
+
+    this.canvas.addEventListener(
+
+        "mouseup",
+
+        e => this.onMouseUp(e)
+    );
+
+    this.canvas.addEventListener(
+
+        "wheel",
+
+        e => this.onWheel(e)
+    );
+}
+
+  findNode(x, y) {
+
+    const world =
+        this.camera.screenToWorld(x, y);
+
+    for (let i =
+        this.graph.nodes.length - 1;
+
+        i >= 0;
+
+        i--) {
+
+        const node =
+            this.graph.nodes[i];
+
+        if (
+
+            world.x >= node.x &&
+
+            world.x <= node.x + 180 &&
+
+            world.y >= node.y &&
+
+            world.y <= node.y + 90
+
+        ) {
+
+            return node;
+        }
+    }
+
+    return null;
+}
+
+  onMouseDown(e) {
+
+    this.mouse.x = e.offsetX;
+
+    this.mouse.y = e.offsetY;
+
+    const node =
+        this.findNode(
+
+            e.offsetX,
+
+            e.offsetY
+        );
+
+    if (node) {
+
+        this.dragNode = node;
+
+        this.dragOffsetX =
+            e.offsetX - node.x;
+
+        this.dragOffsetY =
+            e.offsetY - node.y;
+
+        return;
+    }
+
+    this.selectionBox = {
+
+        x: e.offsetX,
+
+        y: e.offsetY,
+
+        w: 0,
+
+        h: 0
+    };
+}
+
+  onMouseMove(e) {
+
+    this.mouse.x = e.offsetX;
+
+    this.mouse.y = e.offsetY;
+
+    if (this.dragNode) {
+
+        const world =
+            this.camera.screenToWorld(
+
+                e.offsetX,
+
+                e.offsetY
+            );
+
+        this.dragNode.x =
+
+            world.x -
+
+            this.dragOffsetX;
+
+        this.dragNode.y =
+
+            world.y -
+
+            this.dragOffsetY;
+    }
+
+    if (this.selectionBox) {
+
+        this.selectionBox.w =
+
+            e.offsetX -
+
+            this.selectionBox.x;
+
+        this.selectionBox.h =
+
+            e.offsetY -
+
+            this.selectionBox.y;
+    }
+}
+
+  onMouseUp() {
+
+    this.dragNode = null;
+
+    this.selectionBox = null;
+}
+
+  onWheel(e) {
+
+    e.preventDefault();
+
+    if (e.deltaY < 0) {
+
+        this.camera.zoomAt(1.1);
+    }
+
+    else {
+
+        this.camera.zoomAt(.9);
+    }
+}
+
+  drawGrid() {
+
+    const ctx = this.ctx;
+
+    const spacing =
+        50 * this.camera.zoom;
+
+    ctx.strokeStyle =
+        "#282828";
+
+    for (
+
+        let x = 0;
+
+        x < this.canvas.width;
+
+        x += spacing
+
+    ) {
+
+        ctx.beginPath();
+
+        ctx.moveTo(x, 0);
+
+        ctx.lineTo(
+
+            x,
+
+            this.canvas.height
+        );
+
+        ctx.stroke();
+    }
+
+    for (
+
+        let y = 0;
+
+        y < this.canvas.height;
+
+        y += spacing
+
+    ) {
+
+        ctx.beginPath();
+
+        ctx.moveTo(0, y);
+
+        ctx.lineTo(
+
+            this.canvas.width,
+
+            y
+        );
+
+        ctx.stroke();
+    }
+}
+
+  drawNode(node) {
+
+    const ctx = this.ctx;
+
+    const p =
+        this.camera.worldToScreen(
+
+            node.x,
+
+            node.y
+        );
+
+    ctx.fillStyle =
+        node.selected
+
+            ? "#666"
+
+            : "#444";
+
+    ctx.fillRect(
+
+        p.x,
+
+        p.y,
+
+        180,
+
+        90
+    );
+
+    ctx.fillStyle =
+        "#ffffff";
+
+    ctx.fillText(
+
+        node.type,
+
+        p.x + 15,
+
+        p.y + 25
+    );
+}
+
+  drawSockets(node) {
+
+    const ctx = this.ctx;
+
+    const p =
+        this.camera.worldToScreen(
+
+            node.x,
+
+            node.y
+        );
+
+    ctx.fillStyle =
+        "#ff8844";
+
+    for (
+
+        let i = 0;
+
+        i < node.inputs.length;
+
+        i++
+
+    ) {
+
+        ctx.beginPath();
+
+        ctx.arc(
+
+            p.x,
+
+            p.y + 30 + i * 20,
+
+            6,
+
+            0,
+
+            Math.PI * 2
+        );
+
+        ctx.fill();
+    }
+
+    ctx.fillStyle =
+        "#44ff88";
+
+    for (
+
+        let i = 0;
+
+        i < node.outputs.length;
+
+        i++
+
+    ) {
+
+        ctx.beginPath();
+
+        ctx.arc(
+
+            p.x + 180,
+
+            p.y + 30 + i * 20,
+
+            6,
+
+            0,
+
+            Math.PI * 2
+        );
+
+        ctx.fill();
+    }
+}
+
+  drawConnection(connection) {
+
+    const ctx =
+        this.ctx;
+
+    const a =
+        this.camera.worldToScreen(
+
+            connection.output.node.x + 180,
+
+            connection.output.node.y + 45
+        );
+
+    const b =
+        this.camera.worldToScreen(
+
+            connection.input.node.x,
+
+            connection.input.node.y + 45
+        );
+
+    ctx.strokeStyle =
+        "#ffffff";
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+
+        a.x,
+
+        a.y
+    );
+
+    ctx.bezierCurveTo(
+
+        a.x + 100,
+
+        a.y,
+
+        b.x - 100,
+
+        b.y,
+
+        b.x,
+
+        b.y
+    );
+
+    ctx.stroke();
+}
+
+  drawSelectionBox() {
+
+    if (!this.selectionBox)
+        return;
+
+    const s =
+        this.selectionBox;
+
+    this.ctx.strokeStyle =
+        "#55aaff";
+
+    this.ctx.strokeRect(
+
+        s.x,
+
+        s.y,
+
+        s.w,
+
+        s.h
+    );
+}
+
+  render() {
+
+    requestAnimationFrame(
+
+        () => this.render()
+    );
+
+    this.ctx.clearRect(
+
+        0,
+
+        0,
+
+        this.canvas.width,
+
+        this.canvas.height
+    );
+
+    this.drawGrid();
+
+    for (
+
+        const connection
+
+        of this.graph.connections
+
+    ) {
+
+        this.drawConnection(
+            connection
+        );
+    }
+
+    for (
+
+        const node
+
+        of this.graph.nodes
+
+    ) {
+
+        this.drawNode(node);
+
+        this.drawSockets(node);
+    }
+
+    this.drawSelectionBox();
+}
+
+}
+
+  const graph =
+    new AnimationGraph();
+
+graph.addNode(
+
+    new ClipNode("Idle")
+);
+
+graph.addNode(
+
+    new ClipNode("Run")
+);
+
+graph.addNode(
+
+    new BlendNode()
+);
+
+const editor =
+    new GraphEditor(
+
+        document
+            .getElementById(
+                "graph-canvas"
+            ),
+
+        graph
+    );
+  
+</script>
