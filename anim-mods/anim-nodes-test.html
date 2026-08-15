@@ -609,6 +609,511 @@ export class GraphEditor {
 
 }
 
+export class GraphCompiler {
+
+    compile(graph) {
+
+        const runtime = {
+
+            nodes: [],
+
+            executionOrder: [],
+
+            output: null
+        };
+
+        runtime.nodes =
+            [...graph.nodes];
+
+        runtime.executionOrder =
+            this.buildExecutionOrder(
+                runtime.nodes
+            );
+
+        runtime.output =
+            graph.output;
+
+        return runtime;
+    }
+
+}
+
+export class DependencyGraph {
+
+    constructor() {
+
+        this.edges =
+            new Map();
+    }
+
+    add(node) {
+
+        if (
+            !this.edges.has(node)
+        ) {
+
+            this.edges.set(
+                node,
+                []
+            );
+        }
+    }
+
+    connect(a, b) {
+
+        this.add(a);
+
+        this.add(b);
+
+        this.edges
+            .get(a)
+            .push(b);
+    }
+
+buildExecutionOrder(nodes) {
+
+    const visited =
+        new Set();
+
+    const order =
+        [];
+
+    const visit =
+        node => {
+
+            if (
+                visited.has(node)
+            ) {
+
+                return;
+            }
+
+            visited.add(node);
+
+            for (
+                const input
+                of node.inputs
+            ) {
+
+                visit(input);
+            }
+
+            order.push(node);
+        };
+
+    for (
+        const node
+        of nodes
+    ) {
+
+        visit(node);
+    }
+
+    return order;
+}
+    
+}
+
+export function markDirty(
+    node
+) {
+
+    if (
+        node.dirty
+    ) {
+
+        return;
+    }
+
+    node.dirty =
+        true;
+
+    for (
+        const output
+        of node.outputs
+    ) {
+
+        markDirty(
+            output
+        );
+    }
+
+}
+
+export class PoseCache {
+
+    constructor() {
+
+        this.cache =
+            new Map();
+    }
+
+    store(
+        node,
+        pose
+    ) {
+
+        this.cache.set(
+            node.id,
+            pose
+        );
+    }
+
+    get(node) {
+
+        return this.cache.get(
+            node.id
+        );
+    }
+
+    clear() {
+
+        this.cache.clear();
+    }
+
+}
+
+    export class IncrementalEvaluator {
+
+    constructor() {
+
+        this.cache =
+            new PoseCache();
+    }
+
+    evaluate(
+        runtime,
+        context
+    ) {
+
+        for (
+            const node
+            of runtime
+                .executionOrder
+        ) {
+
+            if (
+                !node.dirty
+            ) {
+
+                continue;
+            }
+
+            const pose =
+                node.evaluate(
+                    context
+                );
+
+            this.cache.store(
+                node,
+                pose
+            );
+
+            node.cachedPose =
+                pose;
+
+            node.dirty =
+                false;
+        }
+
+        return runtime
+            .output
+            .cachedPose;
+    }
+
+}
+export function serialize(
+    graph
+) {
+
+    return JSON.stringify({
+
+        nodes:
+
+            graph.nodes.map(
+
+                node => ({
+
+                    id: node.id,
+
+                    type: node.type,
+
+                    x: node.x,
+
+                    y: node.y,
+
+                    parameters:
+
+                        node.parameters
+                })
+            ),
+
+        connections:
+
+            graph.connections.map(
+
+                connection => ({
+
+                    output:
+
+                        connection
+                            .output
+                            .id,
+
+                    input:
+
+                        connection
+                            .input
+                            .id
+                })
+            )
+    });
+}
+
+   export function deserialize(
+    json,
+    factory
+) {
+
+    const data =
+        JSON.parse(
+            json
+        );
+
+    const graph =
+        new AnimationGraph();
+
+    const lookup =
+        new Map();
+
+    for (
+        const node
+        of data.nodes
+    ) {
+
+        const created =
+            factory.create(
+                node.type
+            );
+
+        created.id =
+            node.id;
+
+        created.x =
+            node.x;
+
+        created.y =
+            node.y;
+
+        created.parameters =
+            node.parameters;
+
+        lookup.set(
+
+            created.id,
+
+            created
+        );
+
+        graph.addNode(
+            created
+        );
+    }
+
+    for (
+        const edge
+        of data.connections
+    ) {
+
+        graph.connect(
+
+            lookup.get(
+                edge.output
+            ),
+
+            lookup.get(
+                edge.input
+            )
+        );
+    }
+
+    return graph;
+}
+
+export class UndoManager {
+
+    constructor() {
+
+        this.stack =
+            [];
+
+        this.index =
+            -1;
+    }
+
+    push(graph) {
+
+        this.stack.push(
+
+            serialize(
+                graph
+            )
+        );
+
+        this.index++;
+    }
+
+    undo(factory) {
+
+        if (
+            this.index <= 0
+        ) {
+
+            return null;
+        }
+
+        this.index--;
+
+        return deserialize(
+
+            this.stack[
+                this.index
+            ],
+
+            factory
+        );
+    }
+
+    redo(factory) {
+
+        if (
+            this.index >=
+            this.stack.length
+                - 1
+        ) {
+
+            return null;
+        }
+
+        this.index++;
+
+        return deserialize(
+
+            this.stack[
+                this.index
+            ],
+
+            factory
+        );
+    }
+
+}
+
+    export class SkeletonBinder {
+
+    constructor(
+        skeleton
+    ) {
+
+        this.skeleton =
+            skeleton;
+    }
+
+    apply(pose) {
+
+        for (
+            let i = 0;
+            i <
+            pose.rotations
+                .length;
+            i++
+        ) {
+
+            const bone =
+                this.skeleton
+                    .bones[i];
+
+            bone.position
+                .copy(
+
+                    pose
+                        .positions[
+                            i
+                        ]
+                );
+
+            bone.quaternion
+                .copy(
+
+                    pose
+                        .rotations[
+                            i
+                        ]
+                );
+
+            bone.scale
+                .copy(
+
+                    pose.scales[
+                        i
+                    ]
+                );
+        }
+    }
+
+}
+
+export class PreviewPlayer {
+
+    constructor(
+        runtime,
+        skeleton
+    ) {
+
+        this.runtime =
+            runtime;
+
+        this.evaluator =
+            new IncrementalEvaluator();
+
+        this.binder =
+            new SkeletonBinder(
+                skeleton
+            );
+
+        this.context =
+            new EvaluationContext();
+    }
+
+    update(dt) {
+
+        this.context
+            .deltaTime = dt;
+
+        const pose =
+            this.evaluator
+                .evaluate(
+
+                    this.runtime,
+
+                    this.context
+                );
+
+        this.binder
+            .apply(
+                pose
+            );
+    }
+
+}
+    
+    
+    
+    
+    
+
+
+    
   const graph =
     new AnimationGraph();
 
