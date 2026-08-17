@@ -1,0 +1,5322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RTS v0.0.17 - Neutral Combat + Loot + Paladin XP + Dual Mechs</title>
+<style>
+body{
+    margin:0;
+    overflow:hidden;
+    background:#000;
+    font-family:monospace;
+    color:white;
+}
+/* GLOBAL */
+*{
+    box-sizing:border-box;
+}
+
+
+#dragSelectBox{
+    position:fixed;
+    display:none;
+    pointer-events:none;
+    z-index:44;
+    border:1px solid #53ff71;
+    background:rgba(50,210,80,.12);
+    box-shadow:inset 0 0 8px rgba(40,255,90,.2);
+}
+#multiSelectRoster{
+    position:absolute;
+    left:255px;
+    bottom:8px;
+    z-index:35;
+    display:flex;
+    gap:5px;
+    max-width:500px;
+    overflow:hidden;
+    pointer-events:auto;
+}
+.multiUnitCard{
+    width:44px;
+    height:44px;
+    flex:0 0 44px;
+    border:2px solid #666;
+    background:#171717;
+    color:#eee;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    font-size:20px;
+    cursor:pointer;
+    position:relative;
+}
+.multiUnitCard.selected{
+    border-color:#55ff77;
+}
+.multiUnitCard .miniLabel{
+    position:absolute;
+    bottom:1px;
+    left:2px;
+    right:2px;
+    font-size:7px;
+    overflow:hidden;
+    white-space:nowrap;
+    text-align:center;
+    color:#ddd;
+}
+.multiUnitCard.red{border-color:#a84c4c;}
+/* TOP RESOURCE BAR */
+#resourceBar{
+    position:absolute;
+    top:8px;
+    left:50%;
+    transform:translateX(-50%);
+    z-index:45;
+    display:flex;
+    gap:8px;
+    padding:5px 8px;
+    background:rgba(7,7,7,.92);
+    border:2px solid #57462d;
+    box-shadow:0 2px 12px rgba(0,0,0,.75);
+    pointer-events:none;
+}
+.resourcePill{
+    min-width:128px;
+    padding:6px 12px;
+    background:linear-gradient(#201a10,#0b0b0b);
+    border:1px solid #705b32;
+    color:#f3e7c0;
+    font-size:14px;
+    font-weight:bold;
+    text-align:center;
+}
+.resourcePill .icon{margin-right:6px}
+.resourcePill.gold{color:#ffd75c}
+.resourcePill.lumber{color:#82dc72}
+.resourcePill.population{color:#d7d7ff}
+
+/* LEFT MENU */
+#menu{
+    position:absolute;
+    top:0;
+    left:0;
+    width:300px;
+    height:100vh;
+    background:#111;
+    color:white;
+    overflow-y:auto;
+    overflow-x:hidden;
+    border-right:2px solid #333;
+    z-index:20;
+}
+/* RIGHT PANEL */
+#selectionPanel{
+    position:absolute;
+    top:0;
+    right:0;
+    width:320px;
+    height:100vh;
+    background:
+        linear-gradient(
+            to bottom,
+            #20170f,
+            #0d0d0d
+        );
+    color:white;
+    border-left:2px solid #4e3824;
+    overflow-y:auto;
+    overflow-x:hidden;
+    z-index:20;
+    padding:12px;
+}
+/* PANEL FRAME */
+.rtsPanel{
+    border:2px solid #5a4128;
+    background:#15110d;
+    box-shadow:
+        inset 0 0 12px rgba(0,0,0,.8),
+        0 0 10px rgba(0,0,0,.5);
+    padding:12px;
+    margin-bottom:12px;
+}
+/* TITLE */
+.panelTitle{
+    color:#f2c14d;
+    font-size:22px;
+    font-weight:bold;
+    margin-bottom:10px;
+    text-transform:uppercase;
+    letter-spacing:1px;
+}
+/* MAP NAME */
+#mapName{
+    color:#ffd86b;
+    font-size:20px;
+    margin-bottom:10px;
+}
+/* MAP PREVIEW */
+#mapPreview{
+    width:100%;
+    height:220px;
+    border:3px solid #5a4128;
+    background:#000;
+    object-fit:cover;
+    image-rendering:pixelated;
+    display:block;
+    margin-bottom:12px;
+}
+/* SETTINGS */
+.settingRow{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:10px;
+    padding:6px 0;
+    border-bottom:1px solid #2d2117;
+}
+.settingLabel{
+    color:#d9b05d;
+    font-size:14px;
+    text-transform:uppercase;
+}
+.settingValue{
+    color:#fff;
+}
+/* DESCRIPTION */
+#mapDescription{
+    line-height:1.5;
+    color:#d7d7d7;
+    font-size:13px;
+    padding:8px;
+    background:#0e0e0e;
+    border:1px solid #2a2a2a;
+}
+/* START BUTTON */
+#startButton{
+    width:100%;
+    padding:16px;
+    margin-top:16px;
+    font-size:22px;
+    font-weight:bold;
+    text-align:center;
+    background:
+        linear-gradient(
+            to bottom,
+            #2058b5,
+            #102e63
+        );
+    border:2px solid #7db5ff;
+    color:#ffe28a;
+    cursor:pointer;
+    transition:.15s;
+    text-transform:uppercase;
+    letter-spacing:2px;
+}
+#startButton:hover{
+    transform:scale(1.02);
+    background:
+        linear-gradient(
+            to bottom,
+            #3272de,
+            #163d84
+        );
+}
+/* BOTTOM UI */
+#ui{
+    position:absolute;
+    left:300px;
+    right:320px;
+    bottom:0;
+    height:220px;
+    background:linear-gradient(to bottom,#1a160f,#070707);
+    color:white;
+    padding:0;
+    border-top:4px solid #5b4a31;
+    z-index:30;
+}
+#hud{
+    height:100%;
+    display:flex;
+    align-items:stretch;
+}
+#gameStatus{
+    position:absolute;
+    left:50%;
+    top:-34px;
+    transform:translateX(-50%);
+    background:rgba(10,8,5,.9);
+    border:1px solid #79623a;
+    color:#e8d9b0;
+    padding:6px 12px;
+    font-size:12px;
+    pointer-events:none;
+}
+
+/* CONSTRUCTION QUEUE / PROGRESS */
+#constructionMeter{
+    position:absolute;
+    left:50%;
+    top:-86px;
+    transform:translateX(-50%);
+    width:390px;
+    min-height:46px;
+    padding:7px 10px;
+    background:rgba(8,8,8,.94);
+    border:2px solid #6d5631;
+    box-shadow:0 0 14px rgba(0,0,0,.8);
+    display:none;
+    pointer-events:none;
+}
+#constructionMeter.active{display:block;}
+#constructionMeterHeader{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    color:#f1d98a;
+    font-size:12px;
+    margin-bottom:5px;
+}
+#constructionMeterTrack{
+    height:14px;
+    background:#24180d;
+    border:1px solid #77613a;
+    overflow:hidden;
+}
+#constructionMeterFill{
+    height:100%;
+    width:0%;
+    background:linear-gradient(to right,#a76a22,#f1c34d);
+}
+#constructionMeterSub{
+    margin-top:4px;
+    color:#bfb8aa;
+    font-size:10px;
+}
+
+/* LEFT PANEL */
+#hudLeft{
+    width:240px;
+    padding:10px;
+    border-right:2px solid #4b3c2a;
+    background:#0a0a0a;
+    flex:0 0 240px;
+}
+#minimap{
+    width:210px;
+    height:190px;
+    border:4px solid #6d604d;
+    background:#101710;
+    image-rendering:pixelated;
+}
+/* CENTER PANEL */
+#hudCenter{
+    width:520px;
+    display:flex;
+    gap:14px;
+    padding:14px;
+    border-right:2px solid #4b3c2a;
+    background:#101010;
+    flex:0 0 520px;
+}
+#unitPortrait{
+    width:150px;
+    height:150px;
+    border:3px solid #666;
+    background:#222;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+#portraitModel{
+    font-size:72px;
+}
+#unitStats{
+    flex:1;
+    color:white;
+}
+.unitName{
+    font-size:20px;
+    color:#ffdc73;
+    margin-bottom:10px;
+}
+.healthBar{
+    width:100%;
+    height:18px;
+    background:#330000;
+    border:2px solid #666;
+    margin-bottom:10px;
+}
+#healthFill{
+    width:100%;
+    height:100%;
+    background:
+        linear-gradient(
+            to right,
+            #00aa00,
+            #33ff33
+        );
+}
+.statLine{
+    margin-bottom:6px;
+    font-size:14px;
+}
+/* INVENTORY */
+#inventoryGrid{
+    width:120px;
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    grid-template-rows:repeat(3, 1fr);
+    gap:6px;
+}
+.inventorySlot{
+    width:52px;
+    height:52px;
+    background:#1a1a1a;
+    border:2px solid #555;
+}
+/* RIGHT PANEL */
+#hudRight{
+    flex:1;
+    min-width:0;
+    padding:12px;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    background:#0c0c0c;
+}
+#commandGrid{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(58px,72px));
+    grid-auto-rows:72px;
+    gap:8px;
+}
+.commandCard{
+    position:relative;
+    width:auto;
+    height:72px;
+    margin:0;
+    padding:0;
+    border:2px solid #666;
+    background:#222;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:30px;
+    transition:.15s;
+}
+.commandCard:hover{
+    background:#444;
+    transform:scale(1.04);
+}
+.hotkey{
+    position:absolute;
+    bottom:2px;
+    right:4px;
+    color:#ffdc73;
+    font-size:11px;
+}
+#tooltip{
+    height:48px;
+    border:2px solid #444;
+    background:#111;
+    color:#ddd;
+    padding:8px;
+    font-size:13px;
+}
+.commandCard.activeBuild{
+    border-color:#8cff79;
+    box-shadow:inset 0 0 12px rgba(80,255,80,.25);
+}
+.commandCard.cancelBuild{
+    color:#ff6b6b;
+}
+#tooltip{
+    min-height:48px;
+}
+.placementValid{color:#79ff87;}
+.placementInvalid{color:#ff7777;}
+
+.actionLabel{
+    grid-column:1 / -1;
+    height:20px;
+    color:#c9b47a;
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:1px;
+    display:flex;
+    align-items:center;
+}
+.commandCard.actionMove{border-color:#557aa8;}
+.commandCard.actionStop{border-color:#8b6954;}
+.commandCard.actionPatrol{border-color:#6a7853;}
+.commandCard.actionBuild{border-color:#876da0;}
+#commandGrid.buildMode .commandCard{
+    transition:transform .12s,border-color .12s,background .12s;
+}
+
+/* SECTIONS */
+.section{
+    padding:10px;
+    border-bottom:1px solid #222;
+}
+.selectionCard{
+    padding:10px;
+    border-bottom:1px solid #222;
+}
+/* BUTTONS */
+button{
+    width:100%;
+    padding:8px;
+    margin:4px 0;
+    background:#222;
+    color:white;
+    border:1px solid #444;
+    cursor:pointer;
+    text-align:left;
+    font-family:monospace;
+}
+button:hover{
+    background:#333;
+}
+/* ACTIVE FACTION */
+.activeFaction{
+    background:#355a2c;
+    border-color:#7fcf5f;
+}
+/* DROPDOWN */
+select{
+    background:#1c1c1c;
+    color:white;
+    border:1px solid #555;
+    padding:5px;
+    width:120px;
+}
+/* CANVAS */
+body > canvas{
+    position:absolute;
+    top:0;
+    left:300px;
+    width:calc(100vw - 620px) !important;
+    height:100vh !important;
+    display:block;
+}
+
+/* START GAME VIEW */
+body.gameStarted #menu,
+body.gameStarted #selectionPanel{
+    display:none;
+}
+body.gameStarted > canvas{
+    left:0 !important;
+    width:100vw !important;
+}
+body.gameStarted #ui{
+    left:0;
+    right:0;
+}
+
+/* ===== v0.0.16 HERO HUD ===== */
+#ui{height:252px;left:300px;right:320px;background:linear-gradient(#24201a,#080706);border-top:5px ridge #6f6659;}
+#hudLeft{width:230px;flex-basis:230px;padding:8px;background:#080a08;}
+#minimap{width:210px;height:210px;border:5px ridge #6b6b68;}
+#hudCenter{width:560px;flex-basis:560px;padding:10px;gap:10px;background:linear-gradient(#171717,#090909);}
+#unitPortrait{width:142px;height:142px;border:5px ridge #71684f;background:radial-gradient(circle,#35404a,#111);position:relative;}
+#portraitModel{font-size:70px;filter:drop-shadow(0 4px 3px #000);}
+#unitStats{font-family:Georgia,serif;}
+.heroName{font-size:18px;text-align:center;color:#f1e3c0;border-bottom:1px solid #675b45;padding-bottom:4px;margin-bottom:5px;}
+.heroBars{display:grid;gap:3px;margin-bottom:6px;}
+.heroBar{height:17px;border:2px ridge #575757;background:#161616;position:relative;overflow:hidden;}
+.heroBarFill{height:100%;transition:width .2s;}
+.heroBar.hp .heroBarFill{background:linear-gradient(90deg,#0b6f21,#39d94c);}
+.heroBar.mana .heroBarFill{background:linear-gradient(90deg,#153f92,#3289f5);}
+.heroBarText{position:absolute;inset:0;text-align:center;font:11px Arial;color:#fff;text-shadow:1px 1px #000;line-height:17px;}
+.heroStatGrid{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font:12px Arial;color:#ddd;}
+.heroAttributes{display:flex;gap:10px;margin-top:6px;padding-top:5px;border-top:1px solid #3b352c;font:bold 12px Arial;}
+.heroAttributes span:nth-child(1){color:#ffb66d}.heroAttributes span:nth-child(2){color:#8ee477}.heroAttributes span:nth-child(3){color:#80baff}
+#inventoryGrid{width:132px;align-content:start;grid-template-columns:repeat(2,60px);grid-template-rows:repeat(3,60px);gap:5px;}
+.inventorySlot{width:58px;height:58px;border:3px ridge #595959;background:linear-gradient(135deg,#1d2226,#080808);display:flex;align-items:center;justify-content:center;font-size:27px;position:relative;cursor:default;box-sizing:border-box;}
+.inventorySlot.hasItem{cursor:pointer}.inventorySlot.hasItem:hover{filter:brightness(1.3)}
+.inventoryCount{position:absolute;right:3px;bottom:2px;font:11px Arial;color:#fff;text-shadow:1px 1px #000;}
+#hudRight{padding:9px;background:linear-gradient(#121212,#080808);}
+#commandGrid{grid-template-columns:repeat(4,minmax(56px,68px));grid-auto-rows:62px;gap:5px;}
+.commandCard{height:62px;font-size:26px;border:3px ridge #5f5f5f;background:linear-gradient(135deg,#292929,#0d0d0d);}
+.commandCard.skill{border-color:#8a7541;background:radial-gradient(circle,#41351d,#101010)}
+.commandCard.passive{border-color:#57785c;background:radial-gradient(circle,#28402d,#101010)}
+.commandCard.cooldown{filter:grayscale(1) brightness(.45);cursor:not-allowed;}
+.commandCard.shopLocked{filter:grayscale(1) brightness(.28);cursor:not-allowed;}
+.commandCard.shopBuy{border-color:#b69b4e;}
+#tooltip{height:auto;min-height:40px;border:2px ridge #5c5648;background:#090909;}
+
+
+#combatTargetFrame{
+    position:absolute;
+    right:330px;
+    top:58px;
+    width:260px;
+    z-index:46;
+    display:none;
+    padding:8px 10px;
+    background:rgba(8,8,8,.92);
+    border:2px ridge #745943;
+    color:#eee;
+    pointer-events:none;
+}
+#combatTargetName{color:#ffb06a;font-weight:bold}
+#combatTargetBar{height:13px;background:#330b0b;border:1px solid #777;margin-top:5px}
+#combatTargetFill{height:100%;background:linear-gradient(90deg,#922,#e44);width:100%}
+#combatTargetText{font-size:11px;color:#ccc;margin-top:4px}
+.lootText{
+    position:absolute;
+    z-index:60;
+    pointer-events:none;
+    color:#ffd75a;
+    font:bold 13px Arial;
+    text-shadow:1px 1px 2px #000;
+}
+</style>
+</head>
+
+<body>
+
+<div id="dragSelectBox"></div>
+<div id="resourceBar">
+    <div class="resourcePill gold"><span class="icon">🪙</span>Gold: <span id="goldResource">500</span></div>
+    <div class="resourcePill lumber"><span class="icon">🌲</span>Lumber: <span id="lumberResource">200</span></div>
+    <div class="resourcePill population"><span class="icon">👨</span>Peasants: <span id="populationResource">0</span></div>
+</div>
+<div id="combatTargetFrame">
+  <div id="combatTargetName">Neutral Enemy</div>
+  <div id="combatTargetBar"><div id="combatTargetFill"></div></div>
+  <div id="combatTargetText"></div>
+</div>
+
+<div id="menu"></div>
+
+<!-- RIGHT RTS GAME PANEL -->
+<div id="selectionPanel">
+    <!-- MAP INFO -->
+    <div class="rtsPanel">
+        <div class="panelTitle">
+            Single Player Lobby
+        </div>
+
+        <div id="mapName">
+            Isle of Dread
+        </div>
+
+        <!-- Replace with real map image later -->
+        <img
+            id="mapPreview"
+            src="https://picsum.photos/320/220?random=4"
+        />
+
+        <div class="settingRow">
+            <div class="settingLabel">
+                Game Speed
+            </div>
+
+            <div class="settingValue">
+                <select id="gameSpeed">
+                    <option>Slow</option>
+                    <option selected>Normal</option>
+                    <option>Fast</option>
+                    <option>Ultra Fast</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="settingRow">
+            <div class="settingLabel">
+                Visibility
+            </div>
+
+            <div class="settingValue">
+                Default
+            </div>
+        </div>
+
+        <div class="settingRow">
+            <div class="settingLabel">
+                Observers
+            </div>
+
+            <div class="settingValue">
+                No Observers
+            </div>
+        </div>
+
+        <div id="mapDescription">
+            Having allied with a trio of Bronze Dragons,
+            the Centaur are the uncontested rulers
+            of this island. Build up a reasonable force
+            before you pick a fight.
+        </div>
+        <button id="startButton">
+            Start Game
+        </button>
+    </div>
+    <!-- SELECTION -->
+    <div class="selectionCard">
+        <h3>Selection</h3>
+        <div id="selectedInfo">None</div>
+    </div>
+</div>
+<div id="ui">
+<div id="hud">
+    <div id="multiSelectRoster"></div>
+    <div id="gameStatus">Press Start Game to deploy the Human base.</div>
+    <div id="constructionMeter">
+        <div id="constructionMeterHeader">
+            <span id="constructionMeterTitle">Construction</span>
+            <span id="constructionMeterPercent">0%</span>
+        </div>
+        <div id="constructionMeterTrack"><div id="constructionMeterFill"></div></div>
+        <div id="constructionMeterSub">Waiting for builder...</div>
+    </div>
+    <!-- LEFT -->
+    <div id="hudLeft">
+        <canvas id="minimap"></canvas>
+    </div>
+    <!-- CENTER -->
+    <div id="hudCenter">
+        <div id="unitPortrait">
+            <div id="portraitModel">
+                👨
+            </div>
+        </div>
+        <div id="unitStats">
+            <div class="unitName">
+                Peasant
+            </div>
+            <div class="healthBar">
+                <div id="healthFill"></div>
+            </div>
+            <div class="statLine">
+                HP:
+                <span id="hpText">
+                    230 / 230
+                </span>
+            </div>
+            <div class="statLine">
+                Damage: 5-8
+            </div>
+            <div class="statLine">
+                Armor: 1
+            </div>
+            <div class="statLine">
+                Move Speed: Fast
+            </div>
+            <div class="statLine">
+                Lumber: 0
+            </div>
+        </div>
+        <!-- INVENTORY -->
+        <div id="inventoryGrid"></div>
+    </div>
+    <!-- RIGHT -->
+    <div id="hudRight">
+        <div id="commandGrid"></div>
+        <div id="tooltip">
+            Hover commands...
+        </div>
+    </div>
+</div>
+
+RTS Neutral Unit Prototype - PS1/PS2 Style
+</div>
+
+<script type="module">
+import * as THREE from "https://esm.sh/three@0.165.0";
+import { OrbitControls } from "https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js";
+// BIOMES
+class ChunkBiomes {
+    constructor(size = 32) {
+        this.size = size;
+        this.heightMap = [];
+        for (let z = 0; z < size; z++) {
+            this.heightMap[z] = [];
+            for (let x = 0; x < size; x++) {
+                const height =
+                    Math.sin(x * 0.18) * 1.5 +
+                    Math.cos(z * 0.21) * 1.5 +
+                    Math.random() * 0.3;
+                this.heightMap[z][x] = height;
+            }
+        }
+    }
+    getHeight(x, z) {
+        const gx = Math.floor(x + this.size / 2);
+        const gz = Math.floor(z + this.size / 2);
+        if (
+            gx < 0 ||
+            gz < 0 ||
+            gx >= this.size ||
+            gz >= this.size
+        ) {
+            return 0;
+        }
+        return this.heightMap[gz][gx];
+    }
+}
+// OBJECT SPAWNER
+class ObjectSpawner {
+    constructor(scene, occupancyGrid) {
+        this.scene = scene;
+        this.occupancyGrid = occupancyGrid;
+    }
+    occupyTile(x, z, radius = 1) {
+        for (let dz = -radius; dz <= radius; dz++) {
+            for (let dx = -radius; dx <= radius; dx++) {
+                const key = `${x+dx},${z+dz}`;
+                this.occupancyGrid.add(key);
+            }
+        }
+    }
+    isOccupied(x, z, radius = 1) {
+        for (let dz = -radius; dz <= radius; dz++) {
+            for (let dx = -radius; dx <= radius; dx++) {
+                const key = `${x+dx},${z+dz}`;
+                if (this.occupancyGrid.has(key)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    spawnTree(position) {
+        const group = new THREE.Group();
+        const trunk = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.3,0.4,2),
+            new THREE.MeshStandardMaterial({
+                color: 0x6b4423
+            })
+        );
+        trunk.position.y = 1;
+        const leaves = new THREE.Mesh(
+            new THREE.ConeGeometry(1.5, 3, 8),
+            new THREE.MeshStandardMaterial({
+                color: 0x228833
+            })
+        );
+        leaves.position.y = 3;
+        group.add(trunk);
+        group.add(leaves);
+        group.position.copy(position);
+        this.scene.add(group);
+        this.occupyTile(
+            Math.round(position.x),
+            Math.round(position.z),
+            1
+        );
+    }
+    spawnRock(position) {
+        const rock = new THREE.Mesh(
+            new THREE.DodecahedronGeometry(0.9),
+            new THREE.MeshStandardMaterial({
+                color: 0x777777
+            })
+        );
+        rock.position.copy(position);
+        this.scene.add(rock);
+        this.occupyTile(
+            Math.round(position.x),
+            Math.round(position.z),
+            1
+        );
+    }
+    spawnHouse(position) {
+        const group = new THREE.Group();
+        const body = new THREE.Mesh(
+            new THREE.BoxGeometry(1.6,2,1.6),
+            new THREE.MeshStandardMaterial({
+                color: 0xb07b4f
+            })
+        );
+        body.position.y = 1;
+        const roof = new THREE.Mesh(
+            new THREE.ConeGeometry(1.5,1.7,4),
+            new THREE.MeshStandardMaterial({
+                color: 0x7d1e1e
+            })
+        );
+        roof.rotation.y = Math.PI / 4;
+        roof.position.y = 3;
+        group.add(body);
+        group.add(roof);
+        group.position.copy(position);
+        this.scene.add(group);
+        this.occupyTile(
+            Math.round(position.x),
+            Math.round(position.z),
+            1
+        );
+    }
+}
+// INTERACTABLE / SELECTION RING HELPERS
+const interactables = [];
+let selectedEntity = null;
+const selectedEntities = [];
+
+function makeInteractable(group, type, radius=1.5, color=0x00ff66){
+    group.userData.type = type;
+    group.userData.interactable = true;
+
+    const ring = new THREE.Mesh(
+        new THREE.RingGeometry(radius, radius + Math.max(0.16, radius*0.12), 48),
+        new THREE.MeshBasicMaterial({
+            color,
+            side:THREE.DoubleSide,
+            transparent:true,
+            opacity:0.95,
+            depthWrite:false
+        })
+    );
+    ring.rotation.x = -Math.PI/2;
+    ring.position.y = 0.08;
+    ring.visible = false;
+    ring.renderOrder = 10;
+    group.add(ring);
+    group.selectionRing = ring;
+    interactables.push(group);
+    return group;
+}
+
+function syncSelectionHUD(){
+    const info = document.getElementById("selectedInfo");
+    renderMultiSelectRoster();
+
+    if(selectedEntities.length === 0){
+        selectedEntity = null;
+        if(info) info.textContent = "None";
+        renderBuildCommands?.();
+        return;
+    }
+
+    selectedEntity = selectedEntities[selectedEntities.length - 1];
+
+    if(selectedEntities.length > 1){
+        const peasants = selectedEntities.filter(e=>
+            ["Peasant","Red Peasant"].includes(e.userData.type)
+        );
+        if(info){
+            info.innerHTML =
+                `<b>${selectedEntities.length} Entities Selected</b>` +
+                `<br>Peasants: ${peasants.length}`;
+        }
+
+        const portrait = document.getElementById("portraitModel");
+        const stats = document.getElementById("unitStats");
+        if(portrait) portrait.textContent = "👥";
+        if(stats){
+            stats.innerHTML = `
+                <div class="unitName">${selectedEntities.length} Selected</div>
+                <div class="statLine">Peasants: ${peasants.length}</div>
+                <div class="statLine">Ctrl + Left Click: add/remove</div>
+                <div class="statLine">Right Click: move selected peasants</div>
+            `;
+        }
+        renderBuildCommands?.();
+        return;
+    }
+
+    const entity = selectedEntity;
+    if(info && entity){
+        let extra = "";
+        if(entity.userData.gold != null){
+            extra = `<br>Gold: ${entity.userData.gold.toLocaleString()}`;
+        }
+        info.innerHTML = `<b>${entity.userData.type || "Entity"}</b>${extra}`;
+    }
+    if(typeof renderSelectedHUD === "function"){
+        renderSelectedHUD(entity);
+    }
+}
+
+
+function unitIcon(entity){
+    if(isPeasantEntity(entity)) return "👨";
+    const kind=entity?.userData?.unitKind;
+    return UNIT_TRAINING?.[kind]?.icon || "◆";
+}
+
+function renderMultiSelectRoster(){
+    const roster=document.getElementById("multiSelectRoster");
+    if(!roster) return;
+    const selectedUnits=selectedEntities.filter(e=>e.userData?.isUnit);
+    roster.innerHTML=selectedUnits.map((e,i)=>`
+        <div class="multiUnitCard ${e.userData.team==="red"?"red":"selected"}" data-roster-index="${i}">
+            ${unitIcon(e)}
+            <span class="miniLabel">${(e.userData.type||"Unit").replace("Red ","")}</span>
+        </div>
+    `).join("");
+    roster.querySelectorAll("[data-roster-index]").forEach(card=>{
+        card.addEventListener("click",ev=>{
+            ev.stopPropagation();
+            const entity=selectedUnits[Number(card.dataset.rosterIndex)];
+            if(entity) selectEntity(entity,false);
+        });
+    });
+}
+
+function clearSelection(){
+    for(const entity of selectedEntities){
+        if(entity?.selectionRing) entity.selectionRing.visible = false;
+    }
+    selectedEntities.length = 0;
+    selectedEntity = null;
+    syncSelectionHUD();
+}
+
+function selectEntity(entity, additive=false){
+    if(!entity) return;
+
+    if(!additive){
+        clearSelection();
+    }
+
+    const index = selectedEntities.indexOf(entity);
+
+    // Ctrl-click toggles an entity in/out of the current selection.
+    if(additive && index !== -1){
+        if(entity.selectionRing) entity.selectionRing.visible = false;
+        selectedEntities.splice(index,1);
+        syncSelectionHUD();
+        return;
+    }
+
+    if(index === -1){
+        selectedEntities.push(entity);
+    }
+
+    selectedEntity = entity;
+    if(entity.selectionRing){
+        entity.selectionRing.visible = true;
+    }
+    syncSelectionHUD();
+}
+
+// TREES
+const trees = [];
+function spawnTree(x,z){
+    const g = new THREE.Group();
+    const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.2,0.3,2),
+        new THREE.MeshStandardMaterial({
+            color:0x6b4423
+        })
+    );
+    trunk.castShadow = true;
+    trunk.position.y = 1;
+    const leaves = new THREE.Mesh(
+        new THREE.ConeGeometry(1.2,3,8),
+        new THREE.MeshStandardMaterial({
+            color:0x228833
+        })
+    );
+    leaves.castShadow = true;
+    leaves.position.y = 3;
+    g.add(trunk);
+    g.add(leaves);
+    g.position.set(x,0,z);
+    g.userData.footprintRadius=1.1;
+    makeInteractable(g,"Tree",1.15,0x55ff55);
+    scene.add(g);
+    trees.push(g);
+}
+// Forest population is initialized later, after the Three.js scene exists.
+
+//CLEAR TREES
+function clearTreesNear(x,z,radius){
+    for(let i=trees.length-1;i>=0;i--){
+        const t = trees[i];
+        const dx = t.position.x - x;
+        const dz = t.position.z - z;
+        if(Math.sqrt(dx*dx+dz*dz) < radius){
+            scene.remove(t);
+            trees.splice(i,1);
+        }
+    }
+}
+// GRID GENERATION
+// Shared grid helpers that were referenced by the original prototype but absent.
+const WORLD_HALF = 120;
+let gridHelper = null;
+
+function terrainHeight(x, z) {
+    return worldGen ? worldGen.getGroundHeight(x, z) : 0;
+}
+
+function createTerrainLine(points, color = 0x444444) {
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    return new THREE.Line(
+        geometry,
+        new THREE.LineBasicMaterial({ color, transparent:true, opacity:0.45 })
+    );
+}
+
+function regenerateGround() {
+    generateGridOverlay();
+}
+
+function generateGridOverlay() {
+    if (gridHelper) {
+        scene.remove(gridHelper);
+    }
+    const group = new THREE.Group();
+    // SQUARE GRID
+    if (gridManager.mode === 'square') {
+        const step = gridManager.tileSize;
+        for (
+            let x = -WORLD_HALF;
+            x <= WORLD_HALF;
+            x += step
+        ) {
+            const points = [];
+            for (
+                let z = -WORLD_HALF;
+                z <= WORLD_HALF;
+                z += 0.5
+            ) {
+                points.push(
+                    new THREE.Vector3(
+                        x,
+                        terrainHeight(x, z),
+                        z
+                    )
+                );
+            }
+            group.add(
+                createTerrainLine(points, 0x444444)
+            );
+        }
+        for (
+            let z = -WORLD_HALF;
+            z <= WORLD_HALF;
+            z += step
+        ) {
+            const points = [];
+            for (
+                let x = -WORLD_HALF;
+                x <= WORLD_HALF;
+                x += 0.5
+            ) {
+                points.push(
+                    new THREE.Vector3(
+                        x,
+                        terrainHeight(x, z),
+                        z
+                    )
+                );
+            }
+            group.add(
+                createTerrainLine(points, 0x444444)
+            );
+        }
+    // HEX GRID
+    } else {
+        // MATCH SQUARE CELL DENSITY
+        const radius =
+            gridManager.hexRadius;
+        const horizontalSpacing =
+            Math.sqrt(3) * radius;
+        const verticalSpacing =
+            1.5 * radius;
+        // STRETCH FULL MAP
+        const qMin =
+            Math.floor(
+                -WORLD_HALF / horizontalSpacing
+            ) - 8;
+        const qMax =
+            Math.ceil(
+                WORLD_HALF / horizontalSpacing
+            ) + 8;
+        const rMin =
+            Math.floor(
+                -WORLD_HALF / verticalSpacing
+            ) - 8;
+        const rMax =
+            Math.ceil(
+                WORLD_HALF / verticalSpacing
+            ) + 8;
+        for (let q = qMin; q <= qMax; q++) {
+            for (let r = rMin; r <= rMax; r++) {
+                const centerX =
+                    radius *
+                    Math.sqrt(3) *
+                    (q + r / 2);
+                const centerZ =
+                    radius *
+                    1.5 *
+                    r;
+                // CULL FAR OUTSIDE
+                if (
+                    centerX < -WORLD_HALF - 4 ||
+                    centerX > WORLD_HALF + 4 ||
+                    centerZ < -WORLD_HALF - 4 ||
+                    centerZ > WORLD_HALF + 4
+                ) {
+                    continue;
+                }
+
+                const points = [];
+
+                for (let i = 0; i <= 6; i++) {
+                    const angle =
+                        (Math.PI / 3) * i;
+                    const x =
+                        centerX +
+                        radius * Math.cos(angle);
+                    const z =
+                        centerZ +
+                        radius * Math.sin(angle);
+                    points.push(
+                        new THREE.Vector3(
+                            x,
+                            terrainHeight(x, z),
+                            z
+                        )
+                    );
+                }
+                group.add(
+                    createTerrainLine(points, 0x333333)
+                );
+            }
+        }
+    }
+    gridHelper = group;
+    scene.add(gridHelper);
+}
+// SAFE CHECK
+if(typeof THREE === "undefined"){
+    alert("THREE failed to load.");
+    throw new Error("THREE failed");
+}
+// VIEW CONSTANTS
+const LEFT_W = 300;
+const RIGHT_W = 320;
+// RTS GAME SETTINGS
+const GameSettings = {
+    mapName:"Isle of Dread",
+    gameSpeed:"Normal",
+    started:false
+};
+// START GAME BUTTON
+// Prevent RTS interface clicks from leaking into window-level world input.
+for(const uiRoot of [
+    document.getElementById("ui"),
+    document.getElementById("menu"),
+    document.getElementById("selectionPanel")
+]){
+    if(!uiRoot) continue;
+    uiRoot.addEventListener("pointerdown", e=>e.stopPropagation());
+    uiRoot.addEventListener("mousedown", e=>e.stopPropagation());
+}
+
+const startButton =
+    document.getElementById("startButton");
+startButton.addEventListener("click",()=>{
+    GameSettings.started = true;
+    const speed =
+        document.getElementById(
+            "gameSpeed"
+        ).value;
+    GameSettings.gameSpeed = speed;
+    // Keep the HUD DOM intact. The old version replaced #ui.innerHTML,
+    // permanently deleting the minimap/stats/command UI when Start was clicked.
+    const tooltip = document.getElementById("tooltip");
+    if (tooltip) {
+        tooltip.textContent = `Game Started | Map: ${GameSettings.mapName} | Speed: ${speed}`;
+    }
+    startButton.innerHTML =
+        "Game Running";
+    startButton.style.background =
+        "linear-gradient(to bottom,#2d7d32,#18451b)";
+
+    // Enter gameplay mode: hide the lobby/menu side windows and expand the game.
+    document.body.classList.add("gameStarted");
+    renderer.domElement.style.left = "0px";
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    camera.aspect = W / H;
+    camera.updateProjectionMatrix();
+    renderer.setSize(W,H);
+
+    spawnHumanStartingBase();
+    renderBuildCommands();
+
+    console.log(
+        "START GAME",
+        GameSettings
+    );
+});
+// SCENE
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x101014);
+scene.fog = new THREE.Fog(
+    0x101014,
+    40,
+    180
+);
+const VIEW_W =
+    window.innerWidth - LEFT_W - RIGHT_W;
+const VIEW_H =
+    window.innerHeight;
+const camera = new THREE.PerspectiveCamera(
+    60,
+    VIEW_W / VIEW_H,
+    0.1,
+    2000
+);
+camera.position.set(45,35,45);
+const renderer = new THREE.WebGLRenderer({
+    antialias:true
+});
+renderer.shadowMap.enabled = true;
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(
+    VIEW_W,
+    VIEW_H
+);
+renderer.domElement.style.position = "absolute";
+renderer.domElement.style.left = LEFT_W + "px";
+renderer.domElement.style.top = "0px";
+document.body.appendChild(renderer.domElement);
+
+// CAMERA CONTROLS
+// Ported from the attached v6 demo: drag/orbit + wheel zoom around a target.
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0,6,0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = true;
+controls.enableRotate = true;
+controls.enableZoom = true;
+controls.minDistance = 12;
+controls.maxDistance = 95;
+controls.minPolarAngle = Math.PI * 0.14;
+controls.maxPolarAngle = Math.PI * 0.47;
+controls.update();
+// LIGHTS
+scene.add(
+    new THREE.AmbientLight(
+        0xffffff,
+        0.7
+    )
+);
+const sun = new THREE.DirectionalLight(
+    0xffffff,
+    1.8
+);
+sun.position.set(50,80,40);
+sun.castShadow = true;
+scene.add(sun);
+// APP STATE
+const AppState = {
+    selectedFaction:"kobold"
+};
+// FACTIONS
+const Factions = {
+    human:{
+        name:"Human",
+        buildings:[
+            {
+                id:"human-keep",
+                name:"Keep"
+            },
+            {
+                id:"human-barracks",
+                name:"Barracks"
+            }
+        ],
+        units:[
+            {
+                id:"human-peon",
+                name:"Peon"
+            }
+        ]
+    },
+    kobold:{
+        name:"Gnoll",
+        buildings:[
+            {
+                id:"kobold-gnoll-camp",
+                name:"Gnoll Camp"
+            },
+            {
+                id:"kobold-mine",
+                name:"Kobold Mine"
+            },
+            {
+                id:"kobold-watch-tower",
+                name:"Watch Tower"
+            }
+        ],
+        units:[
+            {
+                id:"kobold",
+                name:"Kobold Miner"
+            },
+            {
+                id:"gnoll",
+                name:"Gnoll Brute"
+            },
+            {
+                id:"goblin-whip",
+                name:"Goblin Taskmaster"
+            },
+            {
+                id:"wolf-rider",
+                name:"Goblin Wolf Rider"
+            }
+        ]
+    }
+};
+// MENU
+const menu =
+    document.getElementById("menu");
+function renderMenu(){
+    const faction =
+        Factions[AppState.selectedFaction];
+    const factionButtons =
+        Object.entries(Factions)
+        .map(([id,data])=>{
+            const active =
+                id === AppState.selectedFaction;
+            return `
+            <button
+                class="${active ? "activeFaction" : ""}"
+                onclick="selectFaction('${id}')"
+            >
+                ${active ? "■" : "□"}
+                ${data.name}
+            </button>
+            `;
+        })
+        .join("");
+    const buildingButtons =
+        faction.buildings
+        .map(building=>{
+            return `
+            <button
+                onclick="spawnFactionBuilding('${building.id}')"
+            >
+                ${building.name}
+            </button>
+            `;
+        })
+        .join("");
+    const unitButtons =
+        faction.units
+        .map(unit=>{
+            return `
+            <button
+                onclick="spawnRaceUnit('${unit.id}')"
+            >
+                ${unit.name}
+            </button>
+            `;
+        })
+        .join("");
+
+    menu.innerHTML = `
+    <div class="section">
+        <h2>${faction.name} Faction</h2>
+    </div>
+    <div class="section">
+        <h3>Factions</h3>
+        ${factionButtons}
+    </div>
+    <div class="section">
+        <h3>Buildings</h3>
+        ${buildingButtons}
+    </div>
+    <div class="section">
+        <h3>Units</h3>
+        ${unitButtons}
+    </div>
+    `;
+}
+
+window.selectFaction = function(id){
+    AppState.selectedFaction = id;
+    renderMenu();
+};
+renderMenu();
+// WORLD
+// Runtime objects are initialized after their class declarations.
+// The previous version constructed WorldGenerator/GridManager before those
+// classes existed, which throws a ReferenceError and leaves the canvas black.
+let occupancyGrid;
+let biomes;
+let worldGen;
+let gridManager;
+let spawner;
+
+// Lightweight placement controller. The original file referenced
+// DraftConstructionPlacement but never defined it. This keeps the existing
+// mouse-placement hooks safe until a building-placement mode is activated.
+class DraftConstructionPlacement {
+    constructor(scene, spawner){
+        this.scene = scene;
+        this.spawner = spawner;
+        this.active = false;
+        this.preview = null;
+        this.position = new THREE.Vector3();
+        this.config = null;
+        this.label = "";
+        this.radius = 2;
+        this.valid = true;
+        this.builder = null;
+        this.team = "blue";
+    }
+
+    begin(config){
+        this.cancel();
+
+        const builder = getPrimarySelectedPeasant();
+        if(!builder){
+            setGameStatus("Select a Peasant before entering Draft Construction Placement.", false);
+            return;
+        }
+
+        this.active = true;
+        this.config = config;
+        this.label = config.label;
+        this.radius = config.radius;
+        this.builder = builder;
+        this.team = builder.userData.team || "blue";
+
+        this.preview = config.previewFactory();
+        tintFaction(this.preview, this.team);
+        this.preview.userData.isDraftPreview = true;
+        this.scene.add(this.preview);
+
+        this.setPreviewValidity(true);
+        setGameStatus(
+            `Placing ${this.label}: left-click confirms a 30s construction job • right-click/Esc cancels`
+        );
+        renderBuildCommands();
+    }
+
+    setPreviewValidity(valid){
+        this.valid = valid;
+        if(!this.preview) return;
+
+        this.preview.traverse(o=>{
+            if(!o.isMesh) return;
+            o.material = new THREE.MeshStandardMaterial({
+                color: valid ? 0x42d66b : 0xe24c4c,
+                transparent:true,
+                opacity:0.48,
+                depthWrite:false,
+                roughness:0.8
+            });
+        });
+    }
+
+    canPlace(position){
+        for(const entity of interactables){
+            if(!entity.visible || entity === selectedEntity) continue;
+            const r = entity.userData.footprintRadius || 1.2;
+            const dx = entity.position.x - position.x;
+            const dz = entity.position.z - position.z;
+            if(Math.hypot(dx,dz) < this.radius + r + 0.5){
+                return false;
+            }
+        }
+
+        for(const job of constructionJobs){
+            if(job.complete) continue;
+            const dx = job.position.x - position.x;
+            const dz = job.position.z - position.z;
+            if(Math.hypot(dx,dz) < this.radius + job.radius + 0.5){
+                return false;
+            }
+        }
+
+        return Math.abs(position.x) < WORLD_HALF-5 &&
+               Math.abs(position.z) < WORLD_HALF-5;
+    }
+
+    update(position){
+        if(!this.active) return;
+        this.position.copy(position);
+
+        if(this.preview){
+            this.preview.position.copy(position);
+            const valid = this.canPlace(position);
+            if(valid !== this.valid) this.setPreviewValidity(valid);
+        }
+    }
+
+    confirm(){
+        if(!this.active) return false;
+
+        if(!this.valid){
+            setGameStatus(`${this.label}: blocked placement`, false);
+            return false;
+        }
+
+        const builder = this.builder;
+        const config = this.config;
+        const position = this.position.clone();
+        const team = this.team;
+
+        const job = enqueueConstructionJob({
+            builder,
+            config,
+            position,
+            team
+        });
+
+        this.finish();
+
+        // Keep the Peasant selected so more buildings can be queued.
+        if(builder){
+            selectEntity(builder, false);
+            peasantMenuMode = "build";
+            renderBuildCommands();
+        }
+
+        setGameStatus(
+            `${config.label} queued. ${builder.userData.type} will move adjacent and construct for 30 seconds.`
+        );
+        updateConstructionMeter();
+        return !!job;
+    }
+
+    finish(){
+        this.active = false;
+
+        if(this.preview){
+            this.scene.remove(this.preview);
+            this.preview = null;
+        }
+
+        this.config = null;
+        this.builder = null;
+        renderBuildCommands();
+    }
+
+    cancel(){
+        if(this.preview){
+            this.scene.remove(this.preview);
+            this.preview = null;
+        }
+
+        const wasActive = this.active;
+        this.active = false;
+        this.config = null;
+        this.builder = null;
+
+        if(wasActive){
+            setGameStatus("Construction placement cancelled.");
+            renderBuildCommands();
+        }
+    }
+}
+let draftPlacement;
+
+// GAMEPLAY / HUD STATE
+const peasants = [];
+let townHall = null;
+let workshop = null;
+let humanBaseSpawned = false;
+const constructionJobs = [];
+const BUILD_TIME_SECONDS = 30;
+
+let nextConstructionJobId = 1;
+
+const GameResources = {
+    blue:{gold:500,lumber:200},
+    red:{gold:500,lumber:200}
+};
+
+const HERO_SKILLS={
+    heal:{name:"Holy Light",icon:"✨",mana:65,cooldown:6,desc:"Heal the Paladin or a nearby wounded ally for 250 HP."},
+    invulnerability:{name:"Divine Shield",icon:"🛡️",mana:80,cooldown:18,desc:"Paladin becomes invulnerable for 5 seconds."},
+    devotion:{name:"Devotion Aura",icon:"🔰",mana:0,cooldown:0,passive:true,desc:"Passive aura: +3 armor to the Paladin and nearby allies."},
+    resurrect:{name:"Resurrection",icon:"🌟",mana:150,cooldown:45,desc:"Resurrect nearby fallen friendly units. Prototype also fully heals nearby allies."}
+};
+const ITEM_DEFS={
+    healingPotion:{name:"Healing Potion",icon:"🧪",cost:75,desc:"Restores 250 health."},
+    manaPotion:{name:"Mana Potion",icon:"🔷",cost:75,desc:"Restores 175 mana."}
+};
+const heroSkillCooldowns={heal:0,invulnerability:0,resurrect:0};
+
+const MINE_CAPACITY = 6;
+const MINE_TIME_SECONDS = 5;
+const GOLD_PER_TRIP = 10;
+const PEASANT_TRAIN_SECONDS = 30;
+
+function updateResourceBar(){
+    const gold=document.getElementById("goldResource");
+    const lumber=document.getElementById("lumberResource");
+    const pop=document.getElementById("populationResource");
+    if(gold) gold.textContent=GameResources.blue.gold;
+    if(lumber) lumber.textContent=GameResources.blue.lumber;
+    if(pop) pop.textContent=peasants.filter(p=>p.userData.team==="blue").length;
+}
+
+function getSameTeamTownHalls(team){
+    return interactables.filter(e =>
+        e.userData.team===team &&
+        (e.userData.type==="Town Hall" || e.userData.type==="Red Town Hall")
+    );
+}
+
+function getNearestTownHall(worker){
+    const halls=getSameTeamTownHalls(worker.userData.team);
+    let best=null, bestDist=Infinity;
+    for(const hall of halls){
+        const d=hall.position.distanceToSquared(worker.position);
+        if(d<bestDist){best=hall;bestDist=d;}
+    }
+    return best;
+}
+
+function getMineEntryPoint(mine,worker){
+    const dir=new THREE.Vector3().subVectors(worker.position,mine.position);
+    dir.y=0;
+    if(dir.lengthSq()<.001) dir.set(1,0,0);
+    dir.normalize();
+    return mine.position.clone().addScaledVector(
+        dir,
+        (mine.userData.footprintRadius||5.8)+.7
+    );
+}
+
+function createGoldBag(worker){
+    const bagMat=new THREE.MeshStandardMaterial({color:0xb7873c,roughness:1});
+    const bag=new THREE.Mesh(new THREE.SphereGeometry(.48,8,6),bagMat);
+    bag.scale.set(1,.9,.75);
+    bag.position.set(-.72,2.15,.18);
+    bag.visible=false;
+    bag.castShadow=true;
+    worker.add(bag);
+    worker.userData.goldBag=bag;
+}
+
+function setMiningOrder(worker,mine){
+    if(!isPeasantEntity(worker) || !mine) return false;
+    if(worker.userData.team !== mine.userData.team){
+        setGameStatus("Peasants can only mine their own faction Gold Mine.",false);
+        return false;
+    }
+
+    const assigned=mine.userData.assignedWorkers;
+    if(!assigned.has(worker) && assigned.size>=MINE_CAPACITY){
+        setGameStatus(`Gold Mine full: ${MINE_CAPACITY}/${MINE_CAPACITY} peasants assigned.`,false);
+        return false;
+    }
+
+    // Cancel active construction assignment when explicitly ordered to mine.
+    if(worker.userData.activeBuildJob){
+        worker.userData.activeBuildJob.state="Paused by Mining Order";
+        worker.userData.activeBuildJob=null;
+    }
+
+    // Release any previous mine reservation.
+    if(worker.userData.mine && worker.userData.mine!==mine){
+        worker.userData.mine.userData.assignedWorkers.delete(worker);
+    }
+
+    assigned.add(worker);
+    worker.userData.mine=mine;
+    worker.userData.workMode="mining";
+    worker.userData.mineState="toMine";
+    worker.userData.buildState="Moving to Mine";
+    worker.userData.mineTimer=0;
+    worker.userData.carryGold=0;
+    if(worker.userData.goldBag) worker.userData.goldBag.visible=false;
+    worker.visible=true;
+    worker.userData.target=getMineEntryPoint(mine,worker);
+    return true;
+}
+
+function releaseMiningOrder(worker){
+    const mine=worker.userData.mine;
+    if(mine?.userData?.assignedWorkers){
+        mine.userData.assignedWorkers.delete(worker);
+    }
+    worker.userData.mine=null;
+    worker.userData.workMode=null;
+    worker.userData.mineState=null;
+    worker.userData.mineTimer=0;
+    worker.userData.carryGold=0;
+    worker.visible=true;
+    if(worker.userData.goldBag) worker.userData.goldBag.visible=false;
+}
+
+function updateMining(dt){
+    for(const worker of peasants){
+        if(worker.userData.workMode!=="mining") continue;
+        const mine=worker.userData.mine;
+        if(!mine || !mine.parent){
+            releaseMiningOrder(worker);
+            continue;
+        }
+
+        if(worker.userData.mineState==="toMine"){
+            const entry=getMineEntryPoint(mine,worker);
+            const d=worker.position.distanceTo(entry);
+            if(d<=.65){
+                worker.userData.target=null;
+                worker.userData.mineState="inside";
+                worker.userData.mineTimer=MINE_TIME_SECONDS;
+                worker.userData.buildState="Mining";
+                worker.visible=false;
+                if(worker.selectionRing) worker.selectionRing.visible=false;
+            }else if(!worker.userData.target){
+                worker.userData.target=entry;
+            }
+            continue;
+        }
+
+        if(worker.userData.mineState==="inside"){
+            worker.userData.mineTimer-=dt;
+            if(worker.userData.mineTimer<=0){
+                const amount=Math.min(GOLD_PER_TRIP,mine.userData.gold);
+                if(amount<=0){
+                    releaseMiningOrder(worker);
+                    setGameStatus("Gold Mine depleted.",false);
+                    continue;
+                }
+                mine.userData.gold-=amount;
+                worker.userData.carryGold=amount;
+                worker.userData.mineState="toHall";
+                worker.userData.buildState="Returning Gold";
+                worker.visible=true;
+                const exit=getMineEntryPoint(mine,worker);
+                worker.position.copy(exit);
+                if(worker.userData.goldBag) worker.userData.goldBag.visible=true;
+                const hall=getNearestTownHall(worker);
+                if(hall){
+                    worker.userData.returnHall=hall;
+                    const dir=new THREE.Vector3().subVectors(worker.position,hall.position).setY(0);
+                    if(dir.lengthSq()<.001) dir.set(1,0,0);
+                    dir.normalize();
+                    worker.userData.target=hall.position.clone().addScaledVector(
+                        dir,
+                        (hall.userData.footprintRadius||7.2)+1
+                    );
+                }
+            }
+            continue;
+        }
+
+        if(worker.userData.mineState==="toHall"){
+            const hall=worker.userData.returnHall || getNearestTownHall(worker);
+            if(!hall) continue;
+            const target=worker.userData.target;
+            if(!target){
+                worker.userData.target=hall.position.clone();
+                continue;
+            }
+            if(worker.position.distanceTo(target)<=.65){
+                GameResources[worker.userData.team].gold += worker.userData.carryGold;
+                worker.userData.carryGold=0;
+                if(worker.userData.goldBag) worker.userData.goldBag.visible=false;
+                updateResourceBar();
+
+                worker.userData.mineState="toMine";
+                worker.userData.buildState="Moving to Mine";
+                worker.userData.target=getMineEntryPoint(mine,worker);
+                setGameStatus(
+                    `${worker.userData.team==="red"?"Red":"Blue"} Peasant deposited ${GOLD_PER_TRIP} gold.`
+                );
+            }
+        }
+    }
+}
+
+function ensureTownHallTrainingState(hall){
+    if(!hall.userData.trainingQueue) hall.userData.trainingQueue=[];
+    if(!hall.userData.trainingProgress) hall.userData.trainingProgress=0;
+}
+
+function queuePeasantTraining(hall){
+    if(!hall || !["Town Hall","Red Town Hall"].includes(hall.userData.type)) return;
+    ensureTownHallTrainingState(hall);
+    hall.userData.trainingQueue.push({
+        type:"Peasant",
+        duration:PEASANT_TRAIN_SECONDS
+    });
+    setGameStatus(
+        `${hall.userData.type}: Peasant queued (${hall.userData.trainingQueue.length} in queue).`
+    );
+    renderSelectedHUD(hall);
+}
+
+function spawnTrainedPeasant(hall){
+    const team=hall.userData.team||"blue";
+    const radius=(hall.userData.footprintRadius||7.2)+2.2;
+    const angle=Math.random()*Math.PI*2;
+    const x=hall.position.x+Math.cos(angle)*radius;
+    const z=hall.position.z+Math.sin(angle)*radius;
+    const p=createPeasant(x,z,team);
+    p.userData.buildState="Idle";
+    updateResourceBar();
+    setGameStatus(`${team==="red"?"Red":"Blue"} Town Hall trained a new Peasant.`);
+}
+
+function updateTownHallTraining(dt){
+    for(const hall of interactables){
+        if(!["Town Hall","Red Town Hall"].includes(hall.userData.type)) continue;
+        ensureTownHallTrainingState(hall);
+        if(!hall.userData.trainingQueue.length){
+            hall.userData.trainingProgress=0;
+            continue;
+        }
+
+        hall.userData.trainingProgress += dt;
+        if(hall.userData.trainingProgress>=PEASANT_TRAIN_SECONDS){
+            hall.userData.trainingProgress-=PEASANT_TRAIN_SECONDS;
+            hall.userData.trainingQueue.shift();
+            spawnTrainedPeasant(hall);
+        }
+    }
+}
+
+
+function isPeasantEntity(entity){
+    return ["Peasant","Red Peasant"].includes(entity?.userData?.type);
+}
+
+function getPrimarySelectedPeasant(){
+    if(isPeasantEntity(selectedEntity)) return selectedEntity;
+    return selectedEntities.find(isPeasantEntity) || null;
+}
+
+function getBuilderQueue(builder){
+    if(!builder.userData.buildQueue) builder.userData.buildQueue = [];
+    return builder.userData.buildQueue;
+}
+
+function setMeshConstructionAppearance(group, progress){
+    const p = Math.max(0.04, Math.min(1, progress));
+    group.scale.y = 0.06 + 0.94 * p;
+    group.traverse(o=>{
+        if(!o.isMesh || !o.material) return;
+        o.material.transparent = progress < 1;
+        o.material.opacity = progress < 1 ? 0.58 : 1;
+    });
+}
+
+function createConstructionSiteMesh(config, position, team){
+    const site = config.previewFactory();
+    tintFaction(site, team);
+
+    // Construction sites must own their materials. Preview factories reuse
+    // several faction materials that are also used by completed buildings;
+    // cloning here prevents construction opacity from affecting the whole base.
+    site.traverse(o=>{
+        if(o.isMesh && o.material){
+            o.material = o.material.clone();
+        }
+    });
+
+    site.position.copy(position);
+    site.userData.type = team === "red"
+        ? `Red ${config.label} Construction`
+        : `${config.label} Construction`;
+    site.userData.constructionSite = true;
+    site.userData.team = team;
+    site.userData.footprintRadius = config.radius;
+
+    const ring = new THREE.Mesh(
+        new THREE.RingGeometry(config.radius, config.radius + .22, 48),
+        new THREE.MeshBasicMaterial({
+            color: team === "red" ? 0xff5555 : 0xffd24a,
+            side:THREE.DoubleSide,
+            transparent:true,
+            opacity:.8,
+            depthWrite:false
+        })
+    );
+    ring.rotation.x = -Math.PI/2;
+    ring.position.y = .07;
+    site.add(ring);
+
+    setMeshConstructionAppearance(site, 0);
+    scene.add(site);
+    return site;
+}
+
+function findBuildPoint(job){
+    const builder = job.builder;
+    const from = new THREE.Vector3()
+        .subVectors(builder.position, job.position);
+    from.y = 0;
+
+    if(from.lengthSq() < .01){
+        from.set(1,0,0);
+    }
+
+    from.normalize();
+    return job.position.clone().addScaledVector(
+        from,
+        job.radius + 1.15
+    );
+}
+
+function enqueueConstructionJob({builder, config, position, team}){
+    if(!builder || !config) return null;
+
+    const job = {
+        id: nextConstructionJobId++,
+        builder,
+        config,
+        label: config.label,
+        position: position.clone(),
+        radius: config.radius,
+        team,
+        progress: 0,
+        duration: BUILD_TIME_SECONDS,
+        state: "Queued",
+        complete: false,
+        site: null,
+        buildPoint: null
+    };
+
+    job.site = createConstructionSiteMesh(config, position, team);
+    job.buildPoint = findBuildPoint(job);
+    job.site.userData.jobId = job.id;
+
+    constructionJobs.push(job);
+
+    const queue = getBuilderQueue(builder);
+    queue.push(job);
+
+    if(!builder.userData.activeBuildJob){
+        startNextBuilderJob(builder);
+    }
+
+    return job;
+}
+
+function startNextBuilderJob(builder){
+    const queue = getBuilderQueue(builder);
+
+    while(queue.length && queue[0].complete){
+        queue.shift();
+    }
+
+    const job = queue[0] || null;
+    builder.userData.activeBuildJob = job;
+    builder.userData.buildState = job ? "Moving to Build" : "Idle";
+
+    if(!job){
+        builder.userData.target = null;
+        return;
+    }
+
+    job.state = "Moving to Site";
+    job.buildPoint = findBuildPoint(job);
+    builder.userData.target = job.buildPoint.clone();
+}
+
+function completeConstructionJob(job){
+    if(job.complete) return;
+
+    job.complete = true;
+    job.progress = 1;
+    job.state = "Complete";
+
+    if(job.site){
+        scene.remove(job.site);
+        job.site = null;
+    }
+
+    const built = job.config.factory(
+        job.position.x,
+        job.position.z,
+        job.team
+    );
+
+    if(built){
+        built.userData.constructionComplete = true;
+        built.userData.builtBy = job.builder;
+    }
+
+    const builder = job.builder;
+    const queue = getBuilderQueue(builder);
+    const idx = queue.indexOf(job);
+    if(idx !== -1) queue.splice(idx,1);
+
+    builder.userData.activeBuildJob = null;
+    builder.userData.buildState = "Idle";
+    builder.userData.target = null;
+
+    startNextBuilderJob(builder);
+
+    setGameStatus(
+        `${job.team === "red" ? "Red " : ""}${job.label} construction complete.`
+    );
+}
+
+function updateConstructionJobs(dt){
+    for(const job of constructionJobs){
+        if(job.complete) continue;
+
+        const builder = job.builder;
+        if(!builder || !builder.parent){
+            job.state = "No Builder";
+            continue;
+        }
+
+        // Only the first job in this Peasant's queue is active.
+        if(builder.userData.activeBuildJob !== job){
+            job.state = "Queued";
+            continue;
+        }
+
+        const dx = builder.position.x - job.buildPoint.x;
+        const dz = builder.position.z - job.buildPoint.z;
+        const distanceToBuildPoint = Math.hypot(dx,dz);
+
+        if(distanceToBuildPoint > .55){
+            job.state = "Moving to Site";
+            builder.userData.buildState = "Moving to Build";
+
+            if(
+                !builder.userData.target ||
+                builder.userData.target.distanceTo(job.buildPoint) > .2
+            ){
+                builder.userData.target = job.buildPoint.clone();
+            }
+            continue;
+        }
+
+        // Building progress only advances while the assigned Peasant is
+        // physically adjacent and in the active Building state.
+        builder.userData.target = null;
+        builder.userData.buildState = "Building";
+        job.state = "Building";
+
+        job.progress = Math.min(
+            1,
+            job.progress + dt / job.duration
+        );
+
+        if(job.site){
+            setMeshConstructionAppearance(job.site, job.progress);
+        }
+
+        if(job.progress >= 1){
+            completeConstructionJob(job);
+        }
+    }
+
+    updateConstructionMeter();
+}
+
+function getFocusedConstructionJob(){
+    const builder = getPrimarySelectedPeasant();
+    if(builder?.userData?.activeBuildJob){
+        return builder.userData.activeBuildJob;
+    }
+
+    if(selectedEntity?.userData?.constructionSite){
+        return constructionJobs.find(
+            job => job.id === selectedEntity.userData.jobId
+        ) || null;
+    }
+
+    return constructionJobs.find(job=>!job.complete) || null;
+}
+
+function updateConstructionMeter(){
+    const meter = document.getElementById("constructionMeter");
+    const title = document.getElementById("constructionMeterTitle");
+    const percent = document.getElementById("constructionMeterPercent");
+    const fill = document.getElementById("constructionMeterFill");
+    const sub = document.getElementById("constructionMeterSub");
+    if(!meter || !title || !percent || !fill || !sub) return;
+
+    const job = getFocusedConstructionJob();
+
+    if(!job){
+        meter.classList.remove("active");
+        return;
+    }
+
+    meter.classList.add("active");
+
+    const pct = Math.round(job.progress * 100);
+    title.textContent = `${job.label} — ${job.state}`;
+    percent.textContent = `${pct}%`;
+    fill.style.width = `${pct}%`;
+
+    const queue = getBuilderQueue(job.builder);
+    const remaining = Math.max(0, job.duration * (1-job.progress));
+    sub.textContent =
+        `${job.builder.userData.type} • ${remaining.toFixed(1)}s remaining • ` +
+        `${Math.max(0,queue.length-1)} queued after this`;
+}
+
+function setGameStatus(message, good=true){
+    const el = document.getElementById("gameStatus");
+    if(!el) return;
+    el.textContent = message;
+    el.style.color = good ? "#e8d9b0" : "#ff8b8b";
+}
+
+function renderSelectedHUD(entity){
+    const portrait = document.getElementById("portraitModel");
+    const stats = document.getElementById("unitStats");
+    if(!portrait || !stats) return;
+    if(!entity?.userData?.hero) renderInventory(null);
+
+    const type = entity?.userData?.type || "No Selection";
+    if(type === "Peasant" || type === "Red Peasant"){
+        portrait.textContent = "👨";
+        stats.innerHTML = `
+            <div class="unitName">Peasant</div>
+            <div class="healthBar"><div id="healthFill" style="width:100%"></div></div>
+            <div class="statLine">HP: ${entity.userData.hp} / ${entity.userData.maxHp}</div>
+            <div class="statLine">Damage: 5 - 6</div>
+            <div class="statLine">Armor: 0</div>
+            <div class="statLine">Status: ${entity.userData.buildState || (entity.userData.target ? "Moving" : "Idle")}</div>
+            <div class="statLine">Build: House • Farm • Tower • Workshop • Barracks • Town Hall • Blacksmith • Altar • Vault</div>
+            <div class="statLine">Queue: ${(entity.userData.buildQueue || []).length}</div>`;
+    }else if(type === "Town Hall" || type === "Red Town Hall"){
+        portrait.textContent = "🏰";
+        stats.innerHTML = `
+            <div class="unitName">Town Hall</div>
+            <div class="healthBar"><div id="healthFill" style="width:100%"></div></div>
+            <div class="statLine">HP: 1500 / 1500</div>
+            <div class="statLine">Armor: Fortified</div>
+            <div class="statLine">Workers: ${peasants.length}</div>
+            <div class="statLine">Role: Resource drop-off</div>`;
+    }else if(type === "Workshop" || type === "Red Workshop"){
+        portrait.textContent = "⚙️";
+        stats.innerHTML = `
+            <div class="unitName">Workshop</div>
+            <div class="healthBar"><div id="healthFill" style="width:100%;background:#4f8fd8"></div></div>
+            <div class="statLine">HP: 1100 / 1100</div>
+            <div class="statLine">Armor: Fortified</div>
+            <div class="statLine">Production: Mechanical units</div>
+            <div class="statLine">Status: Ready</div>`;
+    }else if(type.includes("Blacksmith")){
+        portrait.textContent = "🔨";
+        stats.innerHTML = `
+            <div class="unitName">${type}</div>
+            <div class="healthBar"><div id="healthFill" style="width:100%;background:#d27b35"></div></div>
+            <div class="statLine">HP: 1200 / 1200</div>
+            <div class="statLine">Role: Weapons / armor upgrades</div>
+            <div class="statLine">Armor: Fortified</div>`;
+    }else if(type.includes("Altar")){
+        portrait.textContent = "🗿";
+        stats.innerHTML = `
+            <div class="unitName">${type}</div>
+            <div class="healthBar"><div id="healthFill" style="width:100%;background:#8e62d8"></div></div>
+            <div class="statLine">HP: 1000 / 1000</div>
+            <div class="statLine">Role: Hero / revival structure</div>
+            <div class="statLine">Armor: Fortified</div>`;
+    }else if(type.includes("Vault")){
+        portrait.textContent = "💎";
+        stats.innerHTML = `
+            <div class="unitName">${type}</div>
+            <div class="healthBar"><div id="healthFill" style="width:100%;background:#54bff2"></div></div>
+            <div class="statLine">HP: 900 / 900</div>
+            <div class="statLine">Role: Magical storage / items</div>
+            <div class="statLine">Armor: Fortified</div>`;
+    }else if(type === "Gold Mine" || type === "Red Gold Mine"){
+        portrait.textContent = "⛏️";
+        stats.innerHTML = `
+            <div class="unitName">Gold Mine</div>
+            <div class="healthBar"><div id="healthFill" style="width:100%;background:#e8bd34"></div></div>
+            <div class="statLine">Gold: ${(entity.userData.gold || 0).toLocaleString()}</div>
+            <div class="statLine">Workers: ${entity.userData.assignedWorkers?.size || 0} / ${MINE_CAPACITY}</div>
+            <div class="statLine">Armor: Invulnerable</div>`;
+    }else if(entity?.userData?.mercenaryCamp){
+        portrait.textContent="⛺";
+        stats.innerHTML=`
+            <div class="unitName">Mercenary Camp</div>
+            <div class="healthBar"><div id="healthFill" style="width:100%;background:#d6a43a"></div></div>
+            <div class="statLine">Neutral Shop</div>
+            <div class="statLine">Forest Troll: 175 Gold</div>
+            <div class="statLine">Select command card to hire.</div>`;
+    }else if(entity?.userData?.neutralEnemy){
+        portrait.textContent="☠️";
+        stats.innerHTML=`
+            <div class="unitName">${type}</div>
+            <div class="healthBar"><div id="healthFill" style="width:100%;background:#d8a52f"></div></div>
+            <div class="statLine">HP: ${entity.userData.hp} / ${entity.userData.maxHp}</div>
+            <div class="statLine">Neutral Jungle Creep</div>`;
+    }else if(entity?.userData?.hero){
+        const hp=Math.max(0,entity.userData.hp||0), maxHp=entity.userData.maxHp||1;
+        const mana=Math.max(0,entity.userData.mana||0), maxMana=entity.userData.maxMana||1;
+        ensureHeroXP(entity);
+        const invuln=performance.now() < (entity.userData.invulnerableUntil||0);
+        portrait.textContent="🧔";
+        stats.innerHTML=`
+            <div class="heroName">Karnwield the Seeker <span style="color:#b889ff">— Paladin</span></div>
+            <div class="heroBars">
+                <div class="heroBar hp"><div class="heroBarFill" style="width:${hp/maxHp*100}%"></div><div class="heroBarText">${Math.round(hp)} / ${maxHp}</div></div>
+                <div class="heroBar mana"><div class="heroBarFill" style="width:${mana/maxMana*100}%"></div><div class="heroBarText">${Math.round(mana)} / ${maxMana}</div></div>
+            </div>
+            <div class="heroStatGrid">
+                <div>⚔ Damage: ${entity.userData.damageMin}-${entity.userData.damageMax}</div>
+                <div>🛡 Armor: ${entity.userData.armor} <span style="color:#71d77a">+3 aura</span></div>
+                <div>Status: ${invuln?"INVULNERABLE":(entity.userData.target?"Moving":"Ready")}</div>
+                <div>Level: ${entity.userData.level}</div>
+                <div>XP: ${entity.userData.xp} / ${heroXPNeeded(entity)}</div>
+            </div>
+            <div class="heroAttributes"><span>STR ${entity.userData.strength}</span><span>AGI ${entity.userData.agility}</span><span>INT ${entity.userData.intelligence}</span></div>`;
+        renderInventory(entity);
+    }else if(entity?.userData?.isUnit && !isPeasantEntity(entity)){
+        const kind=entity.userData.unitKind;
+        portrait.textContent=UNIT_TRAINING[kind]?.icon || "⚔️";
+        stats.innerHTML=`
+            <div class="unitName">${type}</div>
+            <div class="healthBar"><div id="healthFill" style="width:100%"></div></div>
+            <div class="statLine">HP: ${entity.userData.hp} / ${entity.userData.maxHp}</div>
+            <div class="statLine">Class: ${UNIT_TRAINING[kind]?.label || kind}</div>
+            <div class="statLine">Status: ${entity.userData.target?"Moving":"Idle"}</div>`;
+    }else if(type.includes("Barracks")){
+        ensureProductionQueue(entity);
+        const q=entity.userData.productionQueue;
+        const active=q[0];
+        const pct=active?Math.round(entity.userData.productionProgress/UNIT_TRAINING[active].time*100):0;
+        portrait.textContent="⚔️";
+        stats.innerHTML=`
+            <div class="unitName">${type}</div>
+            <div class="healthBar"><div id="healthFill" style="width:100%"></div></div>
+            <div class="statLine">Infantry Production</div>
+            <div class="statLine">Queue: ${q.length}</div>
+            <div class="statLine">Training: ${active?UNIT_TRAINING[active].label+" "+pct+"%":"Idle"}</div>`;
+    }else if(type.includes("Workshop")){
+        ensureProductionQueue(entity);
+        const q=entity.userData.productionQueue;
+        const active=q[0];
+        const pct=active?Math.round(entity.userData.productionProgress/UNIT_TRAINING[active].time*100):0;
+        portrait.textContent="⚙️";
+        stats.innerHTML=`
+            <div class="unitName">${type}</div>
+            <div class="healthBar"><div id="healthFill" style="width:100%"></div></div>
+            <div class="statLine">Mechanical Production</div>
+            <div class="statLine">Queue: ${q.length}</div>
+            <div class="statLine">Training: ${active?UNIT_TRAINING[active].label+" "+pct+"%":"Idle"}</div>`;
+    }else if(entity?.userData?.constructionSite){
+        const job = constructionJobs.find(j=>j.id===entity.userData.jobId);
+        portrait.textContent = "🚧";
+        stats.innerHTML = `
+            <div class="unitName">${job?.label || "Construction Site"}</div>
+            <div class="healthBar"><div id="healthFill" style="width:${Math.round((job?.progress || 0)*100)}%;background:#e0a43c"></div></div>
+            <div class="statLine">Progress: ${Math.round((job?.progress || 0)*100)}%</div>
+            <div class="statLine">State: ${job?.state || "Queued"}</div>
+            <div class="statLine">Build Time: 30 seconds active construction</div>`;
+    }else if(type === "Tree"){
+        portrait.textContent = "🌲";
+        stats.innerHTML = `
+            <div class="unitName">Tree</div>
+            <div class="statLine">Lumber: 120</div>
+            <div class="statLine">Resource object</div>`;
+    }else{
+        portrait.textContent = "◼";
+        stats.innerHTML = `
+            <div class="unitName">${type}</div>
+            <div class="statLine">Selected entity</div>`;
+    }
+    renderBuildCommands();
+}
+
+function setCommandTooltip(text){
+    const el = document.getElementById("tooltip");
+    if(el) el.innerHTML = text;
+}
+
+let peasantMenuMode = "actions";
+
+function getBlueVaults(){
+    return interactables.filter(e=>e.userData?.vault && e.userData?.team==="blue");
+}
+function isPaladinNearVault(paladin){
+    if(!paladin?.userData?.hero) return false;
+    return getBlueVaults().some(v=>paladin.position.distanceTo(v.position)<=11);
+}
+function addInventoryItem(hero,itemKey){
+    if(!hero.userData.inventory) hero.userData.inventory=[];
+    if(hero.userData.inventory.length>=6){setGameStatus("Inventory is full.",false);return false;}
+    hero.userData.inventory.push(itemKey); renderInventory(hero); return true;
+}
+function renderInventory(entity=selectedEntity){
+    const grid=document.getElementById("inventoryGrid"); if(!grid) return;
+    grid.innerHTML="";
+    const items=entity?.userData?.hero ? (entity.userData.inventory||[]) : [];
+    for(let i=0;i<6;i++){
+        const slot=document.createElement("div"); slot.className="inventorySlot";
+        const key=items[i];
+        if(key&&ITEM_DEFS[key]){
+            const def=ITEM_DEFS[key]; slot.classList.add("hasItem");
+            slot.innerHTML=`${def.icon}<span class="inventoryCount">${i+1}</span>`;
+            slot.title=`${def.name}: ${def.desc}`;
+            slot.onclick=()=>useInventoryItem(entity,i);
+        }
+        grid.appendChild(slot);
+    }
+}
+function useInventoryItem(hero,index){
+    if(!hero?.userData?.hero) return;
+    const key=hero.userData.inventory?.[index], def=ITEM_DEFS[key]; if(!def)return;
+    if(key==="healingPotion") hero.userData.hp=Math.min(hero.userData.maxHp,hero.userData.hp+250);
+    if(key==="manaPotion") hero.userData.mana=Math.min(hero.userData.maxMana,hero.userData.mana+175);
+    hero.userData.inventory.splice(index,1);
+    setGameStatus(`${def.name} used.`); renderSelectedHUD(hero); renderBuildCommands();
+}
+function buyVaultItem(vault,itemKey){
+    const hero=combatUnits.find(u=>u.userData?.hero&&u.userData.team==="blue");
+    const def=ITEM_DEFS[itemKey];
+    if(!hero||!def)return;
+    if(!isPaladinNearVault(hero)){setGameStatus("Paladin must be near the Vault to purchase items.",false);return;}
+    if(GameResources.blue.gold<def.cost){setGameStatus(`Need ${def.cost} gold.`,false);return;}
+    if((hero.userData.inventory||[]).length>=6){setGameStatus("Paladin inventory is full.",false);return;}
+    GameResources.blue.gold-=def.cost; updateResourceBar(); addInventoryItem(hero,itemKey);
+    setGameStatus(`${def.name} purchased for ${def.cost} gold.`); renderBuildCommands();
+}
+function castPaladinSkill(hero,key){
+    const def=HERO_SKILLS[key]; if(!hero?.userData?.hero||!def||def.passive)return;
+    const now=performance.now()/1000;
+    if((heroSkillCooldowns[key]||0)>now){setGameStatus(`${def.name} is on cooldown.`,false);return;}
+    if(hero.userData.mana<def.mana){setGameStatus(`Not enough mana for ${def.name}.`,false);return;}
+    hero.userData.mana-=def.mana; heroSkillCooldowns[key]=now+def.cooldown;
+    if(key==="heal"){
+        let target=hero,bestMissing=hero.userData.maxHp-hero.userData.hp;
+        for(const u of [...combatUnits,...peasants]){
+            if(u.userData?.team!==hero.userData.team||u.position.distanceTo(hero.position)>12)continue;
+            const missing=(u.userData.maxHp||0)-(u.userData.hp||0);
+            if(missing>bestMissing){bestMissing=missing;target=u;}
+        }
+        target.userData.hp=Math.min(target.userData.maxHp||9999,(target.userData.hp||0)+250);
+        setGameStatus(`Holy Light heals ${target.userData.type||"ally"} for up to 250 HP.`);
+    }
+    if(key==="invulnerability"){
+        hero.userData.invulnerableUntil=performance.now()+5000;
+        setGameStatus("Divine Shield: Paladin is invulnerable for 5 seconds.");
+    }
+    if(key==="resurrect"){
+        let healed=0;
+        for(const u of [...combatUnits,...peasants]){
+            if(u.userData?.team!==hero.userData.team||u.position.distanceTo(hero.position)>14)continue;
+            if((u.userData.hp||0)<(u.userData.maxHp||0)){u.userData.hp=u.userData.maxHp;healed++;}
+        }
+        setGameStatus(`Resurrection radiates holy power through ${healed} nearby allied unit(s).`);
+    }
+    renderSelectedHUD(hero); renderBuildCommands();
+}
+function heroSkillButton(key,hotkey){
+    const d=HERO_SKILLS[key],now=performance.now()/1000,remain=Math.max(0,(heroSkillCooldowns[key]||0)-now);
+    return `<button class="commandCard skill ${d.passive?"passive":""} ${remain>0?"cooldown":""}" data-skill="${key}" title="${d.name}">${d.icon}<span class="hotkey">${d.passive?"PASSIVE":(remain>0?Math.ceil(remain):hotkey)}</span></button>`;
+}
+
+function renderBuildCommands(){
+    const grid = document.getElementById("commandGrid");
+    if(!grid) return;
+
+    // Keep HUD pointer presses inside the HUD. Click events still fire normally.
+    if(!grid.dataset.worldInputGuard){
+        grid.addEventListener("pointerdown", e=>e.stopPropagation());
+        grid.addEventListener("mousedown", e=>e.stopPropagation());
+        grid.addEventListener("contextmenu", e=>{
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        grid.dataset.worldInputGuard = "1";
+    }
+    const selectedType=selectedEntity?.userData?.type || "";
+
+    if(selectedEntity?.userData?.hero){
+        const hero=selectedEntity;
+        grid.className="";
+        grid.innerHTML=`
+            ${heroSkillButton("heal","Q")}${heroSkillButton("invulnerability","W")}${heroSkillButton("devotion","")}${heroSkillButton("resurrect","R")}
+            <button class="commandCard actionMove" data-hero-action="move">➤<span class="hotkey">M</span></button>
+            <button class="commandCard actionStop" data-hero-action="stop">■<span class="hotkey">S</span></button>
+            ${Array(6).fill('<div class="commandCard" style="opacity:.18;cursor:default"></div>').join("")}`;
+        grid.querySelectorAll("[data-skill]").forEach(btn=>{
+            const key=btn.dataset.skill,def=HERO_SKILLS[key];
+            btn.addEventListener("mouseenter",()=>setCommandTooltip(`<b>${def.name}</b> — ${def.desc}${def.mana?`<br>Mana: ${def.mana}`:""}`));
+            if(!def.passive) btn.addEventListener("click",()=>castPaladinSkill(hero,key));
+        });
+        grid.querySelector('[data-hero-action="stop"]')?.addEventListener("click",()=>{hero.userData.target=null;setGameStatus("Paladin stopped.");});
+        setCommandTooltip("Paladin skills: Holy Light • Divine Shield • Devotion Aura • Resurrection");
+        return;
+    }
+
+    if(selectedEntity?.userData?.vault){
+        const hero=combatUnits.find(u=>u.userData?.hero&&u.userData.team==="blue");
+        const near=isPaladinNearVault(hero);
+        grid.className="";
+        grid.innerHTML=`
+            <button class="commandCard shopBuy ${near?"":"shopLocked"}" data-shop="healingPotion">🧪<span class="hotkey">75g</span></button>
+            <button class="commandCard shopBuy ${near?"":"shopLocked"}" data-shop="manaPotion">🔷<span class="hotkey">75g</span></button>
+            ${Array(10).fill('<div class="commandCard" style="opacity:.18;cursor:default"></div>').join("")}`;
+        grid.querySelectorAll("[data-shop]").forEach(btn=>{
+            const d=ITEM_DEFS[btn.dataset.shop];
+            btn.addEventListener("mouseenter",()=>setCommandTooltip(`<b>${d.name}</b> — ${d.desc}<br>Cost: ${d.cost} gold<br>${near?"Paladin in shop range.":"Move Paladin near the Vault to unlock."}`));
+            if(near) btn.addEventListener("click",()=>buyVaultItem(selectedEntity,btn.dataset.shop));
+        });
+        setCommandTooltip(near?"Vault shop active: Paladin is nearby.":"Vault shop locked: Paladin must be nearby.");
+        return;
+    }
+
+    if(selectedType.includes("Barracks")){
+        const building=selectedEntity;
+        ensureProductionQueue(building);
+        const active=building.userData.productionQueue[0];
+        const pct=active?Math.round(building.userData.productionProgress/UNIT_TRAINING[active].time*100):0;
+        grid.className="";
+        grid.innerHTML=`
+            <button class="commandCard" data-prod="swordsman">⚔️<span class="hotkey">Q</span></button>
+            <button class="commandCard" data-prod="rifleman">🔫<span class="hotkey">W</span></button>
+            <button class="commandCard" data-prod="horseman">🐎<span class="hotkey">E</span></button>
+            <div class="commandCard" style="font-size:11px;cursor:default">${active?pct+"%":"Idle"}</div>
+            ${Array(8).fill('<div class="commandCard" style="opacity:.22;cursor:default"></div>').join("")}
+        `;
+        grid.querySelectorAll("[data-prod]").forEach(btn=>{
+            btn.addEventListener("click",()=>queueProduction(building,btn.dataset.prod));
+            btn.addEventListener("mouseenter",()=>setCommandTooltip(
+                `${UNIT_TRAINING[btn.dataset.prod].label} — ${UNIT_TRAINING[btn.dataset.prod].time}s training queue.`
+            ));
+        });
+        setCommandTooltip("Barracks: train Swordsman, Rifleman, or Horseman.");
+        return;
+    }
+
+    if(selectedEntity?.userData?.mercenaryCamp){
+        grid.className="";
+        grid.innerHTML=`
+            <button class="commandCard" data-merc="forestTroll">🪓<span class="hotkey">Q</span></button>
+            <div class="commandCard" style="font-size:11px;cursor:default">175g</div>
+            ${Array(10).fill('<div class="commandCard" style="opacity:.22;cursor:default"></div>').join("")}
+        `;
+        grid.querySelector('[data-merc="forestTroll"]')?.addEventListener("click",()=>purchaseForestTroll(selectedEntity));
+        grid.querySelector('[data-merc="forestTroll"]')?.addEventListener("mouseenter",()=>setCommandTooltip("Hire Forest Troll — 175 Gold."));
+        setCommandTooltip("Mercenary Camp: hire a Forest Troll for 175 Gold.");
+        return;
+    }
+
+    if(selectedType.includes("Altar")){
+        const building=selectedEntity;
+        ensureProductionQueue(building);
+        const active=building.userData.productionQueue[0];
+        const pct=active?Math.round(building.userData.productionProgress/UNIT_TRAINING[active].time*100):0;
+        grid.className="";
+        grid.innerHTML=`
+            <button class="commandCard" data-prod="paladin">🔨<span class="hotkey">Q</span></button>
+            <div class="commandCard" style="font-size:11px;cursor:default">${active?pct+"%":"Idle"}</div>
+            ${Array(10).fill('<div class="commandCard" style="opacity:.22;cursor:default"></div>').join("")}
+        `;
+        grid.querySelector('[data-prod="paladin"]')?.addEventListener("click",()=>queueProduction(building,"paladin"));
+        grid.querySelector('[data-prod="paladin"]')?.addEventListener("mouseenter",()=>setCommandTooltip("Paladin — 30s hero training."));
+        setCommandTooltip("Altar: train Paladin hero.");
+        return;
+    }
+
+    if(selectedType.includes("Workshop")){
+        const building=selectedEntity;
+        ensureProductionQueue(building);
+        const active=building.userData.productionQueue[0];
+        const pct=active?Math.round(building.userData.productionProgress/UNIT_TRAINING[active].time*100):0;
+        grid.className="";
+        grid.innerHTML=`
+            <button class="commandCard" data-prod="mechMelee">🔧<span class="hotkey">Q</span></button>
+            <button class="commandCard" data-prod="mechRifle">🔫<span class="hotkey">W</span></button>
+            <div class="commandCard" style="font-size:11px;cursor:default">${active?pct+"%":"Idle"}</div>
+            ${Array(9).fill('<div class="commandCard" style="opacity:.22;cursor:default"></div>').join("")}
+        `;
+        grid.querySelectorAll("[data-prod]").forEach(btn=>{
+            const t=btn.dataset.prod;
+            btn.addEventListener("click",()=>queueProduction(building,t));
+            btn.addEventListener("mouseenter",()=>setCommandTooltip(
+                t==="mechMelee"
+                ? "Wrench Mech — melee bruiser with heavy wrench."
+                : "Rifle Mech — 3-shot burst, then 2 second pause."
+            ));
+        });
+        setCommandTooltip("Workshop: train Wrench Mech or Rifle Mech.");
+        return;
+    }
+
+    const isTownHall = ["Town Hall","Red Town Hall"].includes(selectedEntity?.userData?.type);
+    if(isTownHall){
+        const hall=selectedEntity;
+        ensureTownHallTrainingState(hall);
+        const queued=hall.userData.trainingQueue.length;
+        const pct=queued
+            ? Math.min(100,Math.round((hall.userData.trainingProgress||0)/PEASANT_TRAIN_SECONDS*100))
+            : 0;
+        grid.className="";
+        grid.innerHTML=`
+            <button class="commandCard" data-townhall-action="train">
+                👨<span class="hotkey">P</span>
+            </button>
+            <div class="commandCard" style="font-size:12px;cursor:default">
+                ${queued ? pct+"%" : "Idle"}
+            </div>
+            ${Array(10).fill('<div class="commandCard" style="opacity:.22;cursor:default"></div>').join("")}
+        `;
+        grid.querySelector('[data-townhall-action="train"]')?.addEventListener("mouseenter",()=>{
+            setCommandTooltip("Train Peasant — 30 seconds. Clicking again adds another Peasant to the queue.");
+        });
+        grid.querySelector('[data-townhall-action="train"]')?.addEventListener("click",()=>{
+            queuePeasantTraining(hall);
+            renderBuildCommands();
+        });
+        setCommandTooltip(`Town Hall training queue: ${queued}. Press P or click the Peasant icon.`);
+        return;
+    }
+
+    const isWorker =
+        ["Peasant","Red Peasant"].includes(selectedEntity?.userData?.type) ||
+        selectedEntities.some(entity =>
+            ["Peasant","Red Peasant"].includes(entity?.userData?.type)
+        );
+
+    if(!isWorker){
+        grid.className="";
+        grid.innerHTML = Array(12).fill(
+            '<div class="commandCard" style="opacity:.22;cursor:default"></div>'
+        ).join("");
+        setCommandTooltip("Select a Peasant to open the action menu.");
+        return;
+    }
+
+    if(peasantMenuMode === "build"){
+        const active = draftPlacement?.active ? draftPlacement.label : "";
+        grid.className="buildMode";
+        grid.innerHTML = `
+            <button class="commandCard ${active==="House"?"activeBuild":""}" data-build="house" title="Build House">
+                🏠<span class="hotkey">Q</span>
+            </button>
+            <button class="commandCard ${active==="Farm"?"activeBuild":""}" data-build="farm" title="Build Farm">
+                🌾<span class="hotkey">W</span>
+            </button>
+            <button class="commandCard ${active==="Guard Tower"?"activeBuild":""}" data-build="tower" title="Build Guard Tower">
+                🗼<span class="hotkey">E</span>
+            </button>
+            <button class="commandCard ${active==="Workshop"?"activeBuild":""}" data-build="workshop" title="Build Workshop">
+                ⚙️<span class="hotkey">R</span>
+            </button>
+
+            <button class="commandCard ${active==="Barracks"?"activeBuild":""}" data-build="barracks" title="Build Barracks">
+                ⚔️<span class="hotkey">T</span>
+            </button>
+            <button class="commandCard ${active==="Town Hall"?"activeBuild":""}" data-build="townhall" title="Build Town Hall">
+                🏰<span class="hotkey">Y</span>
+            </button>
+            <button class="commandCard ${active==="Blacksmith"?"activeBuild":""}" data-build="blacksmith" title="Build Blacksmith">
+                🔨<span class="hotkey">U</span>
+            </button>
+            <button class="commandCard ${active==="Altar"?"activeBuild":""}" data-build="altar" title="Build Altar">
+                🗿<span class="hotkey">I</span>
+            </button>
+
+            <button class="commandCard ${active==="Vault"?"activeBuild":""}" data-build="vault" title="Build Vault">
+                💎<span class="hotkey">O</span>
+            </button>
+            <button class="commandCard actionBuild" data-action="back" title="Back to Actions">
+                ↩️<span class="hotkey">B</span>
+            </button>
+            <button class="commandCard cancelBuild" data-build="cancel" title="Cancel Placement">
+                ⛔<span class="hotkey">Esc</span>
+            </button>
+            <div class="commandCard" style="opacity:.22;cursor:default"></div>
+        `;
+
+        grid.querySelectorAll("[data-build]").forEach(btn=>{
+            btn.addEventListener("mouseenter",()=>{
+                const labels={
+                    house:"House — 30 second construction. Small worker housing.",
+                    farm:"Farm — 30 second construction. Food-production blockout.",
+                    tower:"Guard Tower — 30 second construction. Defensive structure.",
+                    workshop:"Workshop — 30 second construction. Mechanical production.",
+                    barracks:"Barracks — 30 second construction. Infantry production.",
+                    townhall:"Town Hall — 30 second construction. Major resource drop-off structure.",
+                    blacksmith:"Blacksmith — 30 second construction. Forge/weapon upgrade building.",
+                    altar:"Altar — 30 second construction. Hero/revival structure blockout.",
+                    vault:"Vault — 30 second construction. Magical item/resource storage building.",
+                    cancel:"Cancel the active DraftConstructionPlacement preview."
+                };
+                setCommandTooltip(labels[btn.dataset.build] || "");
+            });
+            btn.addEventListener("click",()=>startBuildCommand(btn.dataset.build));
+        });
+
+        grid.querySelector('[data-action="back"]')?.addEventListener("click",()=>{
+            draftPlacement.cancel();
+            peasantMenuMode="actions";
+            renderBuildCommands();
+            setCommandTooltip("Peasant action menu.");
+        });
+        return;
+    }
+
+    grid.className="";
+    grid.innerHTML = `
+        <button class="commandCard actionMove" data-action="move">
+            ➜<span class="hotkey">M</span>
+        </button>
+        <button class="commandCard actionStop" data-action="stop">
+            ■<span class="hotkey">S</span>
+        </button>
+        <button class="commandCard actionPatrol" data-action="patrol">
+            ↻<span class="hotkey">P</span>
+        </button>
+        <button class="commandCard actionBuild" data-action="build">
+            🔨<span class="hotkey">B</span>
+        </button>
+
+        <button class="commandCard" data-action="harvest">
+            🪓<span class="hotkey">H</span>
+        </button>
+        <button class="commandCard" data-action="mine">
+            ⛏️<span class="hotkey">G</span>
+        </button>
+        <button class="commandCard" data-action="repair">
+            🔧<span class="hotkey">C</span>
+        </button>
+        <button class="commandCard" data-action="return">
+            🪙<span class="hotkey">T</span>
+        </button>
+
+        ${Array(4).fill('<div class="commandCard" style="opacity:.22;cursor:default"></div>').join("")}
+    `;
+
+    const tooltips={
+        move:"Move — right-clicking terrain also moves the selected Peasant.",
+        stop:"Stop — clear the current worker movement order.",
+        patrol:"Patrol — UI/action stub ready for a future patrol queue.",
+        build:"Build Structures — open DraftConstructionPlacement commands.",
+        harvest:"Harvest Lumber — action stub for tree resource flow.",
+        mine:"Mine Gold — right-click your faction Gold Mine. Capacity: 6 workers; 5 seconds per 10 gold.",
+        repair:"Repair — action stub for friendly structures.",
+        return:"Return Resources — action stub for Town Hall drop-off."
+    };
+
+    grid.querySelectorAll("[data-action]").forEach(btn=>{
+        btn.addEventListener("mouseenter",()=>setCommandTooltip(tooltips[btn.dataset.action] || ""));
+        btn.addEventListener("click",()=>{
+            const action=btn.dataset.action;
+            if(action==="build"){
+                const builder=getPrimarySelectedPeasant();
+                if(!builder){
+                    setGameStatus("Build menu requires a selected Peasant.", false);
+                    return;
+                }
+
+                // Preserve the worker as the active selection while swapping
+                // the action menu for the construction menu.
+                selectedEntity = builder;
+                if(!selectedEntities.includes(builder)){
+                    selectedEntities.push(builder);
+                }
+                if(builder.selectionRing){
+                    builder.selectionRing.visible = true;
+                }
+
+                if(!builder.userData.activeBuildJob && getBuilderQueue(builder).length){
+                    startNextBuilderJob(builder);
+                }
+
+                peasantMenuMode="build";
+                renderBuildCommands();
+                setCommandTooltip(
+                    "Construction: Q House • W Farm • E Tower • R Workshop • T Barracks • Y Town Hall • U Blacksmith • I Altar • O Vault"
+                );
+                setGameStatus("Build menu open — Peasant remains selected.");
+                return;
+            }
+            if(action==="stop"){
+                selectedEntity.userData.target=null;
+                if(selectedEntity.userData.workMode==="mining"){
+                    releaseMiningOrder(selectedEntity);
+                }
+                setGameStatus("Peasant stopped.");
+                renderSelectedHUD(selectedEntity);
+                return;
+            }
+            if(action==="move"){
+                setGameStatus("Move command armed: right-click terrain.");
+                return;
+            }
+            if(action==="patrol"){
+                setGameStatus("Patrol command UI is wired; patrol path queue is the next gameplay step.");
+                return;
+            }
+            if(action==="harvest"){
+                setGameStatus("Harvest command selected. Tree harvesting is ready for the resource-flow pass.");
+                return;
+            }
+            if(action==="mine"){
+                setGameStatus("Mine Gold: right-click your faction Gold Mine. Up to 6 Peasants can be assigned.");
+                return;
+            }
+            if(action==="repair"){
+                setGameStatus("Repair selected.");
+                return;
+            }
+            if(action==="return"){
+                setGameStatus("Return Resources selected.");
+            }
+        });
+    });
+}
+
+function startBuildCommand(type){
+    if(type === "cancel"){
+        draftPlacement.cancel();
+        return;
+    }
+
+    const builder = getPrimarySelectedPeasant();
+    if(!builder){
+        setGameStatus("Select a Peasant before building.", false);
+        return;
+    }
+
+    const configs = {
+        house:{
+            label:"House",
+            radius:2.7,
+            factory:createHumanHouse,
+            previewFactory:()=>createHumanHouseMesh()
+        },
+        farm:{
+            label:"Farm",
+            radius:3.2,
+            factory:createFarm,
+            previewFactory:()=>createFarmMesh()
+        },
+        tower:{
+            label:"Guard Tower",
+            radius:2.4,
+            factory:createHumanGuardTower,
+            previewFactory:()=>createHumanGuardTowerMesh()
+        },
+        workshop:{
+            label:"Workshop",
+            radius:5.6,
+            factory:createWorkshop,
+            previewFactory:()=>createWorkshopMesh()
+        },
+        barracks:{
+            label:"Barracks",
+            radius:4.6,
+            factory:createBarracks,
+            previewFactory:()=>createBarracksMesh()
+        },
+        townhall:{
+            label:"Town Hall",
+            radius:7.2,
+            factory:createTownHall,
+            previewFactory:()=>createTownHallMesh()
+        },
+        blacksmith:{
+            label:"Blacksmith",
+            radius:4.2,
+            factory:createBlacksmith,
+            previewFactory:()=>createBlacksmithMesh()
+        },
+        altar:{
+            label:"Altar",
+            radius:4.4,
+            factory:createAltar,
+            previewFactory:()=>createAltarMesh()
+        },
+        vault:{
+            label:"Vault",
+            radius:3.7,
+            factory:createVault,
+            previewFactory:()=>createVaultMesh()
+        }
+    };
+
+    const config = configs[type];
+    if(!config) return;
+    draftPlacement.begin(config);
+}
+
+// WORLD GEN
+class WorldGenerator {
+    constructor(biomes) {
+        this.biomes = biomes;
+    }
+    getGroundHeight(x, z) {
+        return this.biomes.getHeight(x, z);
+    }
+}
+// GRID SYSTEM
+class GridManager {
+    constructor() {
+        this.mode = 'square';
+        // unified spacing
+        this.tileSize = 2;
+        this.hexRadius = 1.15;
+    }
+    setMode(mode) {
+        this.mode = mode;
+        regenerateGround();
+    }
+    // SNAP TO CELL CENTER
+    snapPosition(pos) {
+        // SQUARE
+        if (this.mode === 'square') {
+            const snappedX =
+                Math.floor(pos.x / this.tileSize)
+                * this.tileSize
+                + this.tileSize * 0.5;
+            const snappedZ =
+                Math.floor(pos.z / this.tileSize)
+                * this.tileSize
+                + this.tileSize * 0.5;
+            return new THREE.Vector3(
+                snappedX,
+                pos.y,
+                snappedZ
+            );
+        }
+        // HEX
+        const size = this.hexRadius;
+        const q =
+            (Math.sqrt(3)/3 * pos.x - 1/3 * pos.z)
+            / size;
+        const r =
+            (2/3 * pos.z)
+            / size;
+        const rq = Math.round(q);
+        const rr = Math.round(r);
+        const x =
+            size * Math.sqrt(3) * (rq + rr/2);
+        const z =
+            size * 1.5 * rr;
+        return new THREE.Vector3(
+            x,
+            pos.y,
+            z
+        );
+    }
+}
+
+// Instantiate world systems only after their class declarations exist.
+occupancyGrid = new Set();
+biomes = new ChunkBiomes(64);
+worldGen = new WorldGenerator(biomes);
+gridManager = new GridManager();
+spawner = new ObjectSpawner(scene, occupancyGrid);
+draftPlacement = new DraftConstructionPlacement(scene, spawner);
+renderBuildCommands();
+
+// GROUND
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(240,240),
+    new THREE.MeshStandardMaterial({
+        color:0x355a2c
+    })
+);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// DOTA-LIKE MAP BLOCKOUT
+const laneMat=new THREE.MeshStandardMaterial({
+    color:0x75613f,roughness:1,transparent:true,opacity:.58,depthWrite:false
+});
+const riverMat=new THREE.MeshStandardMaterial({
+    color:0x2a7f95,roughness:.55,transparent:true,opacity:.82,depthWrite:false
+});
+const crossingMat=new THREE.MeshStandardMaterial({color:0x85816e,roughness:1});
+
+function addRouteVisual(ax,az,bx,bz,width,mat=laneMat,y=.025){
+    const dx=bx-ax,dz=bz-az;
+    const len=Math.hypot(dx,dz);
+    const route=new THREE.Mesh(new THREE.PlaneGeometry(width,len),mat);
+    route.rotation.x=-Math.PI/2;
+    route.rotation.z=-Math.atan2(dz,dx)+Math.PI/2;
+    route.position.set((ax+bx)/2,y,(az+bz)/2);
+    scene.add(route);
+    return route;
+}
+
+// Curving outer lanes plus a direct middle route.
+[
+[-49,48,-49,21,8.5],[-49,21,-26,15,8.5],[-26,15,18,15,8.5],
+[18,15,48,-8,8.5],[48,-8,48,-48,8.5],
+[49,-48,49,-21,8.5],[49,-21,26,-15,8.5],[26,-15,-18,-15,8.5],
+[-18,-15,-48,8,8.5],[-48,8,-48,48,8.5],
+[-47,45,47,-45,9]
+].forEach(v=>addRouteVisual(...v));
+
+// Central river and three crossings.
+addRouteVisual(-56,-5,56,5,12,riverMat,.018);
+for(const x of [-31,0,31]){
+    const bridge=box(8,.16,10,crossingMat);
+    bridge.position.set(x,.09,x*.09);
+    scene.add(bridge);
+}
+
+function distanceToSegment2D(px,pz,ax,az,bx,bz){
+    const abx=bx-ax,abz=bz-az,apx=px-ax,apz=pz-az;
+    const denom=abx*abx+abz*abz||1;
+    const t=Math.max(0,Math.min(1,(apx*abx+apz*abz)/denom));
+    const cx=ax+abx*t,cz=az+abz*t;
+    return Math.hypot(px-cx,pz-cz);
+}
+
+const dotaLaneSegments=[
+[-49,48,-49,21,7],[-49,21,-26,15,7],[-26,15,18,15,7],
+[18,15,48,-8,7],[48,-8,48,-48,7],
+[49,-48,49,-21,7],[49,-21,26,-15,7],[26,-15,-18,-15,7],
+[-18,-15,-48,8,7],[-48,8,-48,48,7],
+[-47,45,47,-45,7.5],[-56,-5,56,5,8]
+];
+
+function isInGameplayLane(x,z){
+    for(const [ax,az,bx,bz,w] of dotaLaneSegments){
+        if(distanceToSegment2D(x,z,ax,az,bx,bz)<w) return true;
+    }
+    if(Math.hypot(x-34,z+43)<20) return true;
+    if(Math.hypot(x+34,z-43)<20) return true;
+    if(Math.hypot(x,z)<10) return true;
+    return false;
+}
+
+function generateLaneForest(){
+    let seed=41421;
+    const rand=()=>{seed=(seed*16807)%2147483647;return (seed-1)/2147483646;};
+    const campClearings=[
+        [-27,30,8],[-12,29,7],[18,30,7],[31,22,7],
+        [-30,-24,7],[-15,-31,7],[18,-29,7],[31,-20,7],
+        [-23,5,7],[24,-4,7]
+    ];
+    let spawned=0,attempts=0;
+    while(spawned<300&&attempts<12000){
+        attempts++;
+        const x=-57+rand()*114,z=-57+rand()*114;
+        if(isInGameplayLane(x,z)||Math.abs(x)>56||Math.abs(z)>56) continue;
+        let inCamp=false;
+        for(const [cx,cz,r] of campClearings){
+            if(Math.hypot(x-cx,z-cz)<r){inCamp=true;break;}
+        }
+        if(inCamp) continue;
+        spawnTree(x,z);
+        spawned++;
+    }
+}
+generateLaneForest();
+
+const jungleRockMat=new THREE.MeshStandardMaterial({color:0x666359,roughness:1});
+for(const [x,z,sx,sz] of [
+[-38,28,5,12],[-20,38,8,4],[25,38,8,5],[39,20,5,10],
+[-39,-20,5,10],[-23,-38,8,5],[20,-39,9,5],[40,-23,5,10]
+]){
+    const rock=box(sx,2.5,sz,jungleRockMat);
+    rock.position.set(x,1.25,z);
+    scene.add(rock);
+}
+
+// MATERIALS - 2 separate forms of organization
+const stoneMat = new THREE.MeshStandardMaterial({
+    color:0x8c877f,
+    roughness:0.95
+});
+const darkStoneMat = new THREE.MeshStandardMaterial({
+    color:0x5d5851,
+    roughness:1
+});
+const woodMat = new THREE.MeshStandardMaterial({
+    color:0x6b4a2d,
+    roughness:0.9
+});
+const roofMat = new THREE.MeshStandardMaterial({
+    color:0x6f665b,
+    roughness:1
+});
+const goldMat = new THREE.MeshStandardMaterial({
+    color:0xffd348,
+    emissive:0x9b6a00,
+    emissiveIntensity:0.7,
+    roughness:0.45,
+    metalness:0.35
+});
+const humanBlueMat = new THREE.MeshStandardMaterial({
+    color:0x1748bb,
+    roughness:0.8
+});
+const humanRedMat = new THREE.MeshStandardMaterial({
+    color:0xb51f1f,
+    roughness:0.8
+});
+const humanWallMat = new THREE.MeshStandardMaterial({
+    color:0x9b8a72,
+    roughness:0.95
+});
+const humanTrimMat = new THREE.MeshStandardMaterial({
+    color:0x5d3b24,
+    roughness:0.9
+});
+const brassMat = new THREE.MeshStandardMaterial({
+    color:0xd5a92d,
+    metalness:0.45,
+    roughness:0.35
+});
+const MAT = {
+    kobold:new THREE.MeshStandardMaterial({
+        color:0xd59c72,
+        flatShading:true
+    }),
+    gnoll:new THREE.MeshStandardMaterial({
+        color:0xc89b53,
+        flatShading:true
+    }),
+    goblin:new THREE.MeshStandardMaterial({
+        color:0x6fa04e,
+        flatShading:true
+    }),
+    wolf:new THREE.MeshStandardMaterial({
+        color:0x555555,
+        flatShading:true
+    }),
+    dark:new THREE.MeshStandardMaterial({
+        color:0x2a2118,
+        flatShading:true
+    }),
+    wood:new THREE.MeshStandardMaterial({
+        color:0x6f4c2d,
+        flatShading:true
+    }),
+    roof:new THREE.MeshStandardMaterial({
+        color:0x4c2b18,
+        flatShading:true
+    })
+};
+// HELPERS
+function box(w,h,d,mat){
+    const m = new THREE.Mesh(
+        new THREE.BoxGeometry(w,h,d),
+        mat
+    );
+    m.castShadow = true;
+    m.receiveShadow = true;
+    return m;
+}
+function cone(r,h,s,mat){
+    const m = new THREE.Mesh(
+        new THREE.ConeGeometry(r,h,s),
+        mat
+    );
+    m.castShadow = true;
+    return m;
+}
+
+// UNITS
+const units = [];
+function createKobold(){
+    const g = new THREE.Group();
+    const body =
+        box(1.2,1.8,1,MAT.kobold);
+    body.position.y = 2;
+    g.add(body);
+    return makeInteractable(g,"Kobold Miner",1.1,0x00ff66);
+}
+function createGnoll(){
+    const g = new THREE.Group();
+    const torso =
+        box(2.2,3,1.6,MAT.gnoll);
+    torso.position.y = 3.5;
+    g.add(torso);
+    return makeInteractable(g,"Gnoll Brute",1.6,0x00ff66);
+}
+function createGoblinWhip(){
+    const g = new THREE.Group();
+    const body =
+        box(1.4,2.1,1,MAT.goblin);
+    body.position.y = 2.5;
+    g.add(body);
+    return makeInteractable(g,"Goblin Taskmaster",1.2,0x00ff66);
+}
+function createWolfRider(){
+    const g = new THREE.Group();
+    const wolf =
+        box(3.8,1.8,1.4,MAT.wolf);
+    wolf.position.y = 2;
+    g.add(wolf);
+    return makeInteractable(g,"Goblin Wolf Rider",2.2,0x00ff66);
+}
+
+// BUILDINGS
+function createGnollCamp(){
+    const g = new THREE.Group();
+    const base =
+        box(8,4,8,MAT.wood);
+    base.position.y = 2;
+    g.add(base);
+    const roof =
+        cone(6,4,4,MAT.roof);
+    roof.position.y = 6;
+    g.add(roof);
+    return makeInteractable(g,"Gnoll Camp",5.2,0xffff00);
+}
+
+function createKoboldMine(){
+    const g = new THREE.Group();
+    const cave =
+        box(8,5,6,MAT.dark);
+    cave.position.y = 2.5;
+    g.add(cave);
+    return makeInteractable(g,"Kobold Mine",5.0,0xffff00);
+}
+
+function createWatchTower(){
+    const g = new THREE.Group();
+    const tower =
+        box(3,10,3,MAT.wood);
+    tower.position.y = 5;
+    g.add(tower);
+    return makeInteractable(g,"Watch Tower",2.6,0xffff00);
+}
+
+
+
+
+// TRAINABLE HUMAN UNITS
+const combatUnits = [];
+const UNIT_TRAINING = {
+    swordsman:{label:"Swordsman",time:15,icon:"⚔️"},
+    rifleman:{label:"Rifleman",time:18,icon:"🔫"},
+    horseman:{label:"Horseman",time:24,icon:"🐎"},
+    mechMelee:{label:"Wrench Mech",time:26,icon:"🔧"},
+    mechRifle:{label:"Rifle Mech",time:30,icon:"🔫"},
+    paladin:{label:"Paladin",time:30,icon:"🔨"},
+    forestTroll:{label:"Forest Troll",time:0,icon:"🪓"}
+};
+
+function factionMat(team,blue=0x2957c8,red=0xb52828){
+    return new THREE.MeshStandardMaterial({
+        color:team==="red"?red:blue,
+        flatShading:true
+    });
+}
+
+function createSwordsmanModel(team="blue"){
+    const g=new THREE.Group();
+    const steel=new THREE.MeshStandardMaterial({color:0xc5cbd2,metalness:.65,roughness:.45,flatShading:true});
+    const dark=new THREE.MeshStandardMaterial({color:0x535a63,flatShading:true});
+    const gold=new THREE.MeshStandardMaterial({color:0xcfa94d,metalness:.4,roughness:.45,flatShading:true});
+    const leather=new THREE.MeshStandardMaterial({color:0x5e4022,flatShading:true});
+    const accent=factionMat(team);
+
+    const body=box(1.45,2.0,1.05,steel); body.position.y=2.7; g.add(body);
+    const plate=box(1.15,1.3,.16,dark); plate.position.set(0,2.8,.6); g.add(plate);
+    const head=box(.85,.95,.85,steel); head.position.y=4.25; g.add(head);
+    const visor=box(.24,.65,.12,gold); visor.position.set(0,4.23,.49); g.add(visor);
+    const plume=cone(.22,.7,4,accent); plume.position.y=5.05; g.add(plume);
+
+    for(const side of [-1,1]){
+        const arm=box(.48,1.65,.48,steel); arm.position.set(side*1.05,2.55,0); g.add(arm);
+        const leg=box(.55,1.75,.6,steel); leg.position.set(side*.42,1.0,0); g.add(leg);
+        const boot=box(.65,.45,.9,dark); boot.position.set(side*.42,.18,.16); g.add(boot);
+    }
+    const shield=box(1.1,1.55,.25,dark); shield.position.set(-1.45,2.55,.15); g.add(shield);
+    const shieldFace=box(.82,1.25,.12,accent); shieldFace.position.set(-1.45,2.55,.31); g.add(shieldFace);
+    const sword=box(.18,2.5,.16,steel); sword.position.set(1.38,1.75,.15); sword.rotation.z=-.18; g.add(sword);
+    const guard=box(.75,.13,.2,gold); guard.position.set(1.2,2.82,.15); guard.rotation.z=-.18; g.add(guard);
+    const cape=box(1.55,2.4,.14,accent); cape.position.set(0,2.3,-.62); cape.rotation.x=.12; g.add(cape);
+
+    g.scale.setScalar(.72);
+    return g;
+}
+
+function createRiflemanModel(team="blue"){
+    const g=new THREE.Group();
+    const brown=new THREE.MeshStandardMaterial({color:0x6e4a2c,flatShading:true});
+    const leather=new THREE.MeshStandardMaterial({color:0x8a633d,flatShading:true});
+    const skin=new THREE.MeshStandardMaterial({color:0xd1b08c,flatShading:true});
+    const metal=new THREE.MeshStandardMaterial({color:0x777d83,metalness:.45,roughness:.5,flatShading:true});
+    const beard=new THREE.MeshStandardMaterial({color:0xe2e2e2,flatShading:true});
+    const accent=factionMat(team);
+
+    const body=box(1.5,1.7,1.05,brown); body.position.y=2.35; g.add(body);
+    const head=box(.85,.85,.85,skin); head.position.y=3.7; g.add(head);
+    const hood=cone(.75,1.05,4,accent); hood.position.y=4.15; g.add(hood);
+    const beardPiece=cone(.34,1.0,4,beard); beardPiece.position.set(0,3.15,.35); g.add(beardPiece);
+    for(const side of [-1,1]){
+        const arm=box(.42,1.35,.42,leather); arm.position.set(side*.95,2.25,0); g.add(arm);
+        const leg=box(.48,1.45,.55,brown); leg.position.set(side*.38,.9,0); g.add(leg);
+    }
+    const rifle=box(2.7,.25,.25,brown); rifle.position.set(.55,2.25,.75); rifle.rotation.y=-.12; g.add(rifle);
+    const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,1.1,6),metal);
+    barrel.rotation.z=Math.PI/2; barrel.position.set(2.25,2.25,.75); g.add(barrel);
+    const cape=box(1.65,2.25,.12,accent); cape.position.set(0,2.25,-.62); g.add(cape);
+    g.scale.setScalar(.78);
+    return g;
+}
+
+function createHorsemanModel(team="blue"){
+    const g=new THREE.Group();
+    const horse=new THREE.MeshStandardMaterial({color:0x594133,flatShading:true});
+    const horseDark=new THREE.MeshStandardMaterial({color:0x2d241e,flatShading:true});
+    const horseArmor=new THREE.MeshStandardMaterial({color:0x62738d,metalness:.48,roughness:.46,flatShading:true});
+    const steel=new THREE.MeshStandardMaterial({color:0xc4ccd8,metalness:.72,roughness:.32,flatShading:true});
+    const gold=new THREE.MeshStandardMaterial({color:0xd0a63d,metalness:.66,roughness:.32,flatShading:true});
+    const skin=new THREE.MeshStandardMaterial({color:0xe0bd96,flatShading:true});
+    const leather=new THREE.MeshStandardMaterial({color:0x6d492b,flatShading:true});
+    const accent=factionMat(team);
+
+    // Horse length on Z axis: +Z is forward, matching RTS movement rotation.
+    const body=box(1.75,1.8,4.5,horse); body.position.y=2.1; g.add(body);
+    const barding=box(1.95,1.05,4.7,horseArmor); barding.position.set(0,2.65,-.05); g.add(barding);
+    const chestPlate=box(2.05,1.45,.9,accent); chestPlate.position.set(0,2.7,1.8); g.add(chestPlate);
+    const neck=box(1.0,2.05,1.05,horse); neck.position.set(0,3.2,2.05); neck.rotation.x=-.34; g.add(neck);
+    const horseHead=box(.95,.9,1.55,horseArmor); horseHead.position.set(0,4.05,3.0); horseHead.rotation.x=-.13; g.add(horseHead);
+    const muzzle=box(.68,.55,.9,horseDark); muzzle.position.set(0,3.72,3.85); g.add(muzzle);
+
+    for(const x of [-.58,.58]) for(const z of [-1.45,1.35]){
+        const upper=box(.42,1.55,.44,horse); upper.position.set(x,1.05,z); g.add(upper);
+        const hoof=box(.52,.42,.72,horseDark); hoof.position.set(x,.18,z+.16); g.add(hoof);
+    }
+    const tail=cone(.25,2.0,5,horseDark); tail.rotation.x=Math.PI/2; tail.position.set(0,2.5,-3.0); g.add(tail);
+
+    const pelvis=box(1.05,.85,.95,accent); pelvis.position.set(0,4.0,-.2); g.add(pelvis);
+    const torso=box(1.45,1.9,1.05,steel); torso.position.set(0,5.25,-.05); g.add(torso);
+    const chestEmblem=box(.72,.9,.12,gold); chestEmblem.position.set(0,5.3,.54); g.add(chestEmblem);
+    const riderHead=box(.78,.86,.78,skin); riderHead.position.set(0,6.72,.05); g.add(riderHead);
+    const helmet=box(.96,.5,.95,gold); helmet.position.set(0,7.15,.03); g.add(helmet);
+    const plume=cone(.18,.85,4,accent); plume.position.set(0,7.72,.02); g.add(plume);
+
+    for(const side of [-1,1]){
+        const shoulder=cone(.58,1.05,4,gold);
+        shoulder.rotation.z=side<0?1.45:-1.45;
+        shoulder.position.set(side*1.05,5.85,0);
+        g.add(shoulder);
+        const arm=box(.48,1.65,.48,steel); arm.position.set(side*1.17,4.85,.1); g.add(arm);
+    }
+
+    const lance=box(.16,.16,5.7,leather); lance.position.set(-1.18,4.75,2.0); g.add(lance);
+    const lanceTip=cone(.28,.9,4,steel); lanceTip.rotation.x=Math.PI/2; lanceTip.position.set(-1.18,4.75,5.18); g.add(lanceTip);
+    const cape=box(1.55,2.4,.13,accent); cape.position.set(0,5.0,-.72); cape.rotation.x=.22; g.add(cape);
+
+    g.scale.setScalar(.68);
+    return g;
+}
+
+
+function createPaladinModel(team="blue"){
+    const g=new THREE.Group();
+    const armor=new THREE.MeshStandardMaterial({color:0xaeb7c3,metalness:.63,roughness:.35,flatShading:true});
+    const armorDark=new THREE.MeshStandardMaterial({color:0x68717d,metalness:.5,roughness:.42,flatShading:true});
+    const gold=new THREE.MeshStandardMaterial({color:0xd4af37,metalness:.75,roughness:.28,flatShading:true});
+    const skin=new THREE.MeshStandardMaterial({color:0xe0c39e,flatShading:true});
+    const beard=new THREE.MeshStandardMaterial({color:0xe5e2da,flatShading:true});
+    const leather=new THREE.MeshStandardMaterial({color:0x72523a,flatShading:true});
+    const accent=factionMat(team);
+    const holy=new THREE.MeshStandardMaterial({color:0x88baff,emissive:0x4477ff,emissiveIntensity:1.5,transparent:true,opacity:.55});
+
+    const aura=new THREE.Mesh(new THREE.RingGeometry(1.7,2.05,28),holy);
+    aura.rotation.x=-Math.PI/2;aura.position.y=.08;g.add(aura);
+
+    const pelvis=box(1.45,.9,1.0,leather);pelvis.position.y=2.25;g.add(pelvis);
+    const torso=box(1.85,2.25,1.25,armor);torso.position.y=3.8;g.add(torso);
+    const breast=box(1.15,1.35,.16,gold);breast.position.set(0,3.95,.7);g.add(breast);
+    const head=box(.82,.95,.82,skin);head.position.set(0,5.55,.1);g.add(head);
+    const hair=box(.9,.8,.35,leather);hair.position.set(0,5.8,-.42);g.add(hair);
+    const beardPiece=cone(.42,1.3,5,beard);beardPiece.position.set(0,4.95,.35);g.add(beardPiece);
+
+    for(const side of [-1,1]){
+        const shoulder=cone(.72,1.35,4,gold);shoulder.rotation.z=side<0?1.45:-1.45;shoulder.position.set(side*1.35,4.65,0);g.add(shoulder);
+        const shoulderPlate=box(.9,.32,.75,armorDark);shoulderPlate.position.set(side*1.45,4.28,.05);g.add(shoulderPlate);
+        const arm=box(.48,1.75,.5,armor);arm.position.set(side*1.5,3.45,0);g.add(arm);
+        const gauntlet=box(.62,.55,.62,armorDark);gauntlet.position.set(side*1.5,2.45,.05);g.add(gauntlet);
+        const leg=box(.62,1.75,.7,armor);leg.position.set(side*.48,1.2,0);g.add(leg);
+        const boot=box(.72,.55,1.0,leather);boot.position.set(side*.48,.25,.18);g.add(boot);
+    }
+
+    const tabard=box(.95,1.9,.12,accent);tabard.position.set(0,2.55,.69);g.add(tabard);
+    const tabardTrim=box(1.0,.18,.14,gold);tabardTrim.position.set(0,1.72,.7);g.add(tabardTrim);
+    const cape=box(2.05,2.8,.13,accent);cape.position.set(0,3.6,-.72);cape.rotation.x=.15;g.add(cape);
+
+    const hammerHandle=box(.18,3.5,.18,leather);hammerHandle.position.set(1.75,2.15,.35);hammerHandle.rotation.z=-.23;g.add(hammerHandle);
+    const hammerHead=box(1.35,.8,.85,armorDark);hammerHead.position.set(2.14,3.78,.35);hammerHead.rotation.z=-.23;g.add(hammerHead);
+    const hammerGold=box(.52,.95,.95,gold);hammerGold.position.set(2.62,3.67,.35);hammerGold.rotation.z=-.23;g.add(hammerGold);
+
+    g.scale.setScalar(.82);
+    return g;
+}
+
+function createForestTrollModel(team="blue"){
+    const g=new THREE.Group();
+    const skin=new THREE.MeshStandardMaterial({color:0x82b84f,flatShading:true});
+    const darkSkin=new THREE.MeshStandardMaterial({color:0x354521,flatShading:true});
+    const hair=new THREE.MeshStandardMaterial({color:0xc96a20,flatShading:true});
+    const armor=new THREE.MeshStandardMaterial({color:0x747b59,flatShading:true});
+    const steel=new THREE.MeshStandardMaterial({color:0xb7bec7,metalness:.55,roughness:.45,flatShading:true});
+    const wood=new THREE.MeshStandardMaterial({color:0x6b4827,flatShading:true});
+    const bone=new THREE.MeshStandardMaterial({color:0xe9e0c9,flatShading:true});
+    const cloth=factionMat(team,0xd8c66b,0xd8c66b);
+
+    const pelvis=box(1.3,.95,1.05,armor);pelvis.position.y=2.55;g.add(pelvis);
+    const torso=box(1.75,2.35,1.15,skin);torso.position.set(0,4.05,-.1);torso.rotation.x=.18;g.add(torso);
+    const head=box(1.15,1.2,1.1,darkSkin);head.position.set(0,5.75,.18);g.add(head);
+    const nose=box(.28,.38,.48,darkSkin);nose.position.set(0,5.6,.85);g.add(nose);
+    const mohawk=cone(.5,2.0,5,hair);mohawk.position.set(0,6.85,-.05);g.add(mohawk);
+
+    for(const side of [-1,1]){
+        const tusk=cone(.10,.55,4,bone);tusk.rotation.x=Math.PI/2;tusk.rotation.z=side*.28;tusk.position.set(side*.32,5.22,.82);g.add(tusk);
+        const shoulder=box(.72,.72,.72,armor);shoulder.position.set(side*1.35,4.7,0);g.add(shoulder);
+        const arm=box(.52,1.65,.55,skin);arm.position.set(side*1.48,3.55,.1);arm.rotation.z=side*.18;g.add(arm);
+        const axeHandle=box(.13,2.4,.13,wood);axeHandle.position.set(side*1.72,2.45,.22);axeHandle.rotation.z=side*.35;g.add(axeHandle);
+        const axeBlade=box(.72,.62,.13,steel);axeBlade.position.set(side*2.1,3.42,.22);axeBlade.rotation.z=side*.35;g.add(axeBlade);
+        const leg=box(.58,1.65,.65,skin);leg.position.set(side*.5,1.25,0);g.add(leg);
+        const foot=box(.75,.42,1.15,skin);foot.position.set(side*.5,.25,.26);g.add(foot);
+    }
+
+    const loin=box(.9,1.0,.11,cloth);loin.position.set(0,2.0,.64);g.add(loin);
+    g.scale.setScalar(.78);
+    return g;
+}
+
+function createMechCore(team="blue"){
+    const g=new THREE.Group();
+    const brass=new THREE.MeshStandardMaterial({color:0xa47d35,metalness:.72,roughness:.34,flatShading:true});
+    const iron=new THREE.MeshStandardMaterial({color:0x5f6668,metalness:.72,roughness:.4,flatShading:true});
+    const dark=new THREE.MeshStandardMaterial({color:0x2e3232,metalness:.55,roughness:.5,flatShading:true});
+    const copper=new THREE.MeshStandardMaterial({color:0x7e4a2d,metalness:.5,roughness:.48,flatShading:true});
+    const accent=factionMat(team);
+    const glow=new THREE.MeshStandardMaterial({color:0xffe59a,emissive:0xffc93f,emissiveIntensity:1.8});
+
+    // Pill / bucket body.
+    const shell=new THREE.Mesh(new THREE.CapsuleGeometry(1.25,2.3,6,10),copper);
+    shell.position.y=3.4;
+    shell.scale.set(1.05,1.0,.95);
+    shell.castShadow=true;
+    g.add(shell);
+
+    const topDome=new THREE.Mesh(new THREE.SphereGeometry(1.22,10,7,0,Math.PI*2,0,Math.PI/2),brass);
+    topDome.position.y=5.25;
+    topDome.castShadow=true;
+    g.add(topDome);
+
+    const eye=new THREE.Mesh(new THREE.CylinderGeometry(.46,.46,.25,16),glow);
+    eye.rotation.x=Math.PI/2;
+    eye.position.set(0,3.9,1.2);
+    g.add(eye);
+
+    const rim=new THREE.Mesh(new THREE.TorusGeometry(1.18,.12,6,16),dark);
+    rim.rotation.x=Math.PI/2;
+    rim.position.y=4.7;
+    g.add(rim);
+
+    // Steam cap / stack.
+    const stack=new THREE.Mesh(new THREE.CylinderGeometry(.28,.34,.9,8),iron);
+    stack.position.set(.55,6.25,-.15);
+    g.add(stack);
+
+    // Long articulated legs.
+    for(const side of [-1,1]){
+        const hip=new THREE.Mesh(new THREE.CylinderGeometry(.3,.3,.75,8),brass);
+        hip.rotation.z=Math.PI/2;
+        hip.position.set(side*1.35,2.7,0);
+        g.add(hip);
+
+        const upper=box(.5,1.7,.55,iron);
+        upper.position.set(side*1.45,1.65,0);
+        upper.rotation.z=side*.16;
+        g.add(upper);
+
+        const knee=new THREE.Mesh(new THREE.SphereGeometry(.38,8,6),brass);
+        knee.position.set(side*1.58,.85,0);
+        g.add(knee);
+
+        const lower=box(.42,1.6,.5,dark);
+        lower.position.set(side*1.62,.05,.15);
+        lower.rotation.z=-side*.12;
+        g.add(lower);
+
+        const foot=box(.8,.34,1.15,iron);
+        foot.position.set(side*1.65,-.9,.35);
+        g.add(foot);
+    }
+
+    // Arms with exposed joints.
+    for(const side of [-1,1]){
+        const shoulder=new THREE.Mesh(new THREE.SphereGeometry(.42,8,6),brass);
+        shoulder.position.set(side*1.55,4.15,0);
+        g.add(shoulder);
+        const arm=box(.38,1.6,.42,iron);
+        arm.position.set(side*1.9,3.35,.05);
+        arm.rotation.z=-side*.35;
+        g.add(arm);
+    }
+
+    g.userData.mechMaterials={brass,iron,dark,copper,accent,glow};
+    g.scale.setScalar(.78);
+    return g;
+}
+
+function createMeleeMechModel(team="blue"){
+    const g=createMechCore(team);
+    const m=g.userData.mechMaterials;
+    const handle=box(.22,3.5,.22,m.dark);
+    handle.position.set(2.2,2.15,.35);
+    handle.rotation.z=-.28;
+    g.add(handle);
+
+    const jaw=box(1.65,.48,.42,m.iron);
+    jaw.position.set(2.62,3.65,.35);
+    jaw.rotation.z=-.28;
+    g.add(jaw);
+
+    const wrenchOpen1=box(.7,.22,.38,m.iron);
+    wrenchOpen1.position.set(3.28,4.02,.35);
+    wrenchOpen1.rotation.z=.35;
+    g.add(wrenchOpen1);
+
+    const wrenchOpen2=wrenchOpen1.clone();
+    wrenchOpen2.rotation.z=-.7;
+    wrenchOpen2.position.set(3.25,3.68,.35);
+    g.add(wrenchOpen2);
+
+    return g;
+}
+
+function createRifleMechModel(team="blue"){
+    const g=createMechCore(team);
+    const m=g.userData.mechMaterials;
+
+    // Replace right forearm with long rifle cannon.
+    const receiver=box(1.45,.65,.72,m.dark);
+    receiver.position.set(2.5,3.1,.55);
+    receiver.rotation.z=-.12;
+    g.add(receiver);
+
+    const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.18,.22,2.9,8),m.iron);
+    barrel.rotation.z=Math.PI/2;
+    barrel.position.set(4.05,3.0,.55);
+    g.add(barrel);
+
+    const muzzle=new THREE.Mesh(new THREE.CylinderGeometry(.33,.33,.4,8),m.brass);
+    muzzle.rotation.z=Math.PI/2;
+    muzzle.position.set(5.5,3.0,.55);
+    g.add(muzzle);
+
+    const stock=box(1.1,.45,.58,m.copper);
+    stock.position.set(1.55,3.15,.45);
+    stock.rotation.z=-.12;
+    g.add(stock);
+
+    return g;
+}
+
+function registerCombatUnit(model,type,x,z,team="blue"){
+    model.position.set(x,0,z);
+    model.userData.team=team;
+    model.userData.isUnit=true;
+    model.userData.canMove=true;
+    model.userData.target=null;
+    model.userData.speed=type==="horseman"?.16:(type==="mechMelee"||type==="mechRifle")?.08:type==="paladin"?.105:type==="forestTroll"?.11:.12;
+    model.userData.hp=(type==="mechMelee"||type==="mechRifle")?500:type==="horseman"?360:type==="paladin"?550:type==="forestTroll"?310:type==="swordsman"?220:150;
+    model.userData.maxHp=model.userData.hp;
+    model.userData.unitKind=type;
+    model.userData.hero=type==="paladin";
+    if(type==="paladin"){
+        model.userData.maxMana=510; model.userData.mana=510;
+        model.userData.damageMin=50; model.userData.damageMax=60;
+        model.userData.armor=10; model.userData.strength=48;
+        model.userData.agility=30; model.userData.intelligence=34;
+        model.userData.inventory=[];
+        model.userData.invulnerableUntil=0;
+    }
+    model.userData.footprintRadius=type==="horseman"?1.8:(type==="mechMelee"||type==="mechRifle")?1.6:type==="paladin"?1.25:type==="forestTroll"?1.25:1.0;
+    model.userData.attackRange=type==="rifleman"?9:type==="mechRifle"?10:type==="paladin"?2.7:type==="horseman"?2.6:type==="forestTroll"?2.5:2.2;
+    model.userData.attackDamage=type==="swordsman"?24:type==="rifleman"?22:type==="horseman"?36:type==="mechMelee"?44:type==="mechRifle"?28:type==="paladin"?54:type==="forestTroll"?32:20;
+    model.userData.attackCooldown=type==="rifleman"?1.35:type==="mechRifle"?.45:type==="mechMelee"?1.4:type==="horseman"?1.3:type==="paladin"?1.15:1.25;
+    model.userData.attackTimer=0;
+    model.userData.combatTarget=null;
+    model.userData.burstShots=0;
+    model.userData.burstPause=0;
+    const label=UNIT_TRAINING[type].label;
+    makeInteractable(
+        model,
+        team==="red"?`Red ${label}`:label,
+        model.userData.footprintRadius+0.25,
+        team==="red"?0xff4444:0x00ff55
+    );
+    scene.add(model);
+    combatUnits.push(model);
+    units.push(model);
+    return model;
+}
+
+function spawnCombatUnit(type,x,z,team="blue"){
+    let model;
+    if(type==="swordsman") model=createSwordsmanModel(team);
+    if(type==="rifleman") model=createRiflemanModel(team);
+    if(type==="horseman") model=createHorsemanModel(team);
+    if(type==="mechMelee") model=createMeleeMechModel(team);
+    if(type==="mechRifle") model=createRifleMechModel(team);
+    if(type==="paladin") model=createPaladinModel(team);
+    if(type==="forestTroll") model=createForestTrollModel(team);
+    if(!model) return null;
+    return registerCombatUnit(model,type,x,z,team);
+}
+
+function getBuildingSpawnPoint(building,index=0){
+    const r=(building.userData.footprintRadius||4)+2.6;
+    const a=(index%6)/6*Math.PI*2;
+    return new THREE.Vector3(
+        building.position.x+Math.cos(a)*r,
+        0,
+        building.position.z+Math.sin(a)*r
+    );
+}
+
+function ensureProductionQueue(building){
+    if(!building.userData.productionQueue) building.userData.productionQueue=[];
+    if(building.userData.productionProgress==null) building.userData.productionProgress=0;
+}
+
+function queueProduction(building,type){
+    ensureProductionQueue(building);
+    building.userData.productionQueue.push(type);
+    setGameStatus(`${building.userData.type}: ${UNIT_TRAINING[type].label} queued.`);
+    renderSelectedHUD(building);
+}
+
+function updateProduction(dt){
+    for(const building of interactables){
+        const type=building.userData.type||"";
+        const isBarracks=type.includes("Barracks");
+        const isWorkshop=type.includes("Workshop");
+        const isAltar=type.includes("Altar");
+        if(!isBarracks&&!isWorkshop&&!isAltar) continue;
+        ensureProductionQueue(building);
+        if(!building.userData.productionQueue.length){
+            building.userData.productionProgress=0;
+            continue;
+        }
+        const unitType=building.userData.productionQueue[0];
+        building.userData.productionProgress+=dt;
+        const duration=UNIT_TRAINING[unitType].time;
+        if(building.userData.productionProgress>=duration){
+            building.userData.productionProgress-=duration;
+            building.userData.productionQueue.shift();
+            const p=getBuildingSpawnPoint(building,combatUnits.length);
+            spawnCombatUnit(unitType,p.x,p.z,building.userData.team||"blue");
+            setGameStatus(`${UNIT_TRAINING[unitType].label} trained from ${building.userData.type}.`);
+        }
+    }
+}
+
+function updateCombatUnitMovement(){
+    for(const u of combatUnits){
+        if(u.userData.combatTarget) continue;
+        const target=u.userData.target;
+        if(!target) continue;
+        const dir=new THREE.Vector3().subVectors(target,u.position);
+        dir.y=0;
+        const dist=dir.length();
+        if(dist<.18){u.userData.target=null;continue;}
+        dir.normalize();
+        u.position.addScaledVector(dir,u.userData.speed);
+        u.rotation.y=Math.atan2(dir.x,dir.z);
+    }
+}
+
+// HUMAN STARTING BASE / DRAFT BUILDINGS
+
+
+function tintFaction(group, team){
+    const accent = team === "red" ? 0xb51f1f : 0x1748bb;
+    group.userData.team = team;
+    group.traverse(o=>{
+        if(!o.isMesh || !o.material) return;
+        if(o.material === humanBlueMat){
+            o.material = team === "red" ? humanRedMat : humanBlueMat;
+        }
+    });
+    return group;
+}
+
+function createPeasant(x,z,team="blue"){
+    const g = new THREE.Group();
+    const body = box(1.0,1.6,.85,new THREE.MeshStandardMaterial({color:0xb9a06d}));
+    body.position.y=1.35;
+    const shirt = box(1.15,.75,.95,humanBlueMat);
+    shirt.position.y=1.85;
+    const head = new THREE.Mesh(
+        new THREE.SphereGeometry(.43,10,8),
+        new THREE.MeshStandardMaterial({color:0xd7b487})
+    );
+    head.position.y=2.75;
+    head.castShadow=true;
+    const cap = cone(.5,.5,8,humanBlueMat);
+    cap.position.y=3.15;
+    g.add(body,shirt,head,cap);
+    if(team === "red"){ shirt.material = humanRedMat; cap.material = humanRedMat; }
+    g.position.set(x,0,z);
+    g.userData.hp=240;
+    g.userData.maxHp=240;
+    g.userData.target=null;
+    g.userData.speed=.11;
+    g.userData.footprintRadius=.8;
+    g.userData.buildQueue=[];
+    g.userData.activeBuildJob=null;
+    g.userData.buildState="Idle";
+    g.userData.team=team;
+    g.userData.isUnit=true;
+    g.userData.canMove=true;
+    makeInteractable(g, team === "red" ? "Red Peasant" : "Peasant",1.15, team === "red" ? 0xff4444 : 0x00ff55);
+    createGoldBag(g);
+    scene.add(g);
+    peasants.push(g);
+    units.push(g);
+    updateResourceBar();
+    return g;
+}
+
+function createTownHallMesh(){
+    const g = new THREE.Group();
+
+    const base = box(13,1.2,11,darkStoneMat);
+    base.position.y=.6;
+    g.add(base);
+
+    const main = box(8.8,5.2,7.2,humanWallMat);
+    main.position.set(0,3.2,0);
+    g.add(main);
+
+    const roof = cone(6.2,4.4,4,humanBlueMat);
+    roof.rotation.y=Math.PI/4;
+    roof.position.set(0,7.5,0);
+    g.add(roof);
+
+    // Tall clock/bell tower blockout from the supplied town-hall reference.
+    const tower = box(3.6,9,3.6,humanTrimMat);
+    tower.position.set(-3.8,7.2,-1.2);
+    g.add(tower);
+
+    const towerInset = box(2.6,7.8,2.8,humanWallMat);
+    towerInset.position.set(-3.8,7.4,-1.2);
+    g.add(towerInset);
+
+    const towerRoof = cone(2.8,4.3,4,humanBlueMat);
+    towerRoof.rotation.y=Math.PI/4;
+    towerRoof.position.set(-3.8,14.0,-1.2);
+    g.add(towerRoof);
+
+    const clock = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.05,1.05,.18,24),
+        new THREE.MeshStandardMaterial({color:0xd6ccb6})
+    );
+    clock.rotation.x=Math.PI/2;
+    clock.position.set(-3.8,10.1,1.0);
+    g.add(clock);
+
+    // Bell/stair wing on the right.
+    const wing = box(3.4,4.5,5.3,humanTrimMat);
+    wing.position.set(4.0,3.1,.5);
+    g.add(wing);
+    const wingRoof = cone(3.3,3.2,4,humanBlueMat);
+    wingRoof.rotation.y=Math.PI/4;
+    wingRoof.position.set(4.0,6.4,.5);
+    g.add(wingRoof);
+
+    const bell = new THREE.Mesh(
+        new THREE.CylinderGeometry(.55,.85,1.25,12),
+        brassMat
+    );
+    bell.position.set(4.8,7.0,2.4);
+    g.add(bell);
+
+    // Front steps.
+    for(let i=0;i<4;i++){
+        const step=box(3.4-i*.35,.25,1.0,humanTrimMat);
+        step.position.set(0,.15+i*.22,4.2+i*.45);
+        g.add(step);
+    }
+
+    g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
+    return g;
+}
+
+function createTownHall(x,z,team="blue"){
+    clearTreesNear(x,z,10);
+    const g=createTownHallMesh();
+    tintFaction(g,team);
+    g.position.set(x,0,z);
+    g.userData.footprintRadius=7.2;
+    g.userData.trainingQueue=[];
+    g.userData.trainingProgress=0;
+    makeInteractable(g,team === "red" ? "Red Town Hall" : "Town Hall",7.4,team === "red" ? 0xff4444 : 0x00ff66);
+    scene.add(g);
+    if(team === "blue") townHall=g;
+    return g;
+}
+
+function createHumanHouseMesh(){
+    const g=new THREE.Group();
+    const body=box(4.6,3.2,4.6,humanWallMat);
+    body.position.y=1.6;
+    const roof=cone(3.8,3.0,4,humanBlueMat);
+    roof.rotation.y=Math.PI/4;
+    roof.position.y=4.6;
+    g.add(body,roof);
+    return g;
+}
+function createHumanHouse(x,z,team="blue"){
+    clearTreesNear(x,z,5);
+    const g=createHumanHouseMesh();
+    tintFaction(g,team);
+    g.position.set(x,0,z);
+    g.userData.footprintRadius=2.7;
+    makeInteractable(
+        g,
+        team==="red" ? "Red House" : "House",
+        2.9,
+        team==="red" ? 0xff4444 : 0x00ff66
+    );
+    scene.add(g);
+    return g;
+}
+
+function createFarmMesh(){
+    const g=new THREE.Group();
+    const soil=box(5.5,.25,5.5,new THREE.MeshStandardMaterial({color:0x594027}));
+    soil.position.y=.12;
+    g.add(soil);
+    for(let i=-2;i<=2;i++){
+        const crop=box(.25,.8,4.8,new THREE.MeshStandardMaterial({color:0xb6a63a}));
+        crop.position.set(i*.9,.45,0);
+        g.add(crop);
+    }
+    return g;
+}
+function createFarm(x,z,team="blue"){
+    clearTreesNear(x,z,5);
+    const g=createFarmMesh();
+    tintFaction(g,team);
+    g.position.set(x,0,z);
+    g.userData.footprintRadius=3.2;
+    makeInteractable(
+        g,
+        team==="red" ? "Red Farm" : "Farm",
+        3.4,
+        team==="red" ? 0xff4444 : 0x00ff66
+    );
+    scene.add(g);
+    return g;
+}
+
+function createHumanGuardTowerMesh(){
+    const g=new THREE.Group();
+    const shaft=box(2.2,6,2.2,humanTrimMat);
+    shaft.position.y=3;
+    const top=box(3.5,1.5,3.5,humanWallMat);
+    top.position.y=6.4;
+    const roof=cone(2.6,2.8,4,humanBlueMat);
+    roof.rotation.y=Math.PI/4;
+    roof.position.y=8.3;
+    g.add(shaft,top,roof);
+    return g;
+}
+function createHumanGuardTower(x,z,team="blue"){
+    clearTreesNear(x,z,5);
+    const g=createHumanGuardTowerMesh();
+    tintFaction(g,team);
+    g.position.set(x,0,z);
+    g.userData.footprintRadius=2.4;
+    makeInteractable(
+        g,
+        team==="red" ? "Red Guard Tower" : "Guard Tower",
+        2.6,
+        team==="red" ? 0xff4444 : 0x00ff66
+    );
+    scene.add(g);
+    return g;
+}
+
+
+
+function createBarracksMesh(){
+    const g=new THREE.Group();
+
+    const base=box(8.6,.7,7.2,darkStoneMat);
+    base.position.y=.35;
+    g.add(base);
+
+    const hall=box(6.8,4.0,5.6,humanWallMat);
+    hall.position.y=2.35;
+    g.add(hall);
+
+    const roof=cone(5.1,3.5,4,humanBlueMat);
+    roof.rotation.y=Math.PI/4;
+    roof.position.y=5.75;
+    g.add(roof);
+
+    // Front gate
+    const gate=box(2.3,2.7,.45,humanTrimMat);
+    gate.position.set(0,1.55,3.05);
+    g.add(gate);
+
+    // Side training towers
+    for(const x of [-3.5,3.5]){
+        const tower=box(1.7,4.8,1.7,humanTrimMat);
+        tower.position.set(x,2.7,-1.5);
+        g.add(tower);
+
+        const cap=cone(1.45,2.0,4,humanBlueMat);
+        cap.rotation.y=Math.PI/4;
+        cap.position.set(x,6.05,-1.5);
+        g.add(cap);
+    }
+
+    // Weapon racks as simple silhouettes
+    for(const x of [-2.2,2.2]){
+        const rack=box(.25,2.2,.25,woodMat);
+        rack.position.set(x,1.25,3.35);
+        rack.rotation.z=x<0 ? -.5 : .5;
+        g.add(rack);
+    }
+
+    g.traverse(o=>{
+        if(o.isMesh){
+            o.castShadow=true;
+            o.receiveShadow=true;
+        }
+    });
+
+    return g;
+}
+
+function createBarracks(x,z,team="blue"){
+    clearTreesNear(x,z,7);
+    const g=createBarracksMesh();
+    tintFaction(g,team);
+    g.position.set(x,0,z);
+    g.userData.footprintRadius=4.6;
+    g.userData.productionQueue=[];
+    g.userData.productionProgress=0;
+    makeInteractable(
+        g,
+        team==="red" ? "Red Barracks" : "Barracks",
+        4.9,
+        team==="red" ? 0xff4444 : 0x00ff66
+    );
+    scene.add(g);
+    return g;
+}
+
+
+function createBlacksmithMesh(){
+    const g=new THREE.Group();
+
+    const base=box(8.4,.55,7.2,darkStoneMat);
+    base.position.y=.27;
+    g.add(base);
+
+    const forgeHouse=box(5.6,4.5,5.2,humanWallMat);
+    forgeHouse.position.set(-.4,2.5,0);
+    g.add(forgeHouse);
+
+    const roof=cone(4.7,4.1,4,humanBlueMat);
+    roof.rotation.y=Math.PI/4;
+    roof.position.set(-.4,6.3,0);
+    g.add(roof);
+
+    const chimney=new THREE.Mesh(
+        new THREE.CylinderGeometry(1.15,1.45,6.5,8),
+        new THREE.MeshStandardMaterial({color:0x727272,roughness:.9})
+    );
+    chimney.position.set(2.7,5.0,-1.5);
+    chimney.castShadow=true;
+    g.add(chimney);
+
+    const chimneyCap=new THREE.Mesh(
+        new THREE.CylinderGeometry(1.35,1.15,1.15,8),
+        darkStoneMat
+    );
+    chimneyCap.position.set(2.7,8.75,-1.5);
+    g.add(chimneyCap);
+
+    const sideForge=box(3.4,2.5,3.7,humanTrimMat);
+    sideForge.position.set(3.3,1.6,1.0);
+    sideForge.rotation.y=-.18;
+    g.add(sideForge);
+
+    const forgeMouth=new THREE.Mesh(
+        new THREE.CylinderGeometry(.9,1.1,.35,12),
+        new THREE.MeshStandardMaterial({color:0x30343a,metalness:.4,roughness:.55})
+    );
+    forgeMouth.rotation.z=Math.PI/2;
+    forgeMouth.position.set(5.05,1.85,1.0);
+    g.add(forgeMouth);
+
+    const door=box(1.8,2.8,.35,humanTrimMat);
+    door.position.set(-1.1,1.65,2.75);
+    g.add(door);
+
+    const anvilBase=box(1.0,1.25,.85,darkStoneMat);
+    anvilBase.position.set(-4.0,.7,2.4);
+    const anvilMat=new THREE.MeshStandardMaterial({
+        color:0x676d73,metalness:.55,roughness:.5
+    });
+    const anvilTop=box(2.1,.55,.9,anvilMat);
+    anvilTop.position.set(-4.0,1.55,2.4);
+    const horn=cone(.55,1.7,6,anvilMat);
+    horn.rotation.z=-Math.PI/2;
+    horn.position.set(-5.1,1.55,2.4);
+    g.add(anvilBase,anvilTop,horn);
+
+    g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
+    return g;
+}
+
+function createBlacksmith(x,z,team="blue"){
+    clearTreesNear(x,z,7);
+    const g=createBlacksmithMesh();
+    tintFaction(g,team);
+    g.position.set(x,0,z);
+    g.userData.footprintRadius=4.2;
+    makeInteractable(
+        g,
+        team==="red" ? "Red Blacksmith" : "Blacksmith",
+        4.5,
+        team==="red" ? 0xff4444 : 0x00ff66
+    );
+    scene.add(g);
+    return g;
+}
+
+function createAltarMesh(){
+    const g=new THREE.Group();
+
+    const base=box(8.4,.65,7.2,darkStoneMat);
+    base.position.y=.32;
+    g.add(base);
+
+    const upper=box(6.2,.55,5.2,humanWallMat);
+    upper.position.y=.92;
+    g.add(upper);
+
+    const columnPositions=[[-2.3,-1.7],[2.3,-1.7],[-2.3,1.7],[2.3,1.7]];
+    for(const [x,z] of columnPositions){
+        const column=new THREE.Group();
+        const shaft=new THREE.Mesh(
+            new THREE.CylinderGeometry(.52,.65,3.7,8),
+            darkStoneMat
+        );
+        shaft.position.y=2.65;
+        const cap=box(1.35,.45,1.35,humanWallMat);
+        cap.position.y=4.55;
+        column.add(shaft,cap);
+        column.position.set(x,0,z);
+        g.add(column);
+    }
+
+    const dais=new THREE.Mesh(
+        new THREE.CylinderGeometry(1.7,2.0,.8,10),
+        humanWallMat
+    );
+    dais.position.y=1.35;
+    g.add(dais);
+
+    const swordBlade=box(.35,4.7,.22,new THREE.MeshStandardMaterial({
+        color:0xd8dce4,metalness:.7,roughness:.3
+    }));
+    swordBlade.position.y=4.0;
+    const guard=box(2.2,.28,.32,brassMat);
+    guard.position.y=2.45;
+    const pommel=new THREE.Mesh(new THREE.SphereGeometry(.42,10,8),brassMat);
+    pommel.position.y=1.8;
+    g.add(swordBlade,guard,pommel);
+
+    const banner=box(1.25,1.8,.16,humanBlueMat);
+    banner.position.set(0,3.2,-.28);
+    g.add(banner);
+
+    for(let i=0;i<3;i++){
+        const step=box(3.4-i*.4,.22,.85,humanWallMat);
+        step.position.set(0,.13+i*.18,3.6+i*.38);
+        g.add(step);
+    }
+
+    g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
+    return g;
+}
+
+function createAltar(x,z,team="blue"){
+    clearTreesNear(x,z,7);
+    const g=createAltarMesh();
+    tintFaction(g,team);
+    g.position.set(x,0,z);
+    g.userData.footprintRadius=4.4;
+    g.userData.productionQueue=[];
+    g.userData.productionProgress=0;
+    makeInteractable(
+        g,
+        team==="red" ? "Red Altar" : "Altar",
+        4.7,
+        team==="red" ? 0xff4444 : 0x00ff66
+    );
+    scene.add(g);
+    return g;
+}
+
+function createVaultMesh(){
+    const g=new THREE.Group();
+
+    const base=new THREE.Mesh(
+        new THREE.CylinderGeometry(3.7,4.1,.8,8),
+        darkStoneMat
+    );
+    base.position.y=.4;
+    g.add(base);
+
+    const body=box(5.3,5.3,5.3,humanWallMat);
+    body.position.y=3.2;
+    g.add(body);
+
+    for(const x of [-2.65,2.65]){
+        for(const z of [-2.65,2.65]){
+            const pillar=box(.7,5.7,.7,humanTrimMat);
+            pillar.position.set(x,3.1,z);
+            g.add(pillar);
+        }
+    }
+
+    const crystalMat=new THREE.MeshStandardMaterial({
+        color:0x75d9ff,
+        emissive:0x2570d0,
+        emissiveIntensity:1.3,
+        transparent:true,
+        opacity:.9,
+        roughness:.2
+    });
+    const crystal=new THREE.Mesh(
+        new THREE.OctahedronGeometry(1.15,0),
+        crystalMat
+    );
+    crystal.scale.y=1.8;
+    crystal.position.y=7.1;
+    crystal.castShadow=true;
+    g.add(crystal);
+
+    const door=box(2.2,3.0,.45,darkStoneMat);
+    door.position.set(0,2.5,2.85);
+    g.add(door);
+
+    const shield=new THREE.Mesh(
+        new THREE.CylinderGeometry(.95,.95,.22,12),
+        humanBlueMat
+    );
+    shield.rotation.x=Math.PI/2;
+    shield.position.set(0,3.0,3.12);
+    g.add(shield);
+
+    for(const x of [-1.65,1.65]){
+        for(let i=0;i<7;i++){
+            const link=new THREE.Mesh(
+                new THREE.TorusGeometry(.22,.07,5,10),
+                new THREE.MeshStandardMaterial({color:0x9aa0a4,metalness:.7,roughness:.4})
+            );
+            link.rotation.y=Math.PI/2;
+            link.position.set(x,4.8-i*.55,3.0);
+            g.add(link);
+        }
+    }
+
+    g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
+    return g;
+}
+
+function createVault(x,z,team="blue"){
+    clearTreesNear(x,z,6);
+    const g=createVaultMesh();
+    tintFaction(g,team);
+    g.position.set(x,0,z);
+    g.userData.footprintRadius=3.7;
+    g.userData.vault=true;
+    makeInteractable(
+        g,
+        team==="red" ? "Red Vault" : "Vault",
+        4.0,
+        team==="red" ? 0xff4444 : 0x00ff66
+    );
+    scene.add(g);
+    return g;
+}
+
+function createWorkshopMesh(){
+    const g=new THREE.Group();
+
+    // Stone pad / footprint
+    const pad=box(11,.45,8.5,darkStoneMat);
+    pad.position.y=.22;
+    g.add(pad);
+
+    // Long industrial workshop hall.
+    const hall=box(8.7,4.0,5.4,humanWallMat);
+    hall.position.set(.5,2.2,0);
+    g.add(hall);
+
+    // Heavy timber sloped-roof blockout.
+    const roof=box(9.6,.55,6.2,humanTrimMat);
+    roof.position.set(.5,4.65,0);
+    roof.rotation.z=.10;
+    g.add(roof);
+
+    // Repeated dark roof ribs evoke the reference building.
+    for(let i=-4;i<=4;i++){
+        const rib=box(.24,.22,6.5,darkStoneMat);
+        rib.position.set(i*1.02,5.0,0);
+        rib.rotation.z=.10;
+        g.add(rib);
+    }
+
+    // Large metal forge hood/front.
+    const hood=box(3.0,2.2,2.2,new THREE.MeshStandardMaterial({
+        color:0x72777a,metalness:.35,roughness:.65
+    }));
+    hood.position.set(-4.5,2.0,0);
+    hood.rotation.z=-.28;
+    g.add(hood);
+
+    // Furnace chimney.
+    const stackBase=new THREE.Mesh(
+        new THREE.CylinderGeometry(1.05,1.35,5.2,8),
+        new THREE.MeshStandardMaterial({color:0x777c7f,metalness:.25,roughness:.7})
+    );
+    stackBase.position.set(-2.8,6.6,-1.3);
+    stackBase.castShadow=true;
+    g.add(stackBase);
+
+    const stackTop=new THREE.Mesh(
+        new THREE.CylinderGeometry(1.0,1.15,1.0,8),
+        darkStoneMat
+    );
+    stackTop.position.set(-2.8,9.55,-1.3);
+    g.add(stackTop);
+
+    // Mechanical barrel / blue trim on rear.
+    const rear=new THREE.Mesh(
+        new THREE.CylinderGeometry(1.3,1.3,2.4,10),
+        darkStoneMat
+    );
+    rear.rotation.z=Math.PI/2;
+    rear.position.set(4.6,2.2,-1.4);
+    g.add(rear);
+
+    const rearBlue=new THREE.Mesh(
+        new THREE.CylinderGeometry(.95,.95,.18,10),
+        humanBlueMat
+    );
+    rearBlue.rotation.z=Math.PI/2;
+    rearBlue.position.set(5.85,2.2,-1.4);
+    g.add(rearBlue);
+
+    // Front awning + stairs.
+    const awning=box(3.8,.45,2.2,humanTrimMat);
+    awning.position.set(1.5,3.6,3.4);
+    awning.rotation.x=-.15;
+    g.add(awning);
+
+    for(let i=0;i<4;i++){
+        const step=box(3.2-i*.25,.22,.7,humanTrimMat);
+        step.position.set(1.5,.12+i*.20,3.4+i*.45);
+        g.add(step);
+    }
+
+    // Twin blue exhaust cowls.
+    for(const x of [2.8,4.2]){
+        const cowl=new THREE.Mesh(
+            new THREE.ConeGeometry(.65,1.4,4),
+            humanBlueMat
+        );
+        cowl.rotation.x=Math.PI;
+        cowl.position.set(x,3.2,2.6);
+        g.add(cowl);
+    }
+
+    g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
+    return g;
+}
+
+function createWorkshop(x,z,team="blue"){
+    clearTreesNear(x,z,9);
+    const g=createWorkshopMesh();
+    tintFaction(g,team);
+    g.position.set(x,0,z);
+    g.userData.footprintRadius=5.6;
+    g.userData.productionQueue=[];
+    g.userData.productionProgress=0;
+    makeInteractable(g,team === "red" ? "Red Workshop" : "Workshop",5.9,team === "red" ? 0xff4444 : 0x00ff66);
+    scene.add(g);
+    if(team === "blue") workshop=g;
+    return g;
+}
+
+function createFactionGoldMine(x,z,team){
+    const g=createGoldMine(x,z);
+    g.userData.team=team;
+    if(g.selectionRing){
+        g.selectionRing.material.color.setHex(team === "red" ? 0xff4444 : 0xffff00);
+    }
+    if(team === "red") g.userData.type="Red Gold Mine";
+    return g;
+}
+
+function spawnHumanStartingBase(){
+    if(humanBaseSpawned) return;
+    humanBaseSpawned=true;
+
+    // BLUE base: bottom-right.
+    const blueMine=createFactionGoldMine(46,-46,"blue");
+    createTownHall(27,-46,"blue");
+    createWorkshop(-11,-46,"blue");
+    [[39,-49],[37,-45],[35,-50],[33,-44],[31,-48]].forEach(([x,z])=>createPeasant(x,z,"blue"));
+
+    // RED base: top-left, exact mirror through the map origin.
+    const redMine=createFactionGoldMine(-46,46,"red");
+    createTownHall(-27,46,"red");
+    createWorkshop(11,46,"red");
+    [[-39,49],[-37,45],[-35,50],[-33,44],[-31,48]].forEach(([x,z])=>createPeasant(x,z,"red"));
+
+    // Base clearings mirrored at opposite corners.
+    clearTreesNear(36,-46,12); clearTreesNear(17,-46,10); clearTreesNear(-11,-46,10);
+    clearTreesNear(-36,46,12); clearTreesNear(-17,46,10); clearTreesNear(11,46,10);
+
+    cameraFocus.set(0,4,0);
+    controls.target.copy(cameraFocus);
+    controls.update();
+    const firstBlue=peasants.find(p=>p.userData.team==="blue");
+    if(firstBlue) selectEntity(firstBlue,false);
+    peasantMenuMode="actions";
+    renderBuildCommands();
+    updateResourceBar();
+    setGameStatus("Dota-style map ready. Right-click neutral creeps to attack; kills award gold, Paladin XP and possible potion drops.");
+}
+
+
+// NEUTRAL JUNGLE / MERCENARY SYSTEM
+const neutralEnemies=[];
+const fallenAllies=[];
+let mercenaryCamp=null;
+let currentCombatTarget=null;
+let nextLootId=1;
+const groundLoot=[];
+
+
+function createMercenaryCamp(x,z){
+    clearTreesNear(x,z,8);
+    const g=new THREE.Group();
+    const nWood=new THREE.MeshStandardMaterial({color:0x765232,roughness:.9});
+    const nCloth=new THREE.MeshStandardMaterial({color:0x6b3d22,roughness:1});
+    const nStone=new THREE.MeshStandardMaterial({color:0x68645d,roughness:1});
+
+    const pad=new THREE.Mesh(new THREE.CylinderGeometry(5.8,6.2,.45,12),nStone);
+    pad.position.y=.22;g.add(pad);
+    const tent=cone(3.8,4.6,4,nCloth);tent.rotation.y=Math.PI/4;tent.position.set(0,2.5,-.5);g.add(tent);
+
+    for(const px of [-3.7,3.7]){
+        const post=box(.55,3.3,.55,nWood);post.position.set(px,1.7,2.1);g.add(post);
+        const torch=new THREE.Mesh(
+            new THREE.SphereGeometry(.34,8,6),
+            new THREE.MeshStandardMaterial({color:0xffa53d,emissive:0xff5b16,emissiveIntensity:2})
+        );
+        torch.position.set(px,3.5,2.1);g.add(torch);
+    }
+
+    const rack=box(5.8,.35,.55,nWood);rack.position.set(0,1.15,3.1);g.add(rack);
+    g.position.set(x,0,z);
+    g.userData.team="neutral";
+    g.userData.footprintRadius=5.8;
+    g.userData.mercenaryCamp=true;
+    makeInteractable(g,"Mercenary Camp",6.1,0xffcc55);
+    scene.add(g);
+    mercenaryCamp=g;
+    return g;
+}
+
+function purchaseForestTroll(camp){
+    const price=175;
+    if(GameResources.blue.gold<price){
+        setGameStatus(`Need ${price} gold to hire a Forest Troll.`,false);
+        return;
+    }
+    GameResources.blue.gold-=price;
+    updateResourceBar();
+    const p=getBuildingSpawnPoint(camp,combatUnits.length);
+    const troll=spawnCombatUnit("forestTroll",p.x,p.z,"blue");
+    if(troll){
+        setGameStatus("Forest Troll hired for 175 gold.");
+        selectEntity(troll,false);
+    }
+}
+
+function createNeutralEnemy(kind,x,z){
+    const g=new THREE.Group();
+    const skin=new THREE.MeshStandardMaterial({
+        color:kind==="ogre"?0x8e775e:kind==="gnoll"?0xb08a4e:0x55524d,
+        flatShading:true
+    });
+    const dark=new THREE.MeshStandardMaterial({color:0x302c27,flatShading:true});
+
+    if(kind==="wolf"){
+        const body=box(2.2,1.05,.9,skin);body.position.y=1.0;g.add(body);
+        const head=box(.85,.8,.75,dark);head.position.set(0,1.45,1.0);g.add(head);
+        for(const px of [-.72,.72]) for(const pz of [-.28,.28]){
+            const leg=box(.28,.85,.28,dark);leg.position.set(px,.42,pz);g.add(leg);
+        }
+    }else{
+        const sc=kind==="ogre"?1.25:1;
+        const body=box(1.35*sc,2.1*sc,1.0*sc,skin);body.position.y=1.7*sc;g.add(body);
+        const head=cone(.55*sc,.9*sc,6,dark);head.position.y=3.2*sc;g.add(head);
+        const club=box(.22,2.5,.22,dark);club.position.set(1.05*sc,1.6*sc,.2);club.rotation.z=-.25;g.add(club);
+    }
+
+    g.position.set(x,0,z);
+    g.userData.team="neutral";
+    g.userData.neutralEnemy=true;
+    g.userData.isUnit=true;
+    g.userData.canMove=false;
+    g.userData.unitKind=kind;
+    g.userData.hp=kind==="ogre"?420:kind==="gnoll"?240:170;
+    g.userData.maxHp=g.userData.hp;
+    g.userData.armor=kind==="ogre"?4:kind==="gnoll"?2:1;
+    g.userData.attackDamage=kind==="ogre"?28:kind==="gnoll"?18:13;
+    g.userData.attackRange=kind==="wolf"?1.8:2.0;
+    g.userData.attackCooldown=kind==="wolf"?1.0:1.35;
+    g.userData.attackTimer=Math.random();
+    g.userData.aggroRange=11;
+    g.userData.homePosition=new THREE.Vector3(x,0,z);
+    g.userData.combatTarget=null;
+    g.userData.alive=true;
+    g.userData.goldReward=kind==="ogre"?55:kind==="gnoll"?30:20;
+    g.userData.xpReward=kind==="ogre"?80:kind==="gnoll"?45:30;
+    g.userData.footprintRadius=kind==="ogre"?1.5:1.0;
+
+    makeInteractable(
+        g,
+        kind==="ogre"?"Neutral Ogre":kind==="gnoll"?"Neutral Gnoll":"Neutral Wolf",
+        g.userData.footprintRadius+.25,
+        0xffcc44
+    );
+    scene.add(g);
+    neutralEnemies.push(g);
+    return g;
+}
+
+function spawnNeutralJungle(){
+    createMercenaryCamp(-27,30);
+    const camps=[
+        [-12,29,[["gnoll",-2,0],["gnoll",2,0],["wolf",0,2.5]]],
+        [18,30,[["ogre",0,0],["wolf",-2.5,-1.5],["wolf",2.5,-1.5]]],
+        [31,22,[["gnoll",-1.6,0],["gnoll",1.6,0]]],
+        [-30,-24,[["ogre",0,0],["gnoll",2.5,1.5]]],
+        [-15,-31,[["wolf",-2,0],["wolf",2,0],["gnoll",0,2.5]]],
+        [18,-29,[["ogre",0,0],["wolf",-2.5,1.5],["wolf",2.5,1.5]]],
+        [31,-20,[["gnoll",-1.8,0],["gnoll",1.8,0]]],
+        [-23,5,[["wolf",-1.8,0],["wolf",1.8,0]]],
+        [24,-4,[["ogre",0,0]]]
+    ];
+    for(const [cx,cz,roster] of camps){
+        for(const [kind,ox,oz] of roster) createNeutralEnemy(kind,cx+ox,cz+oz);
+    }
+}
+spawnNeutralJungle();
+
+const DROP_TABLE=[
+    {key:"healingPotion",chance:.24},
+    {key:"manaPotion",chance:.18}
+];
+
+function getPaladin(){
+    return combatUnits.find(u=>u.userData?.hero&&u.userData.team==="blue")||null;
+}
+
+function ensureHeroXP(hero){
+    if(!hero) return;
+    if(hero.userData.level==null) hero.userData.level=1;
+    if(hero.userData.xp==null) hero.userData.xp=0;
+}
+function heroXPNeeded(hero){
+    return Math.floor(100*Math.pow(1.3,(hero.userData.level||1)-1));
+}
+function awardPaladinXP(amount){
+    const hero=getPaladin();
+    if(!hero) return;
+    ensureHeroXP(hero);
+    hero.userData.xp+=amount;
+    while(hero.userData.xp>=heroXPNeeded(hero)){
+        hero.userData.xp-=heroXPNeeded(hero);
+        hero.userData.level++;
+        hero.userData.maxHp+=40;hero.userData.hp=hero.userData.maxHp;
+        hero.userData.maxMana+=20;hero.userData.mana=hero.userData.maxMana;
+        hero.userData.damageMin+=4;hero.userData.damageMax+=5;
+        hero.userData.strength+=2;hero.userData.intelligence+=1;
+        setGameStatus(`Paladin reached level ${hero.userData.level}!`);
+    }
+}
+
+function floatingLootText(worldPos,text,color="#ffd75a"){
+    const div=document.createElement("div");
+    div.className="lootText";
+    div.textContent=text;
+    div.style.color=color;
+    document.body.appendChild(div);
+    const p=worldPos.clone();p.y+=3;p.project(camera);
+    div.style.left=((p.x*.5+.5)*innerWidth)+"px";
+    div.style.top=((-p.y*.5+.5)*innerHeight)+"px";
+    setTimeout(()=>div.remove(),1300);
+}
+
+function dropLoot(enemy){
+    for(const drop of DROP_TABLE){
+        if(Math.random()>drop.chance) continue;
+        const item=ITEM_DEFS[drop.key];
+        const mesh=new THREE.Mesh(
+            new THREE.OctahedronGeometry(.42,0),
+            new THREE.MeshStandardMaterial({
+                color:drop.key==="healingPotion"?0xff4f58:0x4a78ff,
+                emissive:drop.key==="healingPotion"?0x661014:0x142a66,
+                emissiveIntensity:.7
+            })
+        );
+        mesh.position.copy(enemy.position);mesh.position.y=.6;
+        mesh.userData.lootItem=drop.key;
+        mesh.userData.lootId=nextLootId++;
+        scene.add(mesh);
+        groundLoot.push(mesh);
+        floatingLootText(enemy.position,`${item.name} dropped!`,"#9dd6ff");
+    }
+}
+
+function killNeutral(enemy,killer){
+    if(!enemy?.userData?.alive) return;
+    enemy.userData.alive=false;
+    enemy.visible=false;
+    enemy.userData.interactable=false;
+
+    const reward=enemy.userData.goldReward||20;
+    GameResources.blue.gold+=reward;
+    updateResourceBar();
+    awardPaladinXP(enemy.userData.xpReward||25);
+    dropLoot(enemy);
+    floatingLootText(enemy.position,`+${reward} gold`,"#ffd75a");
+
+    for(const u of combatUnits){
+        if(u.userData.combatTarget===enemy) u.userData.combatTarget=null;
+    }
+    if(currentCombatTarget===enemy) currentCombatTarget=null;
+    updateCombatTargetFrame();
+}
+
+function dealCombatDamage(attacker,target,amount){
+    if(!target?.userData?.alive) return;
+    if(target.userData.hero && performance.now()<(target.userData.invulnerableUntil||0)) return;
+    const armor=target.userData.armor||0;
+    const actual=Math.max(1,amount-armor*.35);
+    target.userData.hp-=actual;
+    currentCombatTarget=target;
+    updateCombatTargetFrame();
+    if(target.userData.hp<=0){
+        if(target.userData.neutralEnemy) killNeutral(target,attacker);
+    }
+}
+
+function fireBullet(attacker,target,damage){
+    const bullet=new THREE.Mesh(
+        new THREE.SphereGeometry(.12,6,5),
+        new THREE.MeshBasicMaterial({color:0xffd070})
+    );
+    bullet.position.copy(attacker.position);bullet.position.y+=3.2;
+    scene.add(bullet);
+    const start=bullet.position.clone();
+    const end=target.position.clone();end.y+=1.2;
+    const t0=performance.now(),duration=220;
+    function tick(){
+        const t=Math.min(1,(performance.now()-t0)/duration);
+        bullet.position.lerpVectors(start,end,t);
+        if(t<1) requestAnimationFrame(tick);
+        else{
+            scene.remove(bullet);
+            if(target.userData.alive) dealCombatDamage(attacker,target,damage);
+        }
+    }
+    tick();
+}
+
+function setAttackOrder(unitsToOrder,target){
+    if(!target?.userData?.neutralEnemy||!target.userData.alive) return;
+    for(const u of unitsToOrder){
+        if(!u.userData?.canMove) continue;
+        u.userData.combatTarget=target;
+        u.userData.target=null;
+    }
+    currentCombatTarget=target;
+    updateCombatTargetFrame();
+    setGameStatus(`${unitsToOrder.length} unit(s) ordered to attack ${target.userData.type}.`);
+}
+
+function updateFriendlyCombat(dt){
+    for(const u of combatUnits){
+        const target=u.userData.combatTarget;
+        if(!target?.userData?.alive) {u.userData.combatTarget=null;continue;}
+        const range=u.userData.attackRange||2.2;
+        const d=u.position.distanceTo(target.position);
+
+        if(d>range){
+            const dir=new THREE.Vector3().subVectors(target.position,u.position);dir.y=0;
+            if(dir.lengthSq()>0){
+                dir.normalize();
+                u.position.addScaledVector(dir,u.userData.speed);
+                u.rotation.y=Math.atan2(dir.x,dir.z);
+            }
+            continue;
+        }
+
+        u.userData.attackTimer-=dt;
+        if(u.userData.attackTimer>0) continue;
+
+        if(u.userData.unitKind==="mechRifle"){
+            if((u.userData.burstPause||0)>0){
+                u.userData.burstPause-=dt;
+                continue;
+            }
+            fireBullet(u,target,u.userData.attackDamage);
+            u.userData.burstShots=(u.userData.burstShots||0)+1;
+            if(u.userData.burstShots>=3){
+                u.userData.burstShots=0;
+                u.userData.burstPause=2;
+                u.userData.attackTimer=.18;
+            }else{
+                u.userData.attackTimer=.33;
+            }
+        }else if(u.userData.unitKind==="rifleman"){
+            fireBullet(u,target,u.userData.attackDamage);
+            u.userData.attackTimer=u.userData.attackCooldown;
+        }else{
+            dealCombatDamage(u,target,u.userData.attackDamage);
+            u.userData.attackTimer=u.userData.attackCooldown;
+        }
+    }
+}
+
+function nearestBlueCombatUnit(enemy){
+    let best=null,bestD=Infinity;
+    for(const u of [...combatUnits,...peasants]){
+        if(!u.visible||u.userData.team!=="blue") continue;
+        const d=u.position.distanceTo(enemy.position);
+        if(d<bestD){best=u;bestD=d;}
+    }
+    return {unit:best,distance:bestD};
+}
+
+function updateNeutralCombat(dt){
+    for(const e of neutralEnemies){
+        if(!e.userData.alive) continue;
+        let target=e.userData.combatTarget;
+
+        if(!target || !target.visible){
+            const found=nearestBlueCombatUnit(e);
+            if(found.unit && found.distance<=e.userData.aggroRange) target=e.userData.combatTarget=found.unit;
+            else continue;
+        }
+
+        const d=e.position.distanceTo(target.position);
+        if(d>e.userData.attackRange){
+            const dir=new THREE.Vector3().subVectors(target.position,e.position);dir.y=0;
+            if(dir.lengthSq()>0){
+                dir.normalize();
+                e.position.addScaledVector(dir,.045);
+                e.rotation.y=Math.atan2(dir.x,dir.z);
+            }
+        }else{
+            e.userData.attackTimer-=dt;
+            if(e.userData.attackTimer<=0){
+                if(target.userData.hero && performance.now()<(target.userData.invulnerableUntil||0)){
+                    // blocked
+                }else{
+                    target.userData.hp=Math.max(0,(target.userData.hp||1)-e.userData.attackDamage);
+                }
+                e.userData.attackTimer=e.userData.attackCooldown;
+            }
+        }
+    }
+}
+
+function updateCombatTargetFrame(){
+    const frame=document.getElementById("combatTargetFrame");
+    if(!frame) return;
+    const t=currentCombatTarget;
+    if(!t?.userData?.alive){frame.style.display="none";return;}
+    frame.style.display="block";
+    document.getElementById("combatTargetName").textContent=t.userData.type||"Enemy";
+    const pct=Math.max(0,(t.userData.hp/t.userData.maxHp)*100);
+    document.getElementById("combatTargetFill").style.width=pct+"%";
+    document.getElementById("combatTargetText").textContent=
+        `${Math.ceil(t.userData.hp)} / ${t.userData.maxHp} HP • Reward ${t.userData.goldReward} gold`;
+}
+
+function updateGroundLoot(){
+    const hero=getPaladin();
+    if(!hero) return;
+    for(let i=groundLoot.length-1;i>=0;i--){
+        const loot=groundLoot[i];
+        if(hero.position.distanceTo(loot.position)<=2.2){
+            if((hero.userData.inventory||[]).length<6){
+                addInventoryItem(hero,loot.userData.lootItem);
+                setGameStatus(`${ITEM_DEFS[loot.userData.lootItem].name} picked up.`);
+                scene.remove(loot);
+                groundLoot.splice(i,1);
+            }
+        }
+    }
+}
+
+// GOLD MINES
+const goldmines = [];
+
+function createGoldMine(x,z){
+    clearTreesNear(x,z,8);
+
+    const g = new THREE.Group();
+
+    const base = box(10,1,8,darkStoneMat);
+    base.position.y = 0.5;
+    g.add(base);
+
+    // Rocky mine body
+    const rocks = [
+        [-3.2,2.3,-1.2,3.7,4.6,3.6],
+        [ 3.2,2.8,-1.0,4.2,5.6,4.0],
+        [ 0.0,3.8,-2.8,4.8,4.5,3.8],
+        [-4.0,1.7, 2.0,2.8,3.2,2.8],
+        [ 4.1,1.8, 2.0,3.0,3.6,2.8]
+    ];
+    rocks.forEach(([px,py,pz,w,h,d])=>{
+        const r = box(w,h,d,stoneMat);
+        r.position.set(px,py,pz);
+        r.rotation.y=(Math.random()-.5)*.25;
+        r.rotation.z=(Math.random()-.5)*.08;
+        g.add(r);
+    });
+
+    // Mine entrance
+    const tunnelMat = new THREE.MeshStandardMaterial({color:0x141414,roughness:1});
+    const tunnel = box(3.0,2.7,2.4,tunnelMat);
+    tunnel.position.set(0,1.55,2.3);
+    g.add(tunnel);
+
+    const leftPost = box(.65,3.5,.7,woodMat);
+    leftPost.position.set(-1.65,1.75,3.0);
+    const rightPost = leftPost.clone();
+    rightPost.position.x = 1.65;
+    const header = box(4.2,.7,.8,woodMat);
+    header.position.set(0,3.65,3.0);
+    g.add(leftPost,rightPost,header);
+
+    // Gold veins
+    for(let i=0;i<10;i++){
+        const gold = new THREE.Mesh(
+            new THREE.DodecahedronGeometry(.45+Math.random()*.35),
+            goldMat
+        );
+        gold.position.set(
+            -2.5+Math.random()*5,
+            3.6+Math.random()*2.3,
+            -2.5+Math.random()*2.2
+        );
+        gold.rotation.set(Math.random()*Math.PI,Math.random()*Math.PI,Math.random()*Math.PI);
+        gold.castShadow=true;
+        g.add(gold);
+    }
+
+    // Track planks / rails
+    for(let i=0;i<6;i++){
+        const plank=box(2.8,.10,.32,woodMat);
+        plank.position.set(0,.08,1.5+i*.65);
+        g.add(plank);
+    }
+    [-.45,.45].forEach(rx=>{
+        const rail=box(.11,.11,4.2,darkStoneMat);
+        rail.position.set(rx,.16,3.1);
+        g.add(rail);
+    });
+
+    g.position.set(x,0,z);
+    g.userData.gold = 18000;
+    g.userData.capacity=MINE_CAPACITY;
+    g.userData.assignedWorkers=new Set();
+    g.userData.footprintRadius=5.8;
+    makeInteractable(g,"Gold Mine",5.8,0xffff00);
+    scene.add(g);
+    goldmines.push(g);
+    return g;
+}
+
+// Mirrored resource mines are created on Start Game with each faction base.
+
+// SPAWN UNITS
+window.spawnRaceUnit = function(type){
+    let unit;
+    if(type==="kobold")
+        unit = createKobold();
+    if(type==="gnoll")
+        unit = createGnoll();
+    if(type==="goblin-whip")
+        unit = createGoblinWhip();
+    if(type==="wolf-rider")
+        unit = createWolfRider();
+    if(!unit) return;
+    unit.position.set(
+        (Math.random()-0.5)*50,
+        0,
+        (Math.random()-0.5)*50
+    );
+    scene.add(unit);
+    units.push(unit);
+};
+// SPAWN BUILDINGS
+window.spawnFactionBuilding = function(type){
+    let b;
+    if(type==="kobold-gnoll-camp")
+        b = createGnollCamp();
+    if(type==="kobold-mine")
+        b = createKoboldMine();
+    if(type==="kobold-watch-tower")
+        b = createWatchTower();
+    if(!b) return;
+    b.position.set(
+        (Math.random()-0.5)*60,
+        0,
+        (Math.random()-0.5)*60
+    );
+    scene.add(b);
+};
+
+// INITIAL SPAWNS
+// The map remains mostly environmental until Start Game. Human peasants and
+// Town Hall are deployed by spawnHumanStartingBase().
+//// INPUT
+const raycaster = new THREE.Raycaster();
+
+/*
+ * UI INPUT GUARD
+ * ----------------
+ * The renderer canvas fills the viewport underneath the HUD. Window-level
+ * pointer/mouse handlers therefore also receive bubbled clicks that originated
+ * on HUD buttons. Without this guard, clicking "Build" opened the build menu,
+ * then the world-selection handler immediately treated the same click as an
+ * empty-map click and called clearSelection().
+ *
+ * Every world-input path must ignore events originating inside RTS UI.
+ */
+function isRTSUIEvent(e){
+    const target = e.target;
+    if(!(target instanceof Element)) return false;
+
+    return !!target.closest(
+        "#ui, #menu, #selectionPanel, #constructionMeter, " +
+        "button, select, input, textarea, [data-build], [data-action]"
+    );
+}
+const mouse = new THREE.Vector2();
+window.addEventListener('mousemove', e => {
+    if(isRTSUIEvent(e)) return;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const hits =
+        raycaster.intersectObject(ground);
+    if (hits.length > 0) {
+        const hit = hits[0];
+        const snapped =
+            gridManager.snapPosition(hit.point);
+        snapped.y =
+            worldGen.getGroundHeight(
+                snapped.x,
+                snapped.z
+            );
+        draftPlacement.update(snapped);
+    }
+});
+
+renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+
+window.addEventListener('mousedown', e => {
+    // UI buttons must never confirm/cancel a world-space draft placement.
+    if(isRTSUIEvent(e)) return;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    const inside =
+        e.clientX >= rect.left && e.clientX <= rect.right &&
+        e.clientY >= rect.top && e.clientY <= rect.bottom;
+    if(!inside) return;
+
+    if (e.button === 0 && draftPlacement.active) {
+        e.preventDefault();
+        e.stopPropagation();
+        draftPlacement.confirm();
+    }
+    if (e.button === 2 && draftPlacement.active) {
+        e.preventDefault();
+        draftPlacement.cancel();
+    }
+}, true);
+
+
+let dragSelectActive=false;
+let dragStart={x:0,y:0};
+let dragCurrent={x:0,y:0};
+const dragSelectBox=document.getElementById("dragSelectBox");
+
+function updateDragBox(){
+    if(!dragSelectBox) return;
+    const left=Math.min(dragStart.x,dragCurrent.x);
+    const top=Math.min(dragStart.y,dragCurrent.y);
+    const width=Math.abs(dragCurrent.x-dragStart.x);
+    const height=Math.abs(dragCurrent.y-dragStart.y);
+    dragSelectBox.style.left=left+"px";
+    dragSelectBox.style.top=top+"px";
+    dragSelectBox.style.width=width+"px";
+    dragSelectBox.style.height=height+"px";
+}
+
+function selectUnitsInScreenRect(additive=false){
+    const left=Math.min(dragStart.x,dragCurrent.x);
+    const right=Math.max(dragStart.x,dragCurrent.x);
+    const top=Math.min(dragStart.y,dragCurrent.y);
+    const bottom=Math.max(dragStart.y,dragCurrent.y);
+
+    if(!additive) clearSelection();
+
+    const candidates=[...peasants,...combatUnits].filter(
+        u=>u.visible && u.userData.team==="blue"
+    );
+
+    for(const u of candidates){
+        const wp=u.getWorldPosition(new THREE.Vector3());
+        wp.y+=1;
+        const ndc=wp.project(camera);
+        if(ndc.z<-1||ndc.z>1) continue;
+        const sx=(ndc.x*.5+.5)*window.innerWidth;
+        const sy=(-ndc.y*.5+.5)*window.innerHeight;
+        if(sx>=left&&sx<=right&&sy>=top&&sy<=bottom){
+            if(!selectedEntities.includes(u)){
+                selectedEntities.push(u);
+                if(u.selectionRing) u.selectionRing.visible=true;
+            }
+        }
+    }
+    syncSelectionHUD();
+}
+
+renderer.domElement.addEventListener("pointerdown",e=>{
+    if(e.button!==0 || isRTSUIEvent(e) || draftPlacement.active) return;
+    dragSelectActive=true;
+    dragStart={x:e.clientX,y:e.clientY};
+    dragCurrent={...dragStart};
+    if(dragSelectBox) dragSelectBox.style.display="block";
+    controls.enabled=false;
+});
+
+window.addEventListener("pointermove",e=>{
+    if(!dragSelectActive) return;
+    dragCurrent={x:e.clientX,y:e.clientY};
+    updateDragBox();
+});
+
+window.addEventListener("pointerup",e=>{
+    if(!dragSelectActive || e.button!==0) return;
+    dragSelectActive=false;
+    controls.enabled=true;
+    if(dragSelectBox) dragSelectBox.style.display="none";
+    const dx=e.clientX-dragStart.x;
+    const dy=e.clientY-dragStart.y;
+
+    if(Math.hypot(dx,dy)>7){
+        selectUnitsInScreenRect(e.ctrlKey);
+    }else{
+        const rect=renderer.domElement.getBoundingClientRect();
+        mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
+        mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
+        raycaster.setFromCamera(mouse,camera);
+        const hits=raycaster.intersectObjects(interactables,true);
+        if(hits.length){
+            let obj=hits[0].object;
+            while(obj.parent&&!obj.userData.interactable)obj=obj.parent;
+            if(obj.userData.interactable) selectEntity(obj,e.ctrlKey);
+        }else if(!e.ctrlKey){
+            clearSelection();
+        }
+    }
+});
+
+window.addEventListener("pointerdown",(e)=>{
+    // A HUD click is not a world click. Preserve Peasant/group selection.
+    if(isRTSUIEvent(e)) return;
+    if(draftPlacement.active) return;
+    if(e.button===0 && dragSelectActive) return;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+
+    if(
+        e.clientX < rect.left || e.clientX > rect.right ||
+        e.clientY < rect.top  || e.clientY > rect.bottom
+    ) return;
+
+    mouse.x = ((e.clientX - rect.left)/rect.width)*2-1;
+    mouse.y = -((e.clientY - rect.top)/rect.height)*2+1;
+    raycaster.setFromCamera(mouse,camera);
+
+    const constructionSites = constructionJobs
+        .filter(job=>!job.complete && job.site)
+        .map(job=>job.site);
+    const hits = raycaster.intersectObjects(
+        [...interactables, ...constructionSites],
+        true
+    );
+
+    if(e.button === 0){
+        if(hits.length){
+            let obj = hits[0].object;
+
+            while(
+                obj.parent &&
+                !obj.userData.interactable &&
+                !obj.userData.constructionSite
+            ){
+                obj = obj.parent;
+            }
+
+            if(obj.userData.constructionSite){
+                clearSelection();
+                selectedEntity = obj;
+                const info = document.getElementById("selectedInfo");
+                if(info) info.innerHTML = `<b>${obj.userData.type}</b>`;
+                renderSelectedHUD(obj);
+                updateConstructionMeter();
+                return;
+            }
+
+            if(obj.userData.interactable){
+                selectEntity(obj, e.ctrlKey);
+                updateConstructionMeter();
+                return;
+            }
+        }
+
+        // Ctrl-clicking empty terrain does not discard an existing group.
+        if(!e.ctrlKey){
+            clearSelection();
+        }
+    }
+});
+
+
+renderer.domElement.addEventListener("pointerdown",(e)=>{
+    if(isRTSUIEvent(e)) return;
+    if(e.button !== 2 || draftPlacement.active) return;
+
+    const selectedMovers = selectedEntities.filter(entity => entity?.userData?.canMove);
+    const selectedWorkers = selectedMovers.filter(isPeasantEntity);
+    if(!selectedMovers.length) return;
+
+    const rect=renderer.domElement.getBoundingClientRect();
+    mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
+    mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
+    raycaster.setFromCamera(mouse,camera);
+    const entityHits=raycaster.intersectObjects(interactables,true);
+    if(entityHits.length){
+        let obj=entityHits[0].object;
+        while(obj.parent && !obj.userData.interactable) obj=obj.parent;
+
+        if(obj.userData.neutralEnemy){
+            const attackers=selectedEntities.filter(e=>e.userData?.team==="blue" && e.userData?.isUnit && e.userData?.canMove);
+            if(attackers.length){
+                setAttackOrder(attackers,obj);
+                return;
+            }
+        }
+
+        if(["Gold Mine","Red Gold Mine"].includes(obj.userData.type)){
+            let assigned=0;
+            for(const worker of selectedWorkers){
+                if(setMiningOrder(worker,obj)) assigned++;
+            }
+            if(assigned){
+                setGameStatus(`${assigned} Peasant${assigned===1?"":"s"} assigned to Gold Mine (${obj.userData.assignedWorkers.size}/${MINE_CAPACITY}).`);
+                syncSelectionHUD();
+            }
+            return;
+        }
+    }
+
+    const hits=raycaster.intersectObject(ground);
+
+    if(hits.length){
+        const destination = hits[0].point.clone();
+
+        // Normal movement cancels the mining loop for moved workers.
+        selectedWorkers.forEach(worker=>{
+            if(worker.userData.workMode==="mining"){
+                releaseMiningOrder(worker);
+            }
+        });
+
+        // A manual move order pauses active construction for selected builders.
+        selectedWorkers.forEach(worker=>{
+            const job=worker.userData.activeBuildJob;
+            if(job && !job.complete){
+                job.state="Paused by Move Order";
+                worker.userData.buildState="Moving";
+                worker.userData.activeBuildJob=null;
+            }
+        });
+
+        // Small formation offsets prevent all selected workers from collapsing
+        // onto exactly the same world-space destination.
+        const spacing = 1.8;
+        const cols = Math.ceil(Math.sqrt(selectedMovers.length));
+
+        selectedMovers.forEach((worker,index)=>{
+            worker.userData.combatTarget=null;
+            const row = Math.floor(index/cols);
+            const col = index%cols;
+            const rows = Math.ceil(selectedMovers.length/cols);
+            const ox = (col-(cols-1)/2)*spacing;
+            const oz = (row-(rows-1)/2)*spacing;
+
+            worker.userData.target = destination.clone().add(
+                new THREE.Vector3(ox,0,oz)
+            );
+        });
+
+        setGameStatus(
+            selectedMovers.length === 1
+            ? `${selectedMovers[0].userData.type} moving.`
+            : `${selectedMovers.length} units moving in formation.`
+        );
+
+        syncSelectionHUD();
+    }
+});
+
+function movePeasants(){
+    for(const p of peasants){
+        if(p.userData.mineState==="inside") continue;
+        const target=p.userData.target;
+        if(!target) continue;
+        const dir=new THREE.Vector3().subVectors(target,p.position);
+        dir.y=0;
+        const dist=dir.length();
+        if(dist < .18){
+            p.userData.target=null;
+            if(
+                p.userData.activeBuildJob &&
+                !p.userData.activeBuildJob.complete
+            ){
+                p.userData.buildState="Building";
+            }else{
+                p.userData.buildState="Idle";
+            }
+            if(p===selectedEntity) renderSelectedHUD(p);
+            continue;
+        }
+        dir.normalize();
+        p.position.addScaledVector(dir,p.userData.speed);
+        p.rotation.y=Math.atan2(dir.x,dir.z);
+    }
+}
+
+window.addEventListener("keydown",(e)=>{
+    const key=e.key.toLowerCase();
+
+    if(e.key === "Escape" && draftPlacement.active){
+        draftPlacement.cancel();
+        return;
+    }
+
+    if(["Town Hall","Red Town Hall"].includes(selectedEntity?.userData?.type) && key==="p"){
+        queuePeasantTraining(selectedEntity);
+        renderBuildCommands();
+        return;
+    }
+
+    if(["Peasant","Red Peasant"].includes(selectedEntity?.userData?.type)){
+        // Action layer
+        if(key==="b" && !draftPlacement.active){
+            peasantMenuMode = peasantMenuMode==="actions" ? "build" : "actions";
+            renderBuildCommands();
+            return;
+        }
+        if(key==="s" && peasantMenuMode==="actions"){
+            const group = selectedEntities.filter(entity =>
+                ["Peasant","Red Peasant"].includes(entity.userData.type)
+            );
+            group.forEach(worker=>{
+                worker.userData.target=null;
+                if(worker.userData.workMode==="mining"){
+                    releaseMiningOrder(worker);
+                }
+                if(worker.userData.activeBuildJob){
+                    worker.userData.activeBuildJob.state="Paused";
+                    worker.userData.activeBuildJob=null;
+                    worker.userData.buildState="Idle";
+                }
+            });
+            setGameStatus(
+                group.length > 1 ? `${group.length} peasants stopped.` : "Peasant stopped."
+            );
+            syncSelectionHUD();
+            return;
+        }
+
+        // Construction layer
+        if(peasantMenuMode==="build"){
+            if(key==="q") startBuildCommand("house");
+            if(key==="w") startBuildCommand("farm");
+            if(key==="e") startBuildCommand("tower");
+            if(key==="r") startBuildCommand("workshop");
+            if(key==="t") startBuildCommand("barracks");
+            if(key==="y") startBuildCommand("townhall");
+            if(key==="u") startBuildCommand("blacksmith");
+            if(key==="i") startBuildCommand("altar");
+            if(key==="o") startBuildCommand("vault");
+        }
+    }
+
+    if(e.key === "Escape"){
+        clearSelection();
+        const info = document.getElementById("selectedInfo");
+        if(info) info.textContent = "None";
+        peasantMenuMode="actions";
+        renderBuildCommands();
+    }
+});
+
+
+function updateMinimapDraft(){
+    const canvas=document.getElementById("minimap");
+    if(!canvas) return;
+    if(canvas.width!==210){canvas.width=210;canvas.height=190;}
+    const ctx=canvas.getContext("2d");
+    ctx.fillStyle="#142015";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    const map=(v)=>({
+        x:(v.x/(WORLD_HALF*2)+.5)*canvas.width,
+        y:(v.z/(WORLD_HALF*2)+.5)*canvas.height
+    });
+
+    ctx.fillStyle="#285c2d";
+    trees.forEach(t=>{
+        const p=map(t.position);ctx.fillRect(p.x,p.y,2,2);
+    });
+
+    ctx.fillStyle="#e5bd32";
+    goldmines.forEach(m=>{
+        const p=map(m.position);ctx.beginPath();ctx.arc(p.x,p.y,5,0,Math.PI*2);ctx.fill();
+    });
+
+    if(townHall){
+        const p=map(townHall.position);
+        ctx.fillStyle="#3282ff";ctx.fillRect(p.x-5,p.y-5,10,10);
+    }
+
+    if(workshop){
+        const p=map(workshop.position);
+        ctx.fillStyle="#7b9cff";ctx.fillRect(p.x-5,p.y-4,10,8);
+    }
+
+    // Lane guides are shown faintly as strategic corridors.
+    ctx.strokeStyle="rgba(180,140,80,.35)";
+    ctx.lineWidth=2;
+    const drawLane=(ax,az,bx,bz)=>{
+        const a=map({x:ax,z:az}), b=map({x:bx,z:bz});
+        ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+    };
+    drawLane(-58,-48,58,48);
+    drawLane(-58,30,58,30);
+    drawLane(10,-58,10,58);
+
+    peasants.forEach(w=>{
+        if(!w.visible) return;
+        const p=map(w.position);
+        ctx.fillStyle=w.userData.team==="red"?"#ff4d4d":"#54d8ff";
+        ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();
+    });
+
+    interactables.forEach(e=>{
+        if(!e.userData.team || e.userData.type.includes("Peasant") || e.userData.type.includes("Gold Mine")) return;
+        const p=map(e.position);
+        ctx.fillStyle=e.userData.team==="red"?"#d33":"#3282ff";
+        ctx.fillRect(p.x-4,p.y-4,8,8);
+    });
+}
+
+// CAMERA
+const cameraFocus = new THREE.Vector3(0,6,0);
+let lastFrameTime = performance.now();
+let heroHudRefresh=0;
+
+function updateHeroSystems(dt,now){
+    for(const hero of combatUnits.filter(u=>u.userData?.hero)){
+        hero.userData.mana=Math.min(hero.userData.maxMana,hero.userData.mana+2.2*dt);
+    }
+    heroHudRefresh-=dt;
+    if(heroHudRefresh<=0){
+        heroHudRefresh=.35;
+        if(selectedEntity?.userData?.hero) renderSelectedHUD(selectedEntity);
+        if(selectedEntity?.userData?.hero || selectedEntity?.userData?.vault) renderBuildCommands();
+    }
+}
+
+function animate(now=performance.now()){
+    requestAnimationFrame(animate);
+
+    const dt = Math.min(0.1, Math.max(0, (now-lastFrameTime)/1000));
+    lastFrameTime = now;
+
+    movePeasants();
+    updateCombatUnitMovement();
+    updateFriendlyCombat(dt);
+    updateNeutralCombat(dt);
+    updateGroundLoot();
+    updateMining(dt);
+    updateConstructionJobs(dt);
+    updateTownHallTraining(dt);
+    updateProduction(dt);
+    updateHeroSystems(dt,now);
+    updateMinimapDraft();
+
+    controls.update();
+    renderer.render(scene,camera);
+}
+
+animate(performance.now());
+// RESIZE
+window.addEventListener("resize",()=>{
+    const W = GameSettings.started
+        ? window.innerWidth
+        : window.innerWidth - LEFT_W - RIGHT_W;
+    const H = window.innerHeight;
+
+    renderer.domElement.style.left =
+        GameSettings.started ? "0px" : LEFT_W + "px";
+    camera.aspect = W/H;
+    camera.updateProjectionMatrix();
+    renderer.setSize(W,H);
+});
+</script>
+
+</body>
+</html>
