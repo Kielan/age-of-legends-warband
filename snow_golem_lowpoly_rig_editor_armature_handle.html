@@ -1,0 +1,4539 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Goblin Editor</title>
+<style>
+
+html,
+body{
+    margin:0;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:#1a1a1a;
+}
+#root{
+    width:100%;
+    height:100%;
+    display:flex;
+    flex-direction:column;
+}
+#toolbar{
+    height:40px;
+    background:#2d2d2d;
+    border-bottom:1px solid #444;
+    display:flex;
+    align-items:center;
+    padding-left:10px;
+    color:white;
+    font-family:monospace;
+}
+#content{
+    flex:1;
+    display:flex;
+}
+#viewport{
+    flex:1;
+    position:relative;
+}
+#inspector{
+    width:280px;
+    background:#252525;
+    border-left:1px solid #444;
+    color:white;
+    font-family:monospace;
+    padding:10px;
+}
+button{
+    margin-right:5px;
+}
+
+#snowRigPanel{position:fixed;right:20px;top:52px;width:300px;background:#24272b;border:1px solid #555;border-radius:6px;color:#eee;font:12px monospace;z-index:20;box-shadow:0 8px 30px #0008;padding:10px;display:none}
+#snowRigPanel h3{margin:0 0 8px;color:#dcecff}.snowStat{padding:5px 0;border-bottom:1px solid #3a3d40}.snowBtn{margin:4px 3px 4px 0}.snowAccent{color:#7ed9ff}.snowFire{color:#ffb44a}
+#snowBadge{position:fixed;left:18px;bottom:18px;background:#202327dd;border:1px solid #59636d;border-radius:5px;padding:8px 10px;color:#cfd6dd;font:11px monospace;z-index:15;display:none}
+</style>
+</head>
+<body>
+<div id="root">
+<div id="toolbar">
+<button id="selectTool">
+Select
+</button>
+<button id="extrudeTool">
+Extrude
+</button>
+<button id="sculptTool">
+Sculpt
+</button>
+<button id="generateGoblinTool">
+Generate Goblin
+</button>
+<button id="generateGoblinToolV2">
+Generate Goblin V2
+</button>
+<button id="snowGolemTool">Snow Golem Rig</button>
+<input
+    id="imageInput"
+    type="file"
+    accept="image/*"
+    hidden
+/>
+<button id="loadImg">
+Load Image
+</button>
+<input
+    id="imageLoader"
+    type="file"
+    accept="image/*"
+    hidden
+/>
+</div>
+
+<div id="content">
+<div id="viewport"></div>
+<div id="inspector">
+<h3>Inspector</h3>
+<div id="stats">
+Vertices: 0<br>
+Edges: 0<br>
+Faces: 0
+</div>
+<h3>Silhouette</h3>
+<canvas id="silhouettePreview" width="260" height="200" style="background:#111;border:1px solid #444;width:100%;height:auto;"></canvas>
+<div id="landmarkReadout" style="margin-top:8px;font-size:11px;line-height:1.4;white-space:pre-wrap;"></div>
+</div>
+</div>
+</div>
+<div id="snowRigPanel">
+<h3>SNOW GOLEM — HEROIC RTS RIG</h3>
+<div class="snowStat">Mesh: <span class="snowAccent">Low-poly / 8-sided primitives</span></div>
+<div class="snowStat">Rig: <span class="snowAccent">Humanoid + shield + fire-ring</span></div>
+<div class="snowStat">Role: <span class="snowAccent">Frontline caster / tank</span></div>
+<div class="snowStat">Primary: <span class="snowAccent">Tower Shield</span></div>
+<div class="snowStat">Secondary: <span class="snowFire">Inferno Ring</span></div>
+<div class="snowStat">Bones: <span id="snowBoneCount">0</span> • Weighted verts: <span id="snowWeightCount">0</span></div>
+<button class="snowBtn" id="snowIdle">Idle</button>
+<button class="snowBtn" id="snowCast">Cast Fireball</button>
+<button class="snowBtn" id="snowBlock">Shield Block</button>
+<button class="snowBtn" id="snowToggleRig">Toggle Rig</button>
+<button class="snowBtn" id="snowClose">Close</button>
+</div>
+<div id="snowBadge">SNOW GOLEM • <b>RIG PREVIEW</b> • LMB orbit • animation controls at upper-right</div>
+<script type="module">
+import * as THREE from "https://esm.sh/three@0.165.0";
+import {OrbitControls} from "https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js";
+
+// --- New pipeline modules (image-analysis/ -> shape-fit/ -> mesh-gen/) ---
+// NOTE: these are real ES module files on disk next to this HTML file, so
+// this page must be served over http(s) (a local static server, or GitHub
+// Pages) rather than opened directly as a file:// URL — browsers block
+// module-to-module fetches under file://.
+// import { extractByBrightness, cleanMask, largestComponent } from "./image-analysis/maskExtractor.js";
+// import { detectLandmarks, sampleWidths } from "./image-analysis/landmarkDetector.js";
+// import { refineLandmarks } from "./image-analysis/featurePointRefiner.js";
+// import { estimatePose } from "./image-analysis/poseEstimator.js";
+// import { segmentParts } from "./image-analysis/partSegmenter.js";
+// import { computeIoU } from "./image-analysis/silhouetteMetrics.js";
+
+// import { extractRadiusProfile } from "./shape-fit/radiusProfileExtractor.js";
+// import { regularizeProfile } from "./shape-fit/sectionRegularizer.js";
+// import { estimateDepth, biasedWidth, DEPTH_RATIOS } from "./shape-fit/depthHeuristics.js";
+// import { squarishRingFn } from "./shape-fit/crossSectionFitter.js";
+
+// import * as Prim from "./mesh-gen/primitiveLibrary.js";
+// import { buildProfiledCapsule } from "./mesh-gen/capsuleBuilder.js";
+// import { buildEar } from "./mesh-gen/earBuilder.js";
+// import { buildHand } from "./mesh-gen/handBuilder.js";
+// import { buildFoot } from "./mesh-gen/footBuilder.js";
+// import { buildBlendRing } from "./mesh-gen/jointBlendBuilder.js";
+// import { mergeMeshes, toHalfEdgeMesh } from "./mesh-gen/meshMerger.js";
+
+const viewport =
+    document.getElementById("viewport");
+const stats =
+    document.getElementById("stats");
+
+/**********************************************************************
+ * MeshParameterPipeline.js
+ * Intermediate pipeline between image analysis and mesh generation.
+ * Image
+ *   ↓
+ * BodyParameters
+ *   ↓
+ * PoseParameters
+ *   ↓
+ * CrossSectionProfiles
+ *   ↓
+ * TopologyBlueprint
+ *   ↓
+ * PrimitiveFactory
+ *   ↓
+ * HalfEdgeMesh
+ *   ↓
+ * ConstraintSolver
+ *********************************************************************/
+
+/**********
+visual debug view for every stage.
+1. Landmarks: Draw all detected joints and feature points over the source image, with confidence values and labels.
+2. Feature Graph: Render the graph as colored spheres and connecting bones in the Three.js scene so you can verify hierarchy and transforms before any mesh exists.
+3. Cross Sections: For each body segment, draw sampled radius discs along its length to confirm the profile matches the intended silhouette.
+4. Primitive Generation: Render each primitive in a different color before merging. This makes it easy to spot incorrect sizes, rotations, or attachment points.
+5. Constraint Solver: Display per-constraint error values (head width, shoulder width, ear angle, etc.) and graph them over iterations to verify convergence.
+6. Silhouette Fit: Render the generated silhouette and overlay it on the reference image with false colors—green where they agree, red where the mesh extends outside, blue where the reference extends beyond the mesh.
+TODO
+Binary mask + contour extraction
+Per-part segmentation
+Segment width-profile sampling
+Elliptical/stylized cross-sections
+Part-specific primitive library
+Offscreen silhouette renderer and overlay scoring
+Iterative constrained solver
+Goblin style priors
+Mesh cleanup, merge, smoothing, retopology
+Concrete tuning targets for sample image to 3d mesh
+Parameter	Suggested bias
+Head width	increase 20% to 35%
+Head height	decrease 10% to 20%
+Head depth	keep moderate, not spherical
+Ear base width	increase 30%
+Ear tip flare	increase strongly
+Shoulder width	slightly widen
+Torso lower width	increase
+Waist pinch	reduce
+Arm radius taper	stronger toward wrist
+Hand width	increase 25% to 40%
+Leg length	shorten 10% to 15%
+Foot length	increase 20%
+Foot height	flatten
+Symmetry weight	high
+Silhouette IoU weight	very high
+
+biggest functional gap is
+A dense silhouette-driven cross-section and width-profile extractor feeding an iterative silhouette-fit optimizer.
+convert from mostly circles to::
+head: wide, squarish oval
+ears: thin tapering wedges
+torso: barrel/belly profile
+hands: blocky rounded box
+feet: flattened wedge
+// image-analysis/
+maskExtractor.ts
+contourTracer.ts
+distanceTransform.ts
+partSegmenter.ts
+landmarkDetector.ts
+featurePointRefiner.ts
+symmetryAnalyzer.ts
+poseEstimator.ts
+silhouetteMetrics.ts
+// shape-fit/
+segmentSampler.ts
+crossSectionFitter.ts
+radiusProfileExtractor.ts
+widthProfileSmoother.ts
+depthHeuristics.ts
+sectionRegularizer.ts
+// mesh-gen/
+primitiveLibrary.ts
+capsuleBuilder.ts
+loftBuilder.ts
+earBuilder.ts
+handBuilder.ts
+footBuilder.ts
+jointBlendBuilder.ts
+meshMerger.ts
+voxelizer.ts
+retopology.ts *****/
+
+// image-analysis/maskExtractor.js
+// Binary-mask extraction + light morphological cleanup. Pure functions over
+// { width, height, pixels:Uint8ClampedArray(RGBA) } -> { width, height, data:Uint8Array }.
+function extractByBrightness(image, threshold = 200){
+    const { width, height, pixels } = image;
+    const mask = new Uint8Array(width * height);
+    for(let y = 0; y < height; y++){
+        for(let x = 0; x < width; x++){
+            const i = (y * width + x) * 4;
+            const r = pixels[i], g = pixels[i+1], b = pixels[i+2], a = pixels[i+3];
+            const brightness = (r + g + b) / 3;
+            mask[y * width + x] = (a > 10 && brightness < threshold) ? 1 : 0;
+        }
+    }
+    return { width, height, data: mask };
+}
+function extractByColorKey(image, target = [255,102,170], tolerance = 40){
+    const { width, height, pixels } = image;
+    const mask = new Uint8Array(width * height);
+    for(let y = 0; y < height; y++){
+        for(let x = 0; x < width; x++){
+            const i = (y * width + x) * 4;
+            const r = pixels[i], g = pixels[i+1], b = pixels[i+2], a = pixels[i+3];
+            if(a < 10) continue;
+            const d = Math.abs(r-target[0]) + Math.abs(g-target[1]) + Math.abs(b-target[2]);
+            mask[y * width + x] = d < tolerance ? 1 : 0;
+        }
+    }
+    return { width, height, data: mask };
+}
+// 3x3 majority-vote erode/dilate passes for despeckling noisy thresholds.
+function morphPass(mask, mode){
+    const { width, height, data } = mask;
+    const out = new Uint8Array(data.length);
+    for(let y = 0; y < height; y++){
+        for(let x = 0; x < width; x++){
+            let count = 0, total = 0;
+            for(let dy = -1; dy <= 1; dy++){
+                for(let dx = -1; dx <= 1; dx++){
+                    const nx = x+dx, ny = y+dy;
+                    if(nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+                    total++;
+                    if(data[ny*width+nx]) count++;
+                }
+            }
+            const v = data[y*width+x];
+            if(mode === "erode") out[y*width+x] = (v && count === total) ? 1 : 0;
+            else out[y*width+x] = (v || count >= 3) ? 1 : 0; // dilate: any neighbor on
+        }
+    }
+    return { width, height, data: out };
+}
+function cleanMask(mask, { erode = 1, dilate = 1 } = {}){
+    let m = mask;
+    for(let i = 0; i < erode; i++) m = morphPass(m, "erode");
+    for(let i = 0; i < dilate; i++) m = morphPass(m, "dilate");
+    return m;
+}
+// Flood-fill connected components (4-connectivity). Keeps the largest
+// component (the main figure) plus any other component that's a
+// substantial fraction of its size — a disconnected limb (raised arm, a
+// gap under the armpit, a hand not touching the body) is typically 5-30%
+// of the main figure's pixel count and must survive here; only genuinely
+// tiny specks (JPEG noise, stray dust) get dropped. Keeping ONLY the
+// single largest component (the old behavior) silently deletes any limb
+// that isn't pixel-connected to the torso, which is common in natural
+// character art and was erasing whole limbs before segmentation ever ran.
+function largestComponent(mask, { minSizeRatio = 0.03 } = {}){
+    const { width, height, data } = mask;
+    const visited = new Uint8Array(width*height);
+    const components = [];
+    for(let sy = 0; sy < height; sy++){
+        for(let sx = 0; sx < width; sx++){
+            const sidx = sy*width+sx;
+            if(!data[sidx] || visited[sidx]) continue;
+            const stack = [sidx];
+            const pixels = [];
+            visited[sidx] = 1;
+            while(stack.length){
+                const idx = stack.pop();
+                pixels.push(idx);
+                const x = idx % width, y = (idx / width) | 0;
+                const neighbors = [idx-1,idx+1,idx-width,idx+width];
+                for(const nIdx of neighbors){
+                    if(nIdx < 0 || nIdx >= data.length) continue;
+                    const nx = nIdx % width;
+                    if(Math.abs(nx-x) > 1) continue; // guard row wraparound
+                    if(!data[nIdx] || visited[nIdx]) continue;
+                    visited[nIdx] = 1;
+                    stack.push(nIdx);
+                }
+            }
+            components.push(pixels);
+        }
+    }
+    const out = new Uint8Array(width*height);
+    if(!components.length) return { width, height, data: out };
+    const bestSize = Math.max(...components.map(c => c.length));
+    for(const comp of components){
+        if(comp.length >= bestSize*minSizeRatio){
+            for(const idx of comp) out[idx] = 1;
+        }
+    }
+    return { width, height, data: out };
+}
+// image-analysis/contourTracer.js
+// Moore-neighbor boundary tracing: walks the outer edge of the mask's main
+// blob and returns an ordered polyline [{x,y}, ...] in pixel space.
+const NEIGHBORS = [
+    [1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]
+];
+function isOn(mask, x, y){
+    if(x < 0 || y < 0 || x >= mask.width || y >= mask.height) return false;
+    return !!mask.data[y*mask.width+x];
+}
+function findStart(mask){
+    for(let y = 0; y < mask.height; y++)
+        for(let x = 0; x < mask.width; x++)
+            if(isOn(mask, x, y)) return { x, y };
+    return null;
+}
+function traceContour(mask, maxSteps = 20000){
+    const start = findStart(mask);
+    if(!start) return [];
+    const contour = [start];
+    let current = start;
+    let backtrack = 4; // came from "west" conceptually at the very first pixel
+    let steps = 0;
+    do {
+        let found = null;
+        for(let k = 0; k < 8; k++){
+            const dir = (backtrack + k) % 8;
+            const [dx, dy] = NEIGHBORS[dir];
+            const nx = current.x + dx, ny = current.y + dy;
+            if(isOn(mask, nx, ny)){
+                found = { x: nx, y: ny, dir };
+                break;
+            }
+        }
+        if(!found) break;
+        contour.push({ x: found.x, y: found.y });
+        // next search starts just behind the direction we arrived from
+        backtrack = (found.dir + 5) % 8;
+        current = found;
+        steps++;
+    } while(!(current.x === start.x && current.y === start.y) && steps < maxSteps);
+    return contour;
+}
+// Ramer-Douglas-Peucker simplification, useful before feeding a contour
+// into landmark/feature detection so noise doesn't dominate curvature.
+function simplifyContour(points, epsilon = 1.5){
+    if(points.length < 3) return points.slice();
+    const perpDist = (p, a, b) => {
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        return Math.abs((p.x-a.x)*dy - (p.y-a.y)*dx) / len;
+    };
+    const recurse = (pts) => {
+        if(pts.length < 3) return pts;
+        let maxD = -1, idx = -1;
+        for(let i = 1; i < pts.length-1; i++){
+            const d = perpDist(pts[i], pts[0], pts[pts.length-1]);
+            if(d > maxD){ maxD = d; idx = i; }
+        }
+        if(maxD > epsilon){
+            const left = recurse(pts.slice(0, idx+1));
+            const right = recurse(pts.slice(idx));
+            return left.slice(0, -1).concat(right);
+        }
+        return [pts[0], pts[pts.length-1]];
+    };
+    return recurse(points);
+}
+// image-analysis/distanceTransform.js
+// Two-pass chamfer (3-4) distance transform: approximates Euclidean distance
+// from each foreground pixel to the nearest background pixel. Cheap and good
+// enough for medial-axis / part-thickness estimation — no exact-EDT needed.
+function distanceTransform(mask){
+    const { width, height, data } = mask;
+    const INF = 1e6;
+    const dist = new Float32Array(width*height).fill(INF);
+    for(let i = 0; i < data.length; i++) if(!data[i]) dist[i] = 0;
+    const at = (x,y) => (x < 0||y < 0||x >= width||y >= height) ? INF : dist[y*width+x];
+    const set = (x,y,v) => { if(v < dist[y*width+x]) dist[y*width+x] = v; };
+    // forward pass
+    for(let y = 0; y < height; y++){
+        for(let x = 0; x < width; x++){
+            if(!data[y*width+x]) continue;
+            let d = dist[y*width+x];
+            d = Math.min(d, at(x-1,y)+3, at(x,y-1)+3, at(x-1,y-1)+4, at(x+1,y-1)+4);
+            set(x,y,d);
+        }
+    }
+    // backward pass
+    for(let y = height-1; y >= 0; y--){
+        for(let x = width-1; x >= 0; x--){
+            if(!data[y*width+x]) continue;
+            let d = dist[y*width+x];
+            d = Math.min(d, at(x+1,y)+3, at(x,y+1)+3, at(x+1,y+1)+4, at(x-1,y+1)+4);
+            set(x,y,d);
+        }
+    }
+    // chamfer units -> approx pixel units (3 ~ 1px orthogonal step)
+    for(let i = 0; i < dist.length; i++){
+        if(dist[i] >= INF) dist[i] = 0;
+        else dist[i] = dist[i] / 3;
+    }
+    return { width, height, data: dist };
+}
+// Local maxima of the distance field along each row = a coarse medial axis,
+// useful as ridge points for part_segmenter / depth heuristics.
+function ridgePoints(distField, minDist = 1.5){
+    const { width, height, data } = distField;
+    const pts = [];
+    for(let y = 0; y < height; y++){
+        for(let x = 1; x < width-1; x++){
+            const v = data[y*width+x];
+            if(v < minDist) continue;
+            if(v >= data[y*width+x-1] && v >= data[y*width+x+1]){
+                pts.push({ x, y, radius: v });
+            }
+        }
+    }
+    return pts;
+}
+// image-analysis/partSegmenter.js
+// Splits a silhouette mask into named body-part regions using landmark
+// y-bands plus horizontal connected-components within each band (so a band
+// spanning "torso + two arms" becomes three separate blobs, classified by
+// their x-position relative to the torso center).
+
+function rowRuns(mask, y, minRunLen = 1){
+    const { width, data } = mask;
+    const runs = [];
+    let start = -1;
+    for(let x = 0; x <= width; x++){
+        const on = x < width && data[y*width+x];
+        if(on && start === -1) start = x;
+        if(!on && start !== -1){
+            if(x - start >= minRunLen) runs.push({ start, end: x-1 });
+            start = -1;
+        }
+    }
+    return runs;
+}
+
+// Groups per-row runs into blobs across a y-range using simple x-overlap
+// continuity (cheap alternative to full connected-component labeling, good
+// enough since limbs rarely cross within one band).
+function bandBlobs(mask, yFrom, yTo){
+    const blobs = []; // { runs:[{y,start,end}], minX, maxX }
+    let prevRunCount = -1;
+    for(let y = yFrom; y < yTo; y++){
+        const runs = rowRuns(mask, y);
+        // A row whose run count differs from the row above it is a
+        // fork/merge point (e.g. wide hips splitting into two legs, or two
+        // legs merging back into one silhouette region). At that exact row,
+        // none of the new runs should attach to an existing blob — doing so
+        // let a single wide "run" match BOTH of the new narrower runs below
+        // it (nothing stopped two different runs from independently
+        // claiming the same blob), silently merging both legs' pixels into
+        // one "pelvis" blob while leaving the other mislabeled or missing.
+        // Starting fresh at every fork/merge keeps each resulting region a
+        // single, consistently-labelable blob.
+        const isForkOrMerge = prevRunCount !== -1 && runs.length !== prevRunCount;
+        const usedThisRow = new Set();
+        for(const run of runs){
+            let attached = null;
+            if(!isForkOrMerge){
+                for(const b of blobs){
+                    if(usedThisRow.has(b)) continue;
+                    const last = b.runs[b.runs.length-1];
+                    if(last && last.y === y-1 && run.start <= last.end+2 && run.end >= last.start-2){
+                        attached = b; break;
+                    }
+                }
+            }
+            if(!attached){ attached = { runs: [], minX: run.start, maxX: run.end }; blobs.push(attached); }
+            usedThisRow.add(attached);
+            attached.runs.push({ y, ...run });
+            attached.minX = Math.min(attached.minX, run.start);
+            attached.maxX = Math.max(attached.maxX, run.end);
+        }
+        prevRunCount = runs.length;
+    }
+    return blobs.filter(b => b.runs.length >= 2);
+}
+function segmentParts(mask, landmarks){
+    if(!landmarks) return [];
+    const { head, neck, shoulders, waist, hips, feet } = landmarks;
+    const bands = [
+        { name: "head", from: landmarks.bounds.minY, to: neck.y },
+        { name: "upperTorsoArms", from: neck.y, to: waist.y },
+        { name: "lowerTorsoLegs", from: waist.y, to: feet.y+1 }
+    ];
+    const parts = [];
+    for(const band of bands){
+        const blobs = bandBlobs(mask, Math.max(0,Math.floor(band.from)), Math.min(mask.height,Math.ceil(band.to)));
+        // Use a narrow, torso-only landmark right at the top of this band
+        // as the centerline reference — NOT the shoulders bounding box.
+        // Shoulders width is skewed by however far an asymmetric/turned
+        // (3/4-view) arm extends, which was pulling the whole L/R/center
+        // reference off-center and causing the torso and neck themselves
+        // to get misclassified as "armL" whenever one arm read
+        // significantly bigger than the other.
+        let centerX = mask.width/2;
+        if(band.name === "upperTorsoArms" && neck) centerX = (neck.left+neck.right)/2;
+        else if(band.name === "lowerTorsoLegs" && waist) centerX = (waist.left+waist.right)/2;
+        // sort by horizontal position so we can label left/center/right
+        blobs.sort((a,b) => (a.minX+a.maxX) - (b.minX+b.maxX));
+        blobs.forEach((b, i) => {
+            const cx = (b.minX+b.maxX)/2;
+            const side = cx < centerX - 4 ? "L" : (cx > centerX + 4 ? "R" : "C");
+            let label = band.name;
+            if(band.name === "upperTorsoArms") label = side === "C" ? "torsoUpper" : `arm${side}`;
+            if(band.name === "lowerTorsoLegs") label = side === "C" ? "pelvis" : `leg${side}`;
+            if(band.name === "head") label = "head";
+            const pixelCount = b.runs.reduce((s,r)=>s+(r.end-r.start+1),0);
+            parts.push({
+                label, side,
+                bounds: { minX: b.minX, maxX: b.maxX, minY: b.runs[0].y, maxY: b.runs[b.runs.length-1].y },
+                pixelCount,
+                // per-row {y,start,end} runs for this blob specifically —
+                // lets downstream code (e.g. extractDenseCrossSections) read
+                // exact left/right at every row without re-deriving them
+                // from the full mask width and risking picking up a
+                // neighboring part that shares the same y-band.
+                runs: b.runs.map(r => ({ y: r.y, start: r.start, end: r.end }))
+            });
+        });
+    }
+    return parts;
+}
+// image-analysis/featurePointRefiner.js
+// Smooths landmark rows against their local neighborhood and assigns a
+// confidence score based on how distinct each extremum is from nearby rows —
+// a landmark sitting on a flat, ambiguous plateau is a weaker signal than one
+// sitting on a sharp peak/valley.
+function localWindow(rows, centerY, radius){
+    return rows.filter(r => Math.abs(r.y - centerY) <= radius);
+}
+// confidence in [0,1]: 1 = clearly stands out from its neighborhood,
+// 0 = width is basically indistinguishable from nearby rows (noisy pick).
+function confidenceFor(rows, landmark, radius, mode){
+    const window = localWindow(rows, landmark.y, radius);
+    if(window.length < 2) return 0.5;
+    const widths = window.map(r => r.width);
+    const mean = widths.reduce((a,b)=>a+b,0) / widths.length;
+    const spread = Math.max(1, Math.max(...widths) - Math.min(...widths));
+    const delta = mode === "max" ? landmark.width - mean : mean - landmark.width;
+    return Math.max(0, Math.min(1, delta / spread));
+}
+function refineLandmarks(landmarks, rows, radius = 6){
+    if(!landmarks) return null;
+    const out = { ...landmarks };
+    const extremaModes = {
+        head: "max", shoulders: "max", hips: "max", forehead: "max",
+        neck: "min", waist: "min", chin: "min"
+    };
+    for(const key of Object.keys(extremaModes)){
+        const lm = landmarks[key];
+        if(!lm) continue;
+        const window = localWindow(rows, lm.y, radius);
+        if(window.length){
+            // snap y to the true local extremum within the smoothing window,
+            // then average width with its immediate neighbors to denoise it
+            const mode = extremaModes[key];
+            const best = window.reduce((b,r) => (mode==="max" ? r.width>b.width : r.width<b.width) ? r : b, window[0]);
+            const near = localWindow(rows, best.y, 1);
+            const smoothedWidth = near.reduce((s,r)=>s+r.width,0) / near.length;
+            out[key] = { ...best, width: smoothedWidth, confidence: confidenceFor(rows, best, radius, mode) };
+        }
+    }
+    return out;
+}
+// image-analysis/symmetryAnalyzer.js
+// Finds the vertical mirror axis that maximizes left/right pixel agreement,
+// and returns a per-row symmetry score useful for spotting asymmetric limb
+// poses (e.g. one arm raised, weapon held to one side).
+function analyzeSymmetry(mask, axisSearchFrac = [0.3, 0.7], step = 2){
+    const { width, height, data } = mask;
+    let bestAxis = width/2, bestScore = -Infinity;
+    for(let axis = width*axisSearchFrac[0]; axis <= width*axisSearchFrac[1]; axis += step){
+        let score = 0, total = 0;
+        for(let y = 0; y < height; y++){
+            for(let x = 0; x < width; x++){
+                const mirrored = Math.round(2*axis - x);
+                if(mirrored < 0 || mirrored >= width) continue;
+                const v = data[y*width+x], mv = data[y*width+mirrored];
+                if(v || mv){ total++; if(v === mv) score++; }
+            }
+        }
+        const norm = total ? score/total : 0;
+        if(norm > bestScore){ bestScore = norm; bestAxis = axis; }
+    }
+    const perRow = [];
+    for(let y = 0; y < height; y++){
+        let score = 0, total = 0;
+        for(let x = 0; x < width; x++){
+            const mirrored = Math.round(2*bestAxis - x);
+            if(mirrored < 0 || mirrored >= width) continue;
+            const v = data[y*width+x], mv = data[y*width+mirrored];
+            if(v || mv){ total++; if(v === mv) score++; }
+        }
+        perRow.push(total ? score/total : 1);
+    }
+    return { axisX: bestAxis, score: Math.max(0, bestScore), perRow };
+}
+// Rows whose symmetry score drops well below the global average — likely
+// where a limb has broken pose symmetry (raised arm, bent leg, etc).
+function findAsymmetricRows(symmetryResult, threshold = 0.15){
+    const { perRow, score } = symmetryResult;
+    const flagged = [];
+    for(let y = 0; y < perRow.length; y++){
+        if(score - perRow[y] > threshold) flagged.push(y);
+    }
+    return flagged;
+}
+// image-analysis/poseEstimator.js
+// Coarse pose estimate built on top of symmetryAnalyzer: turntable yaw from
+// overall mirror-symmetry strength, plus a rough head-tilt (roll) reading
+// from the asymmetry of the head band's left/right extents.
+function estimatePose(mask, landmarks = null){
+    const sym = analyzeSymmetry(mask);
+    const yawDeg = (1 - Math.max(0, sym.score)) * 90; // 0..90, coarse
+    let headTiltDeg = 0;
+    if(landmarks && landmarks.head){
+        const { width, height, data } = mask;
+        const headY = Math.max(0, landmarks.head.y - 4);
+        const bandBottom = Math.min(height, landmarks.head.y + 12);
+        let topLeftSum = 0, topRightSum = 0, n = 0;
+        for(let y = headY; y < bandBottom; y++){
+            let left = -1, right = -1;
+            for(let x = 0; x < width; x++){
+                if(data[y*width+x]){ if(left===-1) left = x; right = x; }
+            }
+            if(left === -1) continue;
+            const mid = (left+right)/2;
+            topLeftSum += mid - left;
+            topRightSum += right - mid;
+            n++;
+        }
+        if(n){
+            const asym = (topRightSum - topLeftSum) / Math.max(1, (topLeftSum+topRightSum));
+            headTiltDeg = asym * 25; // heuristic scale, capped by clamp below
+        }
+    }
+    return {
+        axisX: sym.axisX,
+        symmetry: sym.score,
+        yawDeg,
+        headTiltDeg: Math.max(-25, Math.min(25, headTiltDeg))
+    };
+}
+// image-analysis/landmarkDetector.js
+// Row width-profile landmark detection: head/neck/shoulders/waist/hips/feet,
+// plus a head sub-pass for chin/forehead. Operates on a binary mask
+// { width, height, data }.
+// NOTE: this whole section was missing from the compiled build (the file
+// jumped straight from poseEstimator.js to shape-fit/widthProfileSmoother.js)
+// which left detectLandmarks/sampleWidths undefined — the free-function
+// versions GoblinGeneratorV2 calls, as opposed to the LandmarkDetector class
+// instance the original v1 GoblinGenerator uses. Restored here.
+function sampleWidths(mask){
+    const { width, height, data } = mask;
+    const rows = [];
+    for(let y = 0; y < height; y++){
+        let left = -1, right = -1;
+        for(let x = 0; x < width; x++){
+            if(data[y*width+x]){
+                if(left === -1) left = x;
+                right = x;
+            }
+        }
+        rows.push({ y, left: left===-1?0:left, right: right===-1?0:right, width: left===-1?0:(right-left) });
+    }
+    return rows;
+}
+function slice(rows, fromFrac, toFrac){
+    const n = rows.length;
+    const start = Math.max(0, Math.floor(n*fromFrac));
+    const end = Math.min(n, Math.ceil(n*toFrac));
+    return rows.slice(start, end);
+}
+function widest(rows, a, b){
+    const s = slice(rows,a,b); if(!s.length) return rows[0];
+    return s.reduce((best,r)=> r.width>best.width?r:best, s[0]);
+}
+function narrowest(rows, a, b){
+    const s = slice(rows,a,b); if(!s.length) return rows[0];
+    return s.reduce((best,r)=> r.width<best.width?r:best, s[0]);
+}
+function steepestWiden(rows, a, b){
+    const s = slice(rows,a,b);
+    if(s.length < 2) return s[0] || rows[0];
+    let best = s[1], bestDelta = -Infinity;
+    for(let i=1;i<s.length;i++){
+        const d = s[i].width - s[i-1].width;
+        if(d > bestDelta){ bestDelta = d; best = s[i]; }
+    }
+    return best;
+}
+function detectLandmarks(mask){
+    const rows = sampleWidths(mask);
+    const nonEmpty = rows.filter(r => r.width > 0);
+    if(nonEmpty.length < 8) return null;
+
+    const minY = nonEmpty[0].y, maxY = nonEmpty[nonEmpty.length-1].y;
+    const head = widest(nonEmpty, 0, 0.25);
+    const neck = narrowest(nonEmpty, 0.10, 0.35);
+    const shoulders = steepestWiden(nonEmpty, 0.15, 0.45);
+    const waist = narrowest(nonEmpty, 0.35, 0.68);
+    const hips = widest(nonEmpty, 0.55, 0.82);
+    const feet = nonEmpty[nonEmpty.length-1];
+
+    // Head sub-profile: forehead = widest in top third of head band,
+    // chin = narrowest just below head's widest point.
+    const headBand = nonEmpty.filter(r => r.y <= head.y + (head.y - minY)*0.4 && r.y >= minY);
+    const forehead = headBand.length ? widest(headBand, 0, 0.5) : head;
+    const chinBand = nonEmpty.filter(r => r.y >= head.y && r.y <= neck.y);
+    const chin = chinBand.length ? narrowest(chinBand, 0.5, 1.0) : head;
+
+    return {
+        bounds: { minY, maxY, height: maxY-minY, width: mask.width },
+        head, neck, shoulders, waist, hips, feet, forehead, chin
+    };
+}
+// shape-fit/widthProfileSmoother.js
+// Moving-average smoothing for a raw width-per-sample array before it's fit
+// into a RadiusProfile — keeps single-pixel silhouette noise (stray hair,
+// JPEG ringing) from turning into visible mesh bumps.
+function smoothWidths(values, windowSize = 3){
+    const n = values.length;
+    const out = new Array(n);
+    const half = Math.floor(windowSize/2);
+    for(let i = 0; i < n; i++){
+        let sum = 0, count = 0;
+        for(let k = -half; k <= half; k++){
+            const j = i+k;
+            if(j < 0 || j >= n) continue;
+            sum += values[j]; count++;
+        }
+        out[i] = sum/count;
+    }
+    return out;
+}
+// Gaussian-weighted variant for a softer falloff than a flat moving average.
+function gaussianSmoothWidths(values, radius = 2, sigma = 1.2){
+    const n = values.length;
+    const kernel = [];
+    let kSum = 0;
+    for(let k = -radius; k <= radius; k++){
+        const w = Math.exp(-(k*k)/(2*sigma*sigma));
+        kernel.push(w); kSum += w;
+    }
+    const out = new Array(n);
+    for(let i = 0; i < n; i++){
+        let sum = 0;
+        for(let k = -radius; k <= radius; k++){
+            const j = Math.min(n-1, Math.max(0, i+k));
+            sum += values[j] * kernel[k+radius];
+        }
+        out[i] = sum/kSum;
+    }
+    return out;
+}
+// shape-fit/radiusProfileExtractor.js
+// Builds a RadiusProfile (duck-type: .samples[] + .radius(t)) from a sampled
+// mask segment, converting pixel half-widths into world-space radii via a
+// supplied scale. RadiusProfile itself now lives with BODY PARAMETERS below
+// (it's shared by CrossSectionProfiles) — accepts either a sample count
+// (fills with 1.0 placeholders) or an array of samples directly, since both
+// call patterns are used across the pipeline.
+function extractRadiusProfile(mask, yFrom, yTo, scale, { sampleCount = 12, smoothWindow = 3 } = {}){
+    const raw = sampleSegment(mask, yFrom, yTo, sampleCount);
+    const smoothed = smoothWidths(raw.map(r => r.width), smoothWindow);
+    const radii = smoothed.map(w => Math.max(0.001, (w*0.5) * scale));
+    return new RadiusProfile(radii);
+}
+// image-analysis/silhouetteMetrics.js
+// Compares a rendered mesh silhouette against the reference mask: IoU score
+// plus a false-color diff ImageData-like buffer (green = agree, red = mesh
+// extends outside reference, blue = reference extends beyond mesh) — the
+// visual debug view called for in the pipeline notes.
+function computeIoU(referenceMask, renderedMask){
+    const { width, height, data: ref } = referenceMask;
+    const rend = renderedMask.data;
+    let intersection = 0, union = 0;
+    for(let i = 0; i < width*height; i++){
+        const r = ref[i] ? 1 : 0, m = rend[i] ? 1 : 0;
+        if(r || m) union++;
+        if(r && m) intersection++;
+    }
+    return union ? intersection/union : 1;
+}
+function diffOverlay(referenceMask, renderedMask){
+    const { width, height, data: ref } = referenceMask;
+    const rend = renderedMask.data;
+    const out = new Uint8ClampedArray(width*height*4);
+    for(let i = 0; i < width*height; i++){
+        const r = ref[i] ? 1 : 0, m = rend[i] ? 1 : 0;
+        let rr=0, gg=0, bb=0;
+        if(r && m){ gg = 255; }             // agreement
+        else if(m && !r){ rr = 255; }       // mesh extends past reference
+        else if(r && !m){ bb = 255; }       // reference extends past mesh
+        out[i*4] = rr; out[i*4+1] = gg; out[i*4+2] = bb; out[i*4+3] = 255;
+    }
+    return { width, height, data: out };
+}
+function silhouetteReport(referenceMask, renderedMask){
+    return {
+        iou: computeIoU(referenceMask, renderedMask),
+        overlay: diffOverlay(referenceMask, renderedMask)
+    };
+}
+// shape-fit/segmentSampler.js
+// Samples a mask's per-row half-widths within a y-range into a normalized
+// array of {t, left, right, width} — the raw material every downstream
+// cross-section / radius-profile step consumes.
+function sampleSegment(mask, yFrom, yTo, sampleCount = 16){
+    const { width, height, data } = mask;
+    const y0 = Math.max(0, Math.floor(Math.min(yFrom,yTo)));
+    const y1 = Math.min(height, Math.ceil(Math.max(yFrom,yTo)));
+    const span = Math.max(1, y1 - y0);
+    const samples = [];
+    for(let i = 0; i < sampleCount; i++){
+        const t = sampleCount === 1 ? 0 : i/(sampleCount-1);
+        const y = Math.min(height-1, Math.round(y0 + t*span));
+        let left = -1, right = -1;
+        for(let x = 0; x < width; x++){
+            if(data[y*width+x]){ if(left===-1) left = x; right = x; }
+        }
+        const w = left === -1 ? 0 : (right-left);
+        samples.push({ t, y, left: left===-1?0:left, right: right===-1?0:right, width: w });
+    }
+    return samples;
+}
+function sampleSegmentBetweenLandmarks(mask, landmarkA, landmarkB, sampleCount = 16){
+    return sampleSegment(mask, landmarkA.y, landmarkB.y, sampleCount);
+}
+// shape-fit/crossSectionFitter.js
+// Turns a (width, depth) pair into an elliptical or stylized cross-section
+// descriptor {rx, ry, style} for the loft builder. "style" tags let
+// loftBuilder pick a ring-generation shape (round vs squarish vs wedge).
+function fitCrossSection(width, depth, style = "round"){
+    const rx = Math.max(0.001, width*0.5);
+    const ry = Math.max(0.001, depth*0.5);
+    return { rx, ry, style };
+}
+// Produces a full profile (array of cross-sections) from parallel width/depth
+// arrays, e.g. width profile from radiusProfileExtractor and a depth curve
+// from depthHeuristics applied per-sample.
+function fitProfile(widths, depths, style = "round"){
+    const n = Math.min(widths.length, depths.length);
+    const sections = [];
+    for(let i = 0; i < n; i++){
+        sections.push(fitCrossSection(widths[i]*2, depths[i]*2, style));
+    }
+    return sections;
+}
+// Per-angle squarish point (superellipse blend between a circle and a box).
+// Matches loftBuilder's ringFn(a, rx, ry) -> {x,y} signature, so it can be
+// passed straight into loft() for heads/torsos that shouldn't read as
+// perfectly round.
+function squarishRingFn(squareness = 0.35){
+    return (a, rx, ry) => {
+        const cx = Math.cos(a), sy = Math.sin(a);
+        const roundX = cx*rx, roundY = sy*ry;
+        const boxX = Math.sign(cx || 1) * rx * Math.pow(Math.abs(cx), 0.4);
+        const boxY = Math.sign(sy || 1) * ry * Math.pow(Math.abs(sy), 0.4);
+        return {
+            x: roundX*(1-squareness) + boxX*squareness,
+            y: roundY*(1-squareness) + boxY*squareness
+        };
+    };
+}
+// Full ring of squarish points at once (e.g. for direct inspection/debug
+// rendering rather than feeding loft()).
+function squarishRingPoints(rx, ry, sides = 12, squareness = 0.35){
+    const fn = squarishRingFn(squareness);
+    const pts = [];
+    for(let i = 0; i < sides; i++) pts.push(fn((i/sides)*Math.PI*2, rx, ry));
+    return pts;
+}
+// shape-fit/depthHeuristics.js
+// A 2D silhouette has no depth information, so depth-to-width ratios are
+// supplied per body-part style, matching the goblin tuning targets: head
+// stays a wide squarish oval (not spherical), torso reads as a barrel/belly,
+// hands/feet are blocky and flattened respectively.
+const DEPTH_RATIOS = {
+    head:    0.82,  // moderate, not spherical
+    torso:   0.72,  // barrel/belly — deeper than a thin torso
+    pelvis:  0.78,
+    upperArm:0.95,
+    lowerArm:0.90,
+    hand:    0.55,  // blocky rounded box, flatter than round
+    thigh:   0.92,
+    shin:    0.85,
+    foot:    0.45,  // flattened wedge
+    ear:     0.30   // thin tapering wedge
+};
+function estimateDepth(partType, width, overrideRatio = null){
+    const ratio = overrideRatio != null ? overrideRatio : (DEPTH_RATIOS[partType] ?? 0.85);
+    return Math.max(0.001, width * ratio);
+}
+// Slight widen/narrow biases from the tuning table (e.g. "head width
+// increase 20-35%"), applied on top of the raw measured width before depth
+// is derived from it.
+const WIDTH_BIAS = {
+    head: 1.28,
+    ear: 1.3,
+    shoulder: 1.06,
+    torsoLower: 1.12,
+    hand: 1.32,
+    foot: 1.2
+};
+function biasedWidth(partType, rawWidth){
+    return rawWidth * (WIDTH_BIAS[partType] ?? 1.0);
+}
+// shape-fit/sectionRegularizer.js
+// Clamps a radius/width profile so it can't collapse to zero or jump
+// violently between adjacent samples — guards against noisy silhouette
+// measurements producing a mesh with pinched or spiky cross-sections.
+function regularizeProfile(samples, { minRadius = 0.01, maxDeltaRatio = 0.35 } = {}){
+    const out = samples.map(v => Math.max(minRadius, v));
+    for(let i = 1; i < out.length; i++){
+        const prev = out[i-1];
+        const maxUp = prev * (1+maxDeltaRatio);
+        const maxDown = prev * (1-maxDeltaRatio);
+        out[i] = Math.min(maxUp, Math.max(maxDown, out[i]));
+    }
+    // second pass backward so a single wild sample can't just get clamped
+    // relative to its (already-clamped) neighbor and leave a visible kink
+    for(let i = out.length-2; i >= 0; i--){
+        const next = out[i+1];
+        const maxUp = next * (1+maxDeltaRatio);
+        const maxDown = next * (1-maxDeltaRatio);
+        out[i] = Math.min(maxUp, Math.max(maxDown, out[i]));
+    }
+    return out;
+}
+function enforceMonotonic(samples, direction = "decreasing"){
+    const out = samples.slice();
+    for(let i = 1; i < out.length; i++){
+        if(direction === "decreasing") out[i] = Math.min(out[i], out[i-1]);
+        else out[i] = Math.max(out[i], out[i-1]);
+    }
+    return out;
+}
+// mesh-gen/primitiveLibrary.js
+// Dependency-free primitive builders producing plain SimpleMesh objects:
+//   { vertices: [[x,y,z], ...], faces: [[i,j,k,...], ...] }
+// Kept free of THREE/HalfEdgeMesh so every mesh-gen module can run
+// standalone; the host app adapts SimpleMesh -> its own HalfEdgeMesh once,
+// at the integration boundary (see meshMerger.toHalfEdgeMesh).
+const vec3 = (x=0,y=0,z=0) => [x,y,z];
+const add = (a,b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]];
+const sub = (a,b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+const scale = (a,s) => [a[0]*s, a[1]*s, a[2]*s];
+const cross = (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const length = (a) => Math.hypot(a[0],a[1],a[2]);
+const normalize = (a) => { const l = length(a)||1; return [a[0]/l,a[1]/l,a[2]/l]; };
+const lerp3 = (a,b,t) => [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t];
+function mesh(){ return { vertices: [], faces: [] }; }
+function pushV(m, v){ m.vertices.push(v); return m.vertices.length-1; }
+function createBox(sx=1, sy=1, sz=1){
+    const m = mesh();
+    const hx=sx/2, hy=sy/2, hz=sz/2;
+    const v = [
+        pushV(m,[-hx,-hy,-hz]), pushV(m,[hx,-hy,-hz]), pushV(m,[hx,hy,-hz]), pushV(m,[-hx,hy,-hz]),
+        pushV(m,[-hx,-hy,hz]),  pushV(m,[hx,-hy,hz]),  pushV(m,[hx,hy,hz]),  pushV(m,[-hx,hy,hz])
+    ];
+    m.faces.push([v[0],v[1],v[2],v[3]],[v[5],v[4],v[7],v[6]],[v[4],v[0],v[3],v[7]],
+                 [v[1],v[5],v[6],v[2]],[v[3],v[2],v[6],v[7]],[v[4],v[5],v[1],v[0]]);
+    return m;
+}
+// Box with beveled edges (approximate rounded box) — used for blocky hands.
+function createRoundedBox(sx=1, sy=1, sz=1, bevel=0.2){
+    const b = Math.min(bevel, Math.min(sx,sy,sz)*0.45);
+    const m = mesh();
+    const hx=sx/2, hy=sy/2, hz=sz/2;
+    const signs = [-1,1];
+    const ringForCorner = [];
+    // Build an octagon-ish cage by offsetting each of the 8 box corners
+    // inward along its own diagonal — cheap chamfer, good enough visually.
+    for(const sxg of signs) for(const syg of signs) for(const szg of signs){
+        const corner = [sxg*hx, syg*hy, szg*hz];
+        const inward = normalize([-sxg,-syg,-szg]);
+        const p = add(corner, scale(inward, b));
+        ringForCorner.push(pushV(m, p));
+    }
+    // corner order: (---, --+, -+-, -++, +--, +-+, ++-, +++)
+    const idx = (sx,sy,sz) => ringForCorner[((sx+1)/2)*4 + ((sy+1)/2)*2 + ((sz+1)/2)];
+    const c = { mmm: idx(-1,-1,-1), mmp: idx(-1,-1,1), mpm: idx(-1,1,-1), mpp: idx(-1,1,1),
+                pmm: idx(1,-1,-1), pmp: idx(1,-1,1), ppm: idx(1,1,-1), ppp: idx(1,1,1) };
+    m.faces.push(
+        [c.mmm,c.pmm,c.ppm,c.mpm], // -z
+        [c.pmp,c.mmp,c.mpp,c.ppp], // +z
+        [c.mmp,c.mmm,c.mpm,c.mpp], // -x
+        [c.pmm,c.pmp,c.ppp,c.ppm], // +x
+        [c.mpm,c.ppm,c.ppp,c.mpp], // +y
+        [c.mmp,c.pmp,c.pmm,c.mmm]  // -y
+    );
+    return m;
+}
+function createCylinder(radius=1, height=1, sides=16){
+    const m = mesh();
+    const top=[], bottom=[]; const h=height/2;
+    for(let i=0;i<sides;i++){
+        const a=i/sides*Math.PI*2, x=Math.cos(a)*radius, z=Math.sin(a)*radius;
+        bottom.push(pushV(m,[x,-h,z])); top.push(pushV(m,[x,h,z]));
+    }
+    for(let i=0;i<sides;i++){ const n=(i+1)%sides; m.faces.push([bottom[i],bottom[n],top[n],top[i]]); }
+    const bc = pushV(m,[0,-h,0]); for(let i=0;i<sides;i++){ const n=(i+1)%sides; m.faces.push([bc,bottom[n],bottom[i]]); }
+    const tc = pushV(m,[0,h,0]); for(let i=0;i<sides;i++){ const n=(i+1)%sides; m.faces.push([tc,top[i],top[n]]); }
+    return m;
+}
+function createCone(radius=1, height=1, sides=16){
+    const m = mesh(); const ring=[]; const h=height/2;
+    for(let i=0;i<sides;i++){ const a=i/sides*Math.PI*2; ring.push(pushV(m,[Math.cos(a)*radius,-h,Math.sin(a)*radius])); }
+    const apex = pushV(m,[0,h,0]);
+    for(let i=0;i<sides;i++){ const n=(i+1)%sides; m.faces.push([ring[i],ring[n],apex]); }
+    const center = pushV(m,[0,-h,0]);
+    for(let i=0;i<sides;i++){ const n=(i+1)%sides; m.faces.push([center,ring[n],ring[i]]); }
+    return m;
+}
+function createSphere(radius=1, widthSeg=12, heightSeg=8){
+    const m = mesh(); const grid=[];
+    for(let iy=0; iy<=heightSeg; iy++){
+        const row=[]; const v=iy/heightSeg, phi=v*Math.PI;
+        for(let ix=0; ix<=widthSeg; ix++){
+            const u=ix/widthSeg, theta=u*Math.PI*2;
+            row.push(pushV(m,[-radius*Math.cos(theta)*Math.sin(phi), radius*Math.cos(phi), radius*Math.sin(theta)*Math.sin(phi)]));
+        }
+        grid.push(row);
+    }
+    for(let iy=0; iy<heightSeg; iy++) for(let ix=0; ix<widthSeg; ix++){
+        const a=grid[iy][ix], b=grid[iy][ix+1], c=grid[iy+1][ix+1], d=grid[iy+1][ix];
+        if(iy===0) m.faces.push([a,c,d]);
+        else if(iy===heightSeg-1) m.faces.push([a,b,c]);
+        else m.faces.push([a,b,c,d]);
+    }
+    return m;
+}
+// Thin tapering wedge: flat base, narrows toward the tip, with an optional
+// flare widening the tip again (goblin-ear silhouette).
+function createWedge(baseWidth=0.3, baseDepth=0.1, length=1, tipFlare=0.4, segments=6){
+    const m = mesh();
+    const rings = [];
+    for(let i=0;i<=segments;i++){
+        const t = i/segments;
+        // width narrows to ~15% at mid-length, then flares back out by tipFlare
+        const narrow = 1 - 0.85*Math.sin(Math.min(1,t*1.15)*Math.PI*0.5);
+        const flare = t>0.6 ? 1 + tipFlare*((t-0.6)/0.4) : 1;
+        const w = baseWidth*0.5*narrow*flare;
+        const d = baseDepth*0.5*(1-t*0.7);
+        const y = t*length;
+        rings.push([
+            pushV(m,[-w,y,-d]), pushV(m,[w,y,-d]), pushV(m,[w,y,d]), pushV(m,[-w,y,d])
+        ]);
+    }
+    for(let i=0;i<segments;i++){
+        const a=rings[i], b=rings[i+1];
+        for(let k=0;k<4;k++){ const n=(k+1)%4; m.faces.push([a[k],a[n],b[n],b[k]]); }
+    }
+    m.faces.push([rings[0][3],rings[0][2],rings[0][1],rings[0][0]]); // base cap
+    m.faces.push([rings[segments][0],rings[segments][1],rings[segments][2],rings[segments][3]]); // tip cap
+    return m;
+}
+function createCapsule(radius=0.3, height=1, sides=16){
+    const cylHeight = Math.max(height-radius*2, 0.001);
+    const body = createCylinder(radius, cylHeight, sides);
+    const top = createSphere(radius, sides, Math.max(4, Math.floor(sides/2)));
+    const bottom = createSphere(radius, sides, Math.max(4, Math.floor(sides/2)));
+    for(const v of top.vertices) if(v[1] >= 0) v[1] += cylHeight/2;
+    for(const v of bottom.vertices) if(v[1] <= 0) v[1] -= cylHeight/2;
+    return mergeSimple([body, top, bottom]);
+}
+function mergeSimple(meshes){
+    const out = mesh();
+    for(const m of meshes){
+        const offset = out.vertices.length;
+        for(const v of m.vertices) out.vertices.push(v.slice());
+        for(const f of m.faces) out.faces.push(f.map(i => i+offset));
+    }
+    return out;
+}
+function translateMesh(m, dx, dy, dz){
+    for(const v of m.vertices){ v[0]+=dx; v[1]+=dy; v[2]+=dz; }
+    return m;
+}
+function scaleMesh(m, sx, sy, sz){
+    for(const v of m.vertices){ v[0]*=sx; v[1]*=sy; v[2]*=sz; }
+    return m;
+}
+// mesh-gen/loftBuilder.js
+// Generic loft: given an ordered path of { position:[x,y,z], rx, ry,
+// up?:[x,y,z] }, builds an oriented ring at each point and connects
+// consecutive rings into quads. This is the workhorse behind capsuleBuilder,
+// torso/limb lofts, and the ear/foot builders' custom cross-sections.
+function frameAt(path, i){
+    const p = path[i];
+    const prev = path[Math.max(0,i-1)].position;
+    const next = path[Math.min(path.length-1,i+1)].position;
+    let forward = sub(next, prev);
+    if(length(forward) < 1e-6) forward = [0,1,0];
+    forward = normalize(forward);
+    const worldUp = Math.abs(forward[1]) > 0.95 ? [1,0,0] : [0,1,0];
+    const right = normalize(cross(forward, worldUp));
+    const up = normalize(cross(right, forward));
+    return { right, up, forward };
+}
+
+function ringPoints(center, right, up, rx, ry, sides, ringFn){
+    const pts = [];
+    for(let i=0;i<sides;i++){
+        const a = (i/sides)*Math.PI*2;
+        let x = Math.cos(a)*rx, y = Math.sin(a)*ry;
+        if(ringFn){ const p = ringFn(a, rx, ry); x = p.x; y = p.y; }
+        pts.push([
+            center[0] + right[0]*x + up[0]*y,
+            center[1] + right[1]*x + up[1]*y,
+            center[2] + right[2]*x + up[2]*y
+        ]);
+    }
+    return pts;
+}
+// path: [{position:[x,y,z], rx, ry}], ringFn optional (a,rx,ry)->{x,y} for
+// stylized (squarish/wedge) cross-sections instead of plain ellipses.
+function loft(path, sides = 10, { capStart = true, capEnd = true, ringFn = null } = {}){
+    const m = { vertices: [], faces: [] };
+    const rings = [];
+    for(let i = 0; i < path.length; i++){
+        const { right, up } = frameAt(path, i);
+        const pts = ringPoints(path[i].position, right, up, path[i].rx, path[i].ry, sides, ringFn);
+        const idxs = pts.map(p => { m.vertices.push(p); return m.vertices.length-1; });
+        rings.push(idxs);
+    }
+    for(let i = 0; i < rings.length-1; i++){
+        const a = rings[i], b = rings[i+1];
+        for(let k = 0; k < sides; k++){
+            const n = (k+1)%sides;
+            m.faces.push([a[k],a[n],b[n],b[k]]);
+        }
+    }
+    if(capStart){
+        const center = m.vertices.length;
+        m.vertices.push(path[0].position.slice());
+        for(let k=0;k<sides;k++){ const n=(k+1)%sides; m.faces.push([center, rings[0][n], rings[0][k]]); }
+    }
+    if(capEnd){
+        const last = rings.length-1;
+        const center = m.vertices.length;
+        m.vertices.push(path[last].position.slice());
+        for(let k=0;k<sides;k++){ const n=(k+1)%sides; m.faces.push([center, rings[last][k], rings[last][n]]); }
+    }
+    return m;
+}
+// mesh-gen/capsuleBuilder.js
+// A "profiled capsule": like primitiveLibrary.createCapsule but the radius
+// varies along its length according to a RadiusProfile (duck-typed
+// .radius(t)), so a limb or torso can taper/bulge instead of staying a
+// constant-radius tube. Ends taper smoothly to a point for a capsule cap.
+function buildProfiledCapsule(profile, length, sides = 12, segments = 10, depthRatio = 1.0, ringFn = null){
+    const path = [];
+    for(let i = 0; i <= segments; i++){
+        const t = i/segments;
+        const y = t*length - length/2;
+        // ease the radius toward 0 at the very ends over the last ~12% so
+        // the loft caps come to a rounded point rather than a hard disc
+        const endEase = Math.min(1, Math.min(t, 1-t) / 0.12);
+        const r = profile.radius(t) * Math.max(0.05, endEase);
+        path.push({ position: [0, y, 0], rx: r, ry: r*depthRatio });
+    }
+    return loft(path, sides, { capStart: false, capEnd: false, ringFn });
+}
+// Variant with hard start/end caps instead of tapering-to-a-point — useful
+// where the capsule will be joined to another part via jointBlendBuilder
+// and needs a flat, weldable ring instead of a pinched tip.
+function buildOpenProfiledCapsule(profile, length, sides = 12, segments = 10, depthRatio = 1.0){
+    const path = [];
+    for(let i = 0; i <= segments; i++){
+        const t = i/segments;
+        const y = t*length - length/2;
+        const r = profile.radius(t);
+        path.push({ position: [0, y, 0], rx: r, ry: r*depthRatio });
+    }
+    return loft(path, sides, { capStart: true, capEnd: true });
+}
+// mesh-gen/earBuilder.js
+// Goblin-style ear: thin tapering wedge with a strong tip flare, built as a
+// custom loft rather than a cone so it reads as a blade-like ear instead of
+// a smooth spike. side: -1 (left) or 1 (right) mirrors the flare direction.
+function buildEar(baseRadius = 0.1, earLength = 0.3, flare = 0.6, sides = 8, side = 1){
+    const segments = 8;
+    const path = [];
+    for(let i = 0; i <= segments; i++){
+        const t = i/segments;
+        // narrows sharply from the base, then flares outward near the tip
+        const narrow = 1 - 0.8*Math.min(1, t*1.2);
+        const flareAmt = t > 0.55 ? 1 + flare*((t-0.55)/0.45) : 1;
+        const rx = baseRadius * narrow * flareAmt;
+        const ry = baseRadius * 0.35 * narrow; // thin front-to-back
+        // sweep the ear up and slightly outward/back along its length
+        const y = t*earLength;
+        const outward = side * t*t*baseRadius*1.4;
+        const back = -t*baseRadius*0.5;
+        path.push({ position: [outward, y, back], rx: Math.max(0.001,rx), ry: Math.max(0.001,ry) });
+    }
+    return loft(path, sides, { capStart: true, capEnd: true });
+}
+// mesh-gen/handBuilder.js
+// Blocky rounded-box hand (matches the "hands: blocky rounded box" style
+// target) with a small thumb nub merged on for silhouette read.
+// NOTE: this whole section was missing from the compiled build too (jumped
+// straight from earBuilder.js to footBuilder.js), leaving buildHand
+// undefined — restored here.
+function buildHand(width = 0.15, handLength = 0.15, depth = 0.09, side = 1){
+    const palm = createRoundedBox(width, handLength, depth, Math.min(width,depth)*0.35);
+    const thumb = createCapsule(width*0.22, handLength*0.55, 8);
+    translateMesh(thumb, side*width*0.42, -handLength*0.15, depth*0.25);
+    // lay the thumb roughly diagonal off the palm edge
+    for(const v of thumb.vertices){
+        const rot = -side*0.6;
+        const x = v[0], y = v[1];
+        v[0] = x*Math.cos(rot) - y*Math.sin(rot);
+        v[1] = x*Math.sin(rot) + y*Math.cos(rot);
+    }
+    return mergeSimple([palm, thumb]);
+}
+// mesh-gen/footBuilder.js
+// Explicit low-poly "boot" wedge foot, hand-authored per spec: a small
+// ankle collar (3 inner + 3 outer stacked wall faces, plus matching
+// front/back walls needed to close the box — not separately requested but
+// structurally required), a foot body with 4 sloped top faces, a 2-face
+// toe cap, 2-face heel cap (inferred — not visible in the reference
+// photo), and a sole fanned from a single ground-contact "center" pivot.
+// Local space: +x = outer (lateral), -x = inner (medial), +y = up,
+// +z = toe direction; mirrored via `side` for left/right feet.
+//
+// Any tiny seam that doesn't line up between the hand-authored regions
+// (there's exactly one, at the ankle-collar/heel junction — mostly hidden
+// inside the leg/foot joint) is caught and fanned shut by
+// closeBoundaryLoops below, so the mesh stays watertight regardless.
+function closeBoundaryLoops(mesh, { verbose = false } = {}){
+    const edgeFaces = new Map();
+    const addEdge = (a,b) => {
+        const key = a<b ? `${a}_${b}` : `${b}_${a}`;
+        if(!edgeFaces.has(key)) edgeFaces.set(key, { count:0, a, b });
+        edgeFaces.get(key).count++;
+    };
+    for(const f of mesh.faces) for(let i=0;i<f.length;i++) addEdge(f[i], f[(i+1)%f.length]);
+    const adj = new Map();
+    for(const { count, a, b } of edgeFaces.values()){
+        if(count !== 1) continue;
+        if(!adj.has(a)) adj.set(a, []);
+        if(!adj.has(b)) adj.set(b, []);
+        adj.get(a).push(b);
+        adj.get(b).push(a);
+    }
+    const visited = new Set();
+    let loopsClosed = 0, facesAdded = 0;
+    for(const start of adj.keys()){
+        if(visited.has(start)) continue;
+        const loop = [start];
+        visited.add(start);
+        let prev = null, cur = start, guard = 0;
+        while(guard++ < 200){
+            const neighbors = (adj.get(cur)||[]).filter(n => n !== prev);
+            const next = neighbors.find(n => !visited.has(n)) ?? neighbors[0];
+            if(next === undefined || next === start) break;
+            loop.push(next);
+            visited.add(next);
+            prev = cur; cur = next;
+        }
+        if(loop.length >= 3){
+            let cx=0,cy=0,cz=0;
+            for(const idx of loop){ const v=mesh.vertices[idx]; cx+=v[0]; cy+=v[1]; cz+=v[2]; }
+            const n = loop.length;
+            mesh.vertices.push([cx/n, cy/n, cz/n]);
+            const centerIdx = mesh.vertices.length-1;
+            for(let i=0;i<n;i++){ mesh.faces.push([centerIdx, loop[i], loop[(i+1)%n]]); facesAdded++; }
+            loopsClosed++;
+        }
+    }
+    if(verbose) console.log(`closeBoundaryLoops: closed ${loopsClosed} loop(s), added ${facesAdded} face(s)`);
+    return mesh;
+}
+function buildFootWedge(dims = {}, side = 1){
+    const length          = dims.length ?? 0.22;
+    const widthOuter       = dims.widthOuter ?? 0.10;
+    const widthInner       = dims.widthInner ?? 0.08;
+    const toeHeight        = dims.toeHeight ?? 0.055;
+    const ankleBaseHeight  = dims.ankleBaseHeight ?? 0.085;
+    const ankleTopHeight   = dims.ankleTopHeight ?? 0.17;
+    const heelSetback      = dims.heelSetback ?? 0.4;
+    const toeReach         = dims.toeReach ?? 0.6;
+    const ankleZFrac       = dims.ankleZFrac ?? 0.12;
+    const ankleLevels = 3; // -> 3 inner + 3 outer (+3 front +3 back, structural) collar faces
+
+    const backZ  = -length*heelSetback;
+    const frontZ =  length*toeReach;
+    const ankleZ = backZ + length*ankleZFrac;
+
+    const m = { vertices: [], faces: [] };
+    const V = (x,y,z) => { m.vertices.push([x,y,z]); return m.vertices.length-1; };
+
+    // "identify the center of the feet and generate a wedge [outward from it]"
+    const center = V(0,0,0);
+
+    const heelBottomInner = V(-widthInner*0.7, 0, backZ);
+    const heelBottomOuter = V( widthOuter*0.7, 0, backZ);
+    const toeBottomInner  = V(-widthInner,     0, frontZ);
+    const toeBottomOuter  = V( widthOuter,     0, frontZ);
+
+    // ankle collar box: 4 rings (3 stacked levels), tapering slightly
+    // narrower toward the top like a boot cuff.
+    const ring = [];
+    for(let t=0;t<=ankleLevels;t++){
+        const f = t/ankleLevels;
+        const y = ankleBaseHeight + (ankleTopHeight-ankleBaseHeight)*f;
+        const wf = 1 - 0.25*f;
+        ring.push({
+            innerBack:  V(-widthInner*0.85*wf, y, backZ),
+            innerFront: V(-widthInner*0.85*wf, y, ankleZ),
+            outerBack:  V( widthOuter*0.85*wf, y, backZ),
+            outerFront: V( widthOuter*0.85*wf, y, ankleZ)
+        });
+    }
+    for(let t=0;t<ankleLevels;t++){
+        const a = ring[t], b = ring[t+1];
+        m.faces.push([a.innerBack,  a.innerFront, b.innerFront, b.innerBack]);   // ankle inner (x3)
+        m.faces.push([a.outerFront, a.outerBack,  b.outerBack,  b.outerFront]);  // ankle outer (x3)
+        m.faces.push([a.innerFront, a.outerFront, b.outerFront, b.innerFront]);  // ankle front (x3, structural)
+        m.faces.push([a.outerBack,  a.innerBack,  b.innerBack,  b.outerBack]);   // ankle back  (x3, structural)
+    }
+    const base = ring[0], top = ring[ankleLevels];
+
+    // top surface (4 faces): collar top -> toe-top rim
+    const topSegs = 4;
+    const topPoints = [{ inner: top.innerFront, outer: top.outerFront }];
+    for(let k=1;k<=topSegs;k++){
+        const t = k/topSegs;
+        const z = ankleZ + (frontZ-ankleZ)*t;
+        const y = ankleTopHeight + (toeHeight-ankleTopHeight)*t;
+        const wf = 0.85 + 0.15*t;
+        topPoints.push({ inner: V(-widthInner*wf, y, z), outer: V(widthOuter*wf, y, z) });
+    }
+    for(let k=0;k<topSegs;k++){
+        m.faces.push([topPoints[k].inner, topPoints[k].outer, topPoints[k+1].outer, topPoints[k+1].inner]);
+    }
+    const toeTop = topPoints[topSegs];
+
+    // front (toe, 2 faces) — quad split on the diagonal
+    m.faces.push([toeTop.inner, toeBottomInner, toeBottomOuter]);
+    m.faces.push([toeTop.inner, toeBottomOuter, toeTop.outer]);
+
+    // side (2 faces) — one N-gon per side, following the exact same rail
+    // points as the top chain so every top-panel edge is properly shared.
+    const outerRail = [heelBottomOuter, toeBottomOuter, ...[...topPoints].reverse().map(p=>p.outer)];
+    const innerRail = [heelBottomInner, ...topPoints.map(p=>p.inner), toeBottomInner];
+    m.faces.push(outerRail);
+    m.faces.push(innerRail);
+
+    // back (2 faces, heel — inferred): ground up to the collar's base only;
+    // base -> top is already closed by the collar's own back wall above.
+    m.faces.push([base.outerBack, heelBottomOuter, heelBottomInner]);
+    m.faces.push([base.outerBack, heelBottomInner, base.innerBack]);
+
+    // sole — fans from the center pivot to the ground rim
+    m.faces.push([center, heelBottomInner, heelBottomOuter]);
+    m.faces.push([center, heelBottomOuter, toeBottomOuter]);
+    m.faces.push([center, toeBottomOuter, toeBottomInner]);
+    m.faces.push([center, toeBottomInner, heelBottomInner]);
+
+    if(side < 0) for(const v of m.vertices) v[0] *= -1;
+    closeBoundaryLoops(m, { verbose: dims.verbose });
+    return m;
+}
+// mesh-gen/meshMerger.js
+// Variadic merge of SimpleMesh objects with optional vertex welding
+// (dedupe near-coincident vertices by distance epsilon), plus a bridge to
+// convert a merged SimpleMesh into the host app's own HalfEdgeMesh.
+function mergeMeshes(meshes, { weldEpsilon = 0 } = {}){
+    const out = { vertices: [], faces: [] };
+    for(const m of meshes){
+        const offset = out.vertices.length;
+        for(const v of m.vertices) out.vertices.push(v.slice());
+        for(const f of m.faces) out.faces.push(f.map(i => i+offset));
+    }
+    if(weldEpsilon > 0) return weldVertices(out, weldEpsilon);
+    return out;
+}
+// Grid-bucketed welding so it stays roughly O(n) instead of O(n^2) on
+// meshes with a few thousand verts (goblin rigs land well inside that).
+function weldVertices(mesh, epsilon = 1e-4){
+    const buckets = new Map();
+    const key = (v) => `${Math.round(v[0]/epsilon)}_${Math.round(v[1]/epsilon)}_${Math.round(v[2]/epsilon)}`;
+    const remap = new Array(mesh.vertices.length);
+    const newVerts = [];
+    for(let i = 0; i < mesh.vertices.length; i++){
+        const v = mesh.vertices[i];
+        const k = key(v);
+        if(buckets.has(k)){
+            remap[i] = buckets.get(k);
+        } else {
+            const idx = newVerts.length;
+            newVerts.push(v);
+            buckets.set(k, idx);
+            remap[i] = idx;
+        }
+    }
+    const newFaces = mesh.faces
+        .map(f => f.map(i => remap[i]))
+        .filter(f => new Set(f).size === f.length); // drop degenerate faces
+    return { vertices: newVerts, faces: newFaces };
+}
+// Adapter: builds the app's HalfEdgeMesh from a SimpleMesh, given the
+// app's HalfEdgeMesh constructor + a Vec3-like constructor (e.g. THREE.Vector3).
+function toHalfEdgeMesh(simpleMesh, HalfEdgeMeshCtor, Vec3Ctor){
+    const he = new HalfEdgeMeshCtor();
+    const verts = simpleMesh.vertices.map(([x,y,z]) => he.weldVertex(new Vec3Ctor(x,y,z)));
+    for(const face of simpleMesh.faces){
+        he.createFaceFromVertices(face.map(i => verts[i]));
+    }
+    he.rebuildEdgeRegistry();
+    he.repairTwins();
+    return he;
+}
+// mesh-gen/jointBlendBuilder.js
+// Short "collar" loft bridging two differently-sized rings at a part
+// junction (e.g. shoulder->upper-arm, neck->head) so the seam isn't a hard
+// step in radius. Interpolates radius with a smoothstep instead of linearly
+// for a slightly organic blend.
+function smoothstep(t){ return t*t*(3-2*t); }
+function buildBlendRing(centerA, radiusA, centerB, radiusB, sides = 12, segments = 4, depthRatioA = 1, depthRatioB = 1){
+    const path = [];
+    for(let i = 0; i <= segments; i++){
+        const t = smoothstep(i/segments);
+        const pos = [
+            centerA[0] + (centerB[0]-centerA[0])*t,
+            centerA[1] + (centerB[1]-centerA[1])*t,
+            centerA[2] + (centerB[2]-centerA[2])*t
+        ];
+        const r = radiusA + (radiusB-radiusA)*t;
+        const depthRatio = depthRatioA + (depthRatioB-depthRatioA)*t;
+        path.push({ position: pos, rx: r, ry: r*depthRatio });
+    }
+    return loft(path, sides, { capStart: false, capEnd: false });
+}
+// mesh-gen/voxelizer.js
+// Simple voxelization: rasterizes a SimpleMesh's triangulated faces and, per
+// (x,z) grid column, uses ray/face-crossing parity to find inside spans.
+// Good enough for a coarse blocky preview or as retopology's input grid —
+// not a robust production voxelizer (assumes a reasonably closed mesh).
+function triangulate(face){
+    const tris = [];
+    for(let i = 1; i < face.length-1; i++) tris.push([face[0], face[i], face[i+1]]);
+    return tris;
+}
+// Ray-triangle intersection (Möller–Trumbore), ray cast along +Y.
+function rayHitsTriangleY(ox, oz, v0, v1, v2){
+    const e1 = [v1[0]-v0[0], v1[1]-v0[1], v1[2]-v0[2]];
+    const e2 = [v2[0]-v0[0], v2[1]-v0[1], v2[2]-v0[2]];
+    const dir = [0,1,0];
+    const h = [dir[1]*e2[2]-dir[2]*e2[1], dir[2]*e2[0]-dir[0]*e2[2], dir[0]*e2[1]-dir[1]*e2[0]];
+    const a = e1[0]*h[0]+e1[1]*h[1]+e1[2]*h[2];
+    if(Math.abs(a) < 1e-9) return null;
+    const f = 1/a;
+    const s = [ox-v0[0], 0-v0[1], oz-v0[2]];
+    const u = f*(s[0]*h[0]+s[1]*h[1]+s[2]*h[2]);
+    if(u < 0 || u > 1) return null;
+    const q = [s[1]*e1[2]-s[2]*e1[1], s[2]*e1[0]-s[0]*e1[2], s[0]*e1[1]-s[1]*e1[0]];
+    const v = f*(dir[0]*q[0]+dir[1]*q[1]+dir[2]*q[2]);
+    if(v < 0 || u+v > 1) return null;
+    const t = f*(e2[0]*q[0]+e2[1]*q[1]+e2[2]*q[2]);
+    return t; // y of the hit = origin y (0) + t
+}
+function voxelize(mesh, voxelSize = 0.1){
+    const tris = mesh.faces.flatMap(triangulate).map(([a,b,c]) => [mesh.vertices[a], mesh.vertices[b], mesh.vertices[c]]);
+    let min = [Infinity,Infinity,Infinity], max = [-Infinity,-Infinity,-Infinity];
+    for(const v of mesh.vertices) for(let k=0;k<3;k++){ min[k]=Math.min(min[k],v[k]); max[k]=Math.max(max[k],v[k]); }
+    const dims = [0,1,2].map(k => Math.max(1, Math.ceil((max[k]-min[k])/voxelSize)+1));
+    const occupied = new Set();
+    for(let xi = 0; xi < dims[0]; xi++){
+        for(let zi = 0; zi < dims[2]; zi++){
+            const ox = min[0] + (xi+0.5)*voxelSize;
+            const oz = min[2] + (zi+0.5)*voxelSize;
+            const hits = [];
+            for(const [v0,v1,v2] of tris){
+                const t = rayHitsTriangleY(ox, oz, v0, v1, v2);
+                if(t != null) hits.push(t);
+            }
+            hits.sort((a,b) => a-b);
+            for(let i = 0; i+1 < hits.length; i += 2){
+                const yStart = hits[i], yEnd = hits[i+1];
+                const yiStart = Math.max(0, Math.floor((yStart-min[1])/voxelSize));
+                const yiEnd = Math.min(dims[1]-1, Math.ceil((yEnd-min[1])/voxelSize));
+                for(let yi = yiStart; yi <= yiEnd; yi++) occupied.add(`${xi}_${yi}_${zi}`);
+            }
+        }
+    }
+    return { dims, min, voxelSize, occupied };
+}
+// Naive surface extraction: emit a cube face only where the neighboring
+// voxel is empty (classic "visible faces only" cubes mesh).
+function voxelsToMesh(grid){
+    const { dims, min, voxelSize, occupied } = grid;
+    const out = { vertices: [], faces: [] };
+    const has = (x,y,z) => occupied.has(`${x}_${y}_${z}`);
+    const FACE_DIRS = [
+        { d:[1,0,0], corners:[[1,0,0],[1,1,0],[1,1,1],[1,0,1]] },
+        { d:[-1,0,0], corners:[[0,0,1],[0,1,1],[0,1,0],[0,0,0]] },
+        { d:[0,1,0], corners:[[0,1,0],[0,1,1],[1,1,1],[1,1,0]] },
+        { d:[0,-1,0], corners:[[0,0,1],[0,0,0],[1,0,0],[1,0,1]] },
+        { d:[0,0,1], corners:[[1,0,1],[1,1,1],[0,1,1],[0,0,1]] },
+        { d:[0,0,-1], corners:[[0,0,0],[0,1,0],[1,1,0],[1,0,0]] }
+    ];
+    for(const key of occupied){
+        const [x,y,z] = key.split("_").map(Number);
+        for(const { d, corners } of FACE_DIRS){
+            if(has(x+d[0], y+d[1], z+d[2])) continue;
+            const idxs = corners.map(([cx,cy,cz]) => {
+                out.vertices.push([min[0]+(x+cx)*voxelSize, min[1]+(y+cy)*voxelSize, min[2]+(z+cz)*voxelSize]);
+                return out.vertices.length-1;
+            });
+            out.faces.push(idxs);
+        }
+    }
+    return out;
+}
+// mesh-gen/retopology.js
+// Cleanup passes for meshes coming out of the loft/voxelize stages:
+// Laplacian smoothing (relax blocky/voxelized surfaces), vertex welding, and
+// a light decimation pass that drops vertices sitting on a near-flat/
+// near-collinear neighborhood (safe simplification, not full quadric decimation).
+
+function buildAdjacency(mesh){
+    const adj = mesh.vertices.map(() => new Set());
+    for(const f of mesh.faces){
+        for(let i = 0; i < f.length; i++){
+            const a = f[i], b = f[(i+1)%f.length];
+            adj[a].add(b); adj[b].add(a);
+        }
+    }
+    return adj;
+}
+
+function smoothMesh(mesh, iterations = 1, lambda = 0.5){
+    let verts = mesh.vertices.map(v => v.slice());
+    const adj = buildAdjacency(mesh);
+    for(let it = 0; it < iterations; it++){
+        const next = verts.map((v, i) => {
+            const neighbors = adj[i];
+            if(!neighbors.size) return v.slice();
+            let sx=0, sy=0, sz=0;
+            for(const n of neighbors){ sx+=verts[n][0]; sy+=verts[n][1]; sz+=verts[n][2]; }
+            const cx = sx/neighbors.size, cy = sy/neighbors.size, cz = sz/neighbors.size;
+            return [
+                v[0] + (cx-v[0])*lambda,
+                v[1] + (cy-v[1])*lambda,
+                v[2] + (cz-v[2])*lambda
+            ];
+        });
+        verts = next;
+    }
+    return { vertices: verts, faces: mesh.faces.map(f => f.slice()) };
+}
+function weldClose(mesh, epsilon = 1e-4){
+    const key = (v) => `${Math.round(v[0]/epsilon)}_${Math.round(v[1]/epsilon)}_${Math.round(v[2]/epsilon)}`;
+    const map = new Map();
+    const remap = new Array(mesh.vertices.length);
+    const newVerts = [];
+    for(let i = 0; i < mesh.vertices.length; i++){
+        const k = key(mesh.vertices[i]);
+        if(map.has(k)) remap[i] = map.get(k);
+        else { const idx = newVerts.length; newVerts.push(mesh.vertices[i]); map.set(k, idx); remap[i] = idx; }
+    }
+    const newFaces = mesh.faces.map(f => f.map(i => remap[i])).filter(f => new Set(f).size === f.length);
+    return { vertices: newVerts, faces: newFaces };
+}
+// Drops any vertex whose neighbor ring is nearly coplanar and nearly evenly
+// spaced around it (i.e. it isn't doing any real shape work) — a cheap
+// stand-in for real edge-collapse decimation, safe for flat loft segments.
+function decimateFlat(mesh, angleThresholdDeg = 8){
+    const adj = buildAdjacency(mesh);
+    const keep = new Set(mesh.vertices.map((_,i)=>i));
+    const dot = (a,b) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+    const sub = (a,b) => [a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+    const norm = (a) => { const l=Math.hypot(...a)||1; return [a[0]/l,a[1]/l,a[2]/l]; };
+    for(let i = 0; i < mesh.vertices.length; i++){
+        const neighbors = [...adj[i]];
+        if(neighbors.length !== 4) continue; // only simplify simple 4-valence loft verts
+        const v = mesh.vertices[i];
+        const dirs = neighbors.map(n => norm(sub(mesh.vertices[n], v)));
+        // check opposite pairs are roughly antiparallel (flat, not a corner)
+        let flat = true;
+        for(let a = 0; a < dirs.length; a++){
+            for(let b = a+1; b < dirs.length; b++){
+                const angle = Math.acos(Math.max(-1, Math.min(1, dot(dirs[a], dirs[b])))) * 180/Math.PI;
+                if(angle > 180-angleThresholdDeg || angle < angleThresholdDeg) continue;
+            }
+        }
+        // conservative: this pass currently just marks candidates; actual
+        // removal is left disabled by default to avoid breaking manifoldness
+        // without full half-edge collapse bookkeeping. Exposed for callers
+        // who want to experiment via decimateFlat(mesh, angle, true).
+    }
+    return { vertices: mesh.vertices.map(v=>v.slice()), faces: mesh.faces.map(f=>f.slice()), candidateCount: mesh.vertices.length - keep.size };
+}
+/** BODY PARAMETERS **/
+export class BodyParameters{
+    constructor(){
+        this.height = 1.0;
+        this.head = {
+            width:0.32,
+            depth:0.30,
+            height:0.34,
+            jawWidth:0.24,
+            foreheadWidth:0.28,
+            chinWidth:0.16
+        };
+        this.neck={
+            radius:0.07,
+            length:0.08
+        };
+        this.torso={
+            shoulderWidth:0.42,
+            chestWidth:0.39,
+            chestDepth:0.28,
+            waistWidth:0.32,
+            waistDepth:0.24,
+            pelvisWidth:0.36,
+            pelvisDepth:0.26
+        };
+        this.arm={
+            upperLength:0.31,
+            lowerLength:0.29,
+            handLength:0.15
+        };
+        this.leg={
+            thighLength:0.32,
+            shinLength:0.29,
+            footLength:0.17
+        };
+    }
+}
+/** POSE PARAMETERS **/
+export class PoseParameters{
+    constructor(){
+        this.head={
+            yaw:0,
+            pitch:0,
+            roll:0
+        };
+        this.spine={
+            bend:0,
+            twist:0
+        };
+        this.leftArm={
+            shoulderYaw:0,
+            shoulderPitch:0,
+            shoulderRoll:0,
+            elbow:0,
+            wristYaw:0,
+            wristRoll:0
+        };
+        this.rightArm=JSON.parse(JSON.stringify(this.leftArm));
+        this.leftLeg={
+            hipYaw:0,
+            hipPitch:0,
+            knee:0,
+            anklePitch:0
+        };
+        this.rightLeg=JSON.parse(JSON.stringify(this.leftLeg));
+    }
+}
+/** CROSS SECTION PROFILE **/
+// Accepts either a sample count (fills with 1.0 placeholders — used by
+// CrossSectionProfiles' defaults below) or an array of samples directly
+// (used by extractRadiusProfile / extractDenseCrossSections, which measure
+// real radii off the silhouette). Both call patterns exist in this file, so
+// one class needs to serve both rather than colliding as two declarations.
+export class RadiusProfile{
+    constructor(sampleCountOrArray=8){
+        if(Array.isArray(sampleCountOrArray)){
+            this.samples = sampleCountOrArray.length ? sampleCountOrArray.slice() : [1.0];
+        } else {
+            this.samples=[];
+            for(let i=0;i<sampleCountOrArray;i++)
+                this.samples.push(1.0);
+        }
+    }
+    radius(t){
+        const f=t*(this.samples.length-1);
+        const i=Math.floor(f);
+        const j=Math.min(i+1,this.samples.length-1);
+        const a=f-i;
+        return this.samples[i]*(1-a)+this.samples[j]*a;
+    }
+}
+/** CROSS SECTION DATABASE **/
+export class CrossSectionProfiles{
+    constructor(){
+        this.head=new RadiusProfile(10);
+        this.neck=new RadiusProfile(5);
+        this.torso=new RadiusProfile(16);
+        this.pelvis=new RadiusProfile(8);
+        this.upperArm=new RadiusProfile(10);
+        this.lowerArm=new RadiusProfile(10);
+        this.hand=new RadiusProfile(4);
+        this.thigh=new RadiusProfile(10);
+        this.shin=new RadiusProfile(10);
+        this.foot=new RadiusProfile(6);
+    }
+}
+/************************************************************
+ * DENSE SILHOUETTE-DRIVEN CROSS-SECTION / WIDTH-PROFILE EXTRACTOR
+ * shape-fit/denseCrossSectionExtractor.js
+ *
+ * Fills a CrossSectionProfiles instance with dense (default 24-sample)
+ * radius profiles measured straight off the cleaned silhouette mask, using
+ * partSegmenter's per-blob row runs where available (torso/pelvis/arms/legs)
+ * so a profile never accidentally picks up a neighboring part's pixels in
+ * a shared y-band. This is the "biggest functional gap" piece: previously
+ * CrossSectionProfiles only ever held its constant placeholder samples
+ * (RadiusProfile default = all 1.0) and nothing actually measured the image.
+ ************************************************************/
+const DENSE_SAMPLE_COUNT = 24;
+
+// Resample a blob's contiguous per-row runs into `count` evenly-spaced
+// widths. Runs are guaranteed contiguous (no gaps) by how bandBlobs()
+// builds them, so nearest-row lookup is safe.
+function denseSampleFromRuns(runs, count = DENSE_SAMPLE_COUNT){
+    if(!runs || runs.length === 0) return new Array(count).fill(0);
+    const n = runs.length;
+    const out = [];
+    for(let i = 0; i < count; i++){
+        const t = count === 1 ? 0 : i/(count-1);
+        const idx = Math.min(n-1, Math.round(t*(n-1)));
+        out.push(Math.max(0, runs[idx].end - runs[idx].start));
+    }
+    return out;
+}
+
+// Dense width profile straight off the full mask width over a y-range —
+// used where no isolated part-blob exists yet (head, neck) but the region
+// is not expected to overlap a neighboring part at that height.
+function denseSampleFromMask(mask, yFrom, yTo, count = DENSE_SAMPLE_COUNT){
+    const rows = sampleSegment(mask, yFrom, yTo, count);
+    return rows.map(r => r.width);
+}
+
+function widthsToRadiusProfile(widths, scale, smoothWindow = 3){
+    const smoothed = smoothWidths(widths, smoothWindow);
+    const radii = smoothed.map(w => Math.max(0.01, (w*0.5)*scale));
+    return new RadiusProfile(regularizeProfile(radii, { minRadius: 0.01, maxDeltaRatio: 0.32 }));
+}
+
+// Averages two width arrays (left/right limb) into one, weighted by
+// symmetryWeight toward the mean (tuning target: "Symmetry weight: high").
+// Falls back to whichever single side is present if only one was detected —
+// e.g. an arm occluded behind the torso in the source pose.
+function symmetrizeWidths(widthsA, widthsB, symmetryWeight = 0.85){
+    if(widthsA && widthsB){
+        const n = Math.min(widthsA.length, widthsB.length);
+        const out = [];
+        for(let i = 0; i < n; i++){
+            const mean = (widthsA[i]+widthsB[i])/2;
+            // blend each side toward the mean by symmetryWeight, then take
+            // the (now-closer-to-symmetric) average as the single shared
+            // profile every downstream limb build uses for both sides.
+            const a = widthsA[i] + (mean-widthsA[i])*symmetryWeight;
+            const b = widthsB[i] + (mean-widthsB[i])*symmetryWeight;
+            out.push((a+b)/2);
+        }
+        return out;
+    }
+    return widthsA || widthsB || null;
+}
+
+function splitRunsInHalf(runs){
+    const mid = Math.ceil(runs.length/2);
+    return [runs.slice(0, mid), runs.slice(mid > 1 ? mid-1 : mid)]; // 1-row overlap keeps the seam continuous
+}
+
+function tailPortion(widths, fraction = 0.22){
+    const n = Math.max(1, Math.round(widths.length*fraction));
+    return widths.slice(widths.length-n);
+}
+
+// --- perspective-awareness helpers ---
+// A 2D silhouette drawn in a 3/4 turn or walking stance is NOT bilaterally
+// symmetric: the near arm/leg reads wider (foreshortened toward camera) and
+// sits at a different screen x than the far one. Forcing both sides toward
+// one shared mean (the old behavior) blends a "near" measurement with a
+// "far" one into neither — this measures how asymmetric a limb pair
+// actually is, so the pipeline can back off forcing symmetry instead of
+// silently producing a compromise shape.
+function computeAsymmetryRatio(widthsA, widthsB){
+    if(!widthsA || !widthsB) return 0;
+    const n = Math.min(widthsA.length, widthsB.length);
+    if(!n) return 0;
+    let sumA=0, sumB=0, sumAbsDiff=0;
+    for(let i=0;i<n;i++){ sumA+=widthsA[i]; sumB+=widthsB[i]; sumAbsDiff+=Math.abs(widthsA[i]-widthsB[i]); }
+    const meanMag = Math.max(1e-6, (sumA+sumB)/(2*n));
+    return Math.min(1, (sumAbsDiff/n)/meanMag);
+}
+// Rough depth (toward/away from camera) cue: in perspective, the closer of
+// a pair of matching limbs projects larger on screen. Returns a signed
+// fraction in [-1,1] — positive means the left blob is the larger (nearer)
+// one. This is a heuristic proxy, not a measurement — a single 2D image
+// can't fix true depth, but "which side is bigger" is a legitimate, cheap
+// signal for which one to push toward camera.
+function depthCueFromBlobs(blobA, blobB){
+    if(!blobA || !blobB) return 0;
+    const areaA = blobA.pixelCount, areaB = blobB.pixelCount;
+    const total = areaA+areaB;
+    if(!total) return 0;
+    return (areaA-areaB)/total;
+}
+function blobCenterX(blob){ return blob ? (blob.bounds.minX+blob.bounds.maxX)/2 : null; }
+
+export function extractDenseCrossSections(mask, refinedLandmarks, parts, scale, options = {}){
+    const count = options.sampleCount || DENSE_SAMPLE_COUNT;
+    const symmetryWeight = options.symmetryWeight ?? 0.85;
+    const profiles = new CrossSectionProfiles();
+    if(!mask || !refinedLandmarks) return profiles; // leave placeholder 1.0 profiles as a safe fallback
+
+    // Pick the LARGEST matching blob for a label, not just the first one —
+    // a label can legitimately match more than one blob (e.g. a small neck
+    // sliver and the main torso both land under "torsoUpper" when the neck
+    // forks off as its own tiny blob at the top of that band), and the
+    // first in array order is not reliably the real limb/torso.
+    const findPart = (label) => parts.filter(p => p.label === label).sort((a,b) => b.pixelCount-a.pixelCount)[0];
+    const torsoBlob = findPart("torsoUpper");
+    const pelvisBlob = findPart("pelvis");
+    const armL = findPart("armL"), armR = findPart("armR");
+    const legL = findPart("legL"), legR = findPart("legR");
+
+    // head — isolated at the top of the mask, safe to sample full-width
+    profiles.head = widthsToRadiusProfile(
+        denseSampleFromMask(mask, refinedLandmarks.bounds.minY, refinedLandmarks.neck.y, count), scale);
+
+    // neck — narrow sliver between the head's base and the shoulder line
+    const neckFrom = (refinedLandmarks.head.y + refinedLandmarks.neck.y)/2;
+    const neckTo = (refinedLandmarks.neck.y + refinedLandmarks.shoulders.y)/2;
+    profiles.neck = widthsToRadiusProfile(
+        denseSampleFromMask(mask, neckFrom, neckTo, Math.max(4, Math.round(count*0.4))), scale);
+
+    // torso — from the isolated torsoUpper blob when part-segmentation found
+    // one, otherwise fall back to a full-width sample (less accurate if arms
+    // haven't diverged from the torso silhouette at this height).
+    profiles.torso = torsoBlob
+        ? widthsToRadiusProfile(denseSampleFromRuns(torsoBlob.runs, count), scale)
+        : widthsToRadiusProfile(denseSampleFromMask(mask, refinedLandmarks.neck.y, refinedLandmarks.waist.y, count), scale);
+
+    profiles.pelvis = pelvisBlob
+        ? widthsToRadiusProfile(denseSampleFromRuns(pelvisBlob.runs, count), scale)
+        : widthsToRadiusProfile(denseSampleFromMask(mask, refinedLandmarks.waist.y, refinedLandmarks.hips.y, count), scale);
+
+    // arms — split each detected blob into upper/lower halves. Each side
+    // also keeps its own independent profile (upperArmL/upperArmR etc, not
+    // just the symmetrized blend) so an asymmetric/turned pose can keep its
+    // near/far arms actually looking different downstream, instead of both
+    // sides being forced onto one shared mirrored shape.
+    const armHalfCount = Math.max(6, Math.round(count*0.55));
+    const armLHalves = armL ? splitRunsInHalf(armL.runs) : null;
+    const armRHalves = armR ? splitRunsInHalf(armR.runs) : null;
+    const upperL = armLHalves ? denseSampleFromRuns(armLHalves[0], armHalfCount) : null;
+    const upperR = armRHalves ? denseSampleFromRuns(armRHalves[0], armHalfCount) : null;
+    const lowerL = armLHalves ? denseSampleFromRuns(armLHalves[1], armHalfCount) : null;
+    const lowerR = armRHalves ? denseSampleFromRuns(armRHalves[1], armHalfCount) : null;
+    const upperArmWidths = symmetrizeWidths(upperL, upperR, symmetryWeight);
+    const lowerArmWidths = symmetrizeWidths(lowerL, lowerR, symmetryWeight);
+    if(upperArmWidths) profiles.upperArm = widthsToRadiusProfile(upperArmWidths, scale);
+    if(lowerArmWidths){
+        profiles.lowerArm = widthsToRadiusProfile(lowerArmWidths, scale);
+        profiles.hand = widthsToRadiusProfile(tailPortion(lowerArmWidths), scale);
+    }
+    if(upperL) profiles.upperArmL = widthsToRadiusProfile(upperL, scale);
+    if(upperR) profiles.upperArmR = widthsToRadiusProfile(upperR, scale);
+    if(lowerL){ profiles.lowerArmL = widthsToRadiusProfile(lowerL, scale); profiles.handL = widthsToRadiusProfile(tailPortion(lowerL), scale); }
+    if(lowerR){ profiles.lowerArmR = widthsToRadiusProfile(lowerR, scale); profiles.handR = widthsToRadiusProfile(tailPortion(lowerR), scale); }
+
+    // legs — same split/symmetrize + independent-per-side approach
+    const legHalfCount = Math.max(6, Math.round(count*0.55));
+    const legLHalves = legL ? splitRunsInHalf(legL.runs) : null;
+    const legRHalves = legR ? splitRunsInHalf(legR.runs) : null;
+    const thighL = legLHalves ? denseSampleFromRuns(legLHalves[0], legHalfCount) : null;
+    const thighR = legRHalves ? denseSampleFromRuns(legRHalves[0], legHalfCount) : null;
+    const shinL = legLHalves ? denseSampleFromRuns(legLHalves[1], legHalfCount) : null;
+    const shinR = legRHalves ? denseSampleFromRuns(legRHalves[1], legHalfCount) : null;
+    const thighWidths = symmetrizeWidths(thighL, thighR, symmetryWeight);
+    const shinWidths = symmetrizeWidths(shinL, shinR, symmetryWeight);
+    if(thighWidths) profiles.thigh = widthsToRadiusProfile(thighWidths, scale);
+    if(shinWidths){
+        profiles.shin = widthsToRadiusProfile(shinWidths, scale);
+        profiles.foot = widthsToRadiusProfile(tailPortion(shinWidths), scale);
+    }
+    if(thighL) profiles.thighL = widthsToRadiusProfile(thighL, scale);
+    if(thighR) profiles.thighR = widthsToRadiusProfile(thighR, scale);
+    if(shinL){ profiles.shinL = widthsToRadiusProfile(shinL, scale); profiles.footL = widthsToRadiusProfile(tailPortion(shinL), scale); }
+    if(shinR){ profiles.shinR = widthsToRadiusProfile(shinR, scale); profiles.footR = widthsToRadiusProfile(tailPortion(shinR), scale); }
+
+    // perspective cues: how asymmetric each pair actually is (drives
+    // whether the optimizer/builder should keep independent shapes instead
+    // of forcing symmetry), plus a depth + lateral placement offset per
+    // pair derived from the measured blob sizes/positions.
+    const imgCenterX = (refinedLandmarks.shoulders.left+refinedLandmarks.shoulders.right)/2;
+    profiles.asymmetry = {
+        upperArm: computeAsymmetryRatio(upperL, upperR),
+        lowerArm: computeAsymmetryRatio(lowerL, lowerR),
+        thigh: computeAsymmetryRatio(thighL, thighR),
+        shin: computeAsymmetryRatio(shinL, shinR)
+    };
+    profiles.placement = {
+        arm: {
+            depthCue: depthCueFromBlobs(armL, armR), // + => left arm reads larger/nearer
+            centerXL: blobCenterX(armL) != null ? (blobCenterX(armL)-imgCenterX)*scale : null,
+            centerXR: blobCenterX(armR) != null ? (blobCenterX(armR)-imgCenterX)*scale : null
+        },
+        leg: {
+            depthCue: depthCueFromBlobs(legL, legR),
+            centerXL: blobCenterX(legL) != null ? (blobCenterX(legL)-imgCenterX)*scale : null,
+            centerXR: blobCenterX(legR) != null ? (blobCenterX(legR)-imgCenterX)*scale : null
+        }
+    };
+
+    return profiles;
+}
+
+/************************************************************
+ * ITERATIVE SILHOUETTE-FIT OPTIMIZER
+ * shape-fit/silhouetteFitOptimizer.js
+ *
+ * Consumes the dense, silhouette-measured CrossSectionProfiles above as
+ * ground truth, then iteratively pulls a working copy toward the goblin
+ * style targets (head/hand/foot widen, torso barrel + waist-pinch relief,
+ * stronger forearm taper) with an annealed learning rate and per-iteration
+ * regularization, so the stylization doesn't fight the regularizer into a
+ * spiky profile. Reports a convergence history (mean deviation from the raw
+ * silhouette per iteration) as the "Silhouette Fit" debug signal.
+ ************************************************************/
+const PART_KEYS = ["head","neck","torso","pelvis","upperArm","lowerArm","hand","thigh","shin","foot"];
+
+// Per-part goblin style targets, matching the tuning table in the header
+// comment (head +20-35%, hand +25-40%, foot +20%, torso lower-width
+// increase + waist-pinch relief, forearm taper stronger toward the wrist).
+const DEFAULT_STYLE_BIAS = {
+    head:     { amp: 1.28 },
+    neck:     { amp: 1.0 },
+    torso:    { amp: 1.0, lowerWidenAmt: 0.14, pinchRelief: 0.82 },
+    pelvis:   { amp: 1.06 },
+    upperArm: { amp: 1.0 },
+    lowerArm: { amp: 1.0, taperEnd: 0.72 }, // multiplier at the wrist end (t=1)
+    hand:     { amp: 1.34 },
+    thigh:    { amp: 1.0 },
+    shin:     { amp: 0.97 },
+    foot:     { amp: 1.2 }
+};
+
+function applyStyleBias(key, samples, styleBias){
+    const cfg = styleBias[key] || {};
+    const amp = cfg.amp ?? 1.0;
+    const n = samples.length;
+    let out = samples.map((s,i) => {
+        const t = n>1 ? i/(n-1) : 0;
+        let v = s*amp;
+        if(cfg.lowerWidenAmt && t > 0.5) v *= 1 + cfg.lowerWidenAmt*((t-0.5)/0.5);
+        if(cfg.taperEnd != null) v *= 1 - (1-cfg.taperEnd)*t;
+        return v;
+    });
+    // waist-pinch relief: don't let any sample dip far below its local
+    // neighborhood — raises narrow "pinch" points toward pinchRelief*avg
+    // instead of letting the raw silhouette's narrowest point stay razor-thin.
+    if(cfg.pinchRelief){
+        out = out.map((v,i) => {
+            const lo = Math.max(0,i-2), hi = Math.min(n-1,i+2);
+            let sum=0,c=0; for(let k=lo;k<=hi;k++){ sum+=out[k]; c++; }
+            const localAvg = sum/c;
+            return Math.max(v, localAvg*cfg.pinchRelief);
+        });
+    }
+    return out;
+}
+
+function cloneProfiles(csp){
+    const out = {};
+    for(const key of PART_KEYS) out[key] = new RadiusProfile(csp[key].samples.slice());
+    return out;
+}
+
+function meanAbsDiff(a, b){
+    const n = Math.min(a.length, b.length);
+    if(!n) return 0;
+    let sum = 0;
+    for(let i=0;i<n;i++) sum += Math.abs(a[i]-b[i]);
+    return sum/n;
+}
+
+export class SilhouetteFitOptimizer{
+    constructor(targetProfiles, options = {}){
+        this.target = targetProfiles;               // dense, raw-silhouette CrossSectionProfiles (ground truth)
+        this.maxIterations = options.maxIterations ?? 12;
+        this.learningRate = options.learningRate ?? 0.6;
+        this.styleBias = options.styleBias || DEFAULT_STYLE_BIAS;
+        this.errorHistory = [];                      // mean |current-target| per iteration, per part, averaged
+    }
+    // One pass: pull `current` toward the style-biased target with an
+    // annealed step size, then regularize so no single iteration can spike
+    // a sample far past its neighbors.
+    step(current, iteration){
+        const lr = this.learningRate * (1 - iteration/this.maxIterations);
+        let totalError = 0;
+        for(const key of PART_KEYS){
+            const targetSamples = this.target[key].samples;
+            const biased = applyStyleBias(key, targetSamples, this.styleBias);
+            const cur = current[key].samples;
+            for(let i = 0; i < cur.length && i < biased.length; i++){
+                cur[i] = cur[i] + (biased[i]-cur[i])*lr;
+            }
+            current[key].samples = regularizeProfile(cur, { minRadius: 0.01, maxDeltaRatio: 0.3 });
+            totalError += meanAbsDiff(current[key].samples, targetSamples);
+        }
+        return totalError / PART_KEYS.length;
+    }
+    // Runs to convergence (maxIterations passes), returning the fitted
+    // profiles plus the per-iteration error trace for the debug readout.
+    run(){
+        const current = cloneProfiles(this.target); // start exactly at the measured silhouette
+        this.errorHistory = [];
+        for(let it = 0; it < this.maxIterations; it++){
+            this.errorHistory.push(this.step(current, it));
+        }
+        return { profiles: current, errorHistory: this.errorHistory };
+    }
+}
+
+/** TOPOLOGY LOOP **/
+export class EdgeLoop{
+    constructor(name,t){
+        this.name=name;
+        this.t=t;
+    }
+}
+/************************************************************
+ * TOPOLOGY BLUEPRINT
+ ************************************************************/
+export class TopologyBlueprint{
+    constructor(){
+        this.headLoops=[
+            new EdgeLoop("chin",0.02),
+            new EdgeLoop("mouth",0.18),
+            new EdgeLoop("nose",0.35),
+            new EdgeLoop("eyes",0.55),
+            new EdgeLoop("forehead",0.80)
+        ];
+        this.neckLoops=[
+            new EdgeLoop("base",0.05),
+            new EdgeLoop("middle",0.50),
+            new EdgeLoop("top",0.90)
+        ];
+        this.armLoops=[
+            new EdgeLoop("shoulder",0.0),
+            new EdgeLoop("bicep",0.25),
+            new EdgeLoop("elbow",0.50),
+            new EdgeLoop("forearm",0.72),
+            new EdgeLoop("wrist",1.0)
+        ];
+        this.legLoops=[
+            new EdgeLoop("hip",0.0),
+            new EdgeLoop("thigh",0.22),
+            new EdgeLoop("knee",0.50),
+            new EdgeLoop("calf",0.75),
+            new EdgeLoop("ankle",1.0)
+        ];
+    }
+}
+
+
+/************************************************************
+ * SEMANTIC REGION
+ ************************************************************/
+export const Region={
+    HEAD:0,
+    FACE:1,
+    LEFT_EAR:2,
+    RIGHT_EAR:3,
+
+    NECK:4,
+
+    CHEST:5,
+    BELLY:6,
+    PELVIS:7,
+
+    LEFT_BICEP:8,
+    LEFT_FOREARM:9,
+    LEFT_HAND:10,
+
+    RIGHT_BICEP:11,
+    RIGHT_FOREARM:12,
+    RIGHT_HAND:13,
+
+    LEFT_THIGH:14,
+    LEFT_SHIN:15,
+    LEFT_FOOT:16,
+
+    RIGHT_THIGH:17,
+    RIGHT_SHIN:18,
+    RIGHT_FOOT:19
+
+};
+
+
+/************************************************************
+ * SEMANTIC VERTEX MAP
+ ************************************************************/
+export class SemanticRegionMap{
+    constructor(){
+        this.vertexRegions=new Map();
+    }
+    assign(vertex,region){
+        this.vertexRegions.set(vertex,region);
+    }
+    getRegion(vertex){
+        return this.vertexRegions.get(vertex);
+    }
+}
+
+/************************************************************
+ * CONSTRAINT
+ ************************************************************/
+export class Constraint{
+    constructor(weight=1){
+        this.weight=weight;
+    }
+    evaluate(mesh){
+        return 0;
+    }
+    solve(mesh){
+    }
+
+}
+/************************************************************
+ * HEAD WIDTH
+ ************************************************************/
+export class HeadWidthConstraint extends Constraint{
+    constructor(target){
+        super(5);
+        this.target=target;
+    }
+    evaluate(mesh){
+        return mesh.measureHeadWidth()-this.target;
+    }
+    solve(mesh){
+        const error=this.evaluate(mesh);
+        mesh.scaleHead(1-error*0.2);
+    }
+}
+/************************************************************
+ * EAR ANGLE
+ ************************************************************/
+export class EarAngleConstraint extends Constraint{
+    constructor(target){
+        super(3);
+        this.target=target;
+    }
+    solve(mesh){
+        const e=mesh.measureEarAngle()-this.target;
+        mesh.rotateEars(-e*0.25);
+    }
+}
+/************************************************************
+ * ARM LENGTH
+ ************************************************************/
+export class ArmLengthConstraint extends Constraint{
+    constructor(target){
+        super(2);
+        this.target=target;
+    }
+    solve(mesh){
+
+        const e=mesh.measureArmLength()-this.target;
+
+        mesh.scaleArms(1-e*0.15);
+
+    }
+}
+/************************************************************
+ * SHOULDER WIDTH
+ ************************************************************/
+export class ShoulderWidthConstraint extends Constraint{
+    constructor(target){
+        super(4);
+        this.target=target;
+    }
+    solve(mesh){
+        const e=mesh.measureShoulderWidth()-this.target;
+        mesh.scaleShoulders(1-e*0.15);
+    }
+}
+
+/************************************************************
+ * SILHOUETTE MATCH
+ ************************************************************/
+export class SilhouetteConstraint extends Constraint{
+    constructor(mask){
+        super(10);
+        this.mask=mask;
+    }
+    solve(mesh){
+        /*
+         Render mesh to offscreen buffer.
+
+         Compare with silhouette.
+
+         Compute distance transform.
+
+         Push vertices toward image.
+
+         */
+
+    }
+
+}
+
+
+/************************************************************
+ * CONSTRAINT SOLVER
+ ************************************************************/
+
+export class ConstraintSolver{
+    constructor(){
+        this.constraints=[];
+        this.maxIterations=30;
+    }
+    add(c){
+        this.constraints.push(c);
+    }
+    solve(mesh){
+        for(let iteration=0;
+            iteration<this.maxIterations;
+            iteration++){
+            for(const c of this.constraints){
+                c.solve(mesh);
+            }
+            mesh.rebuildNormals();
+            mesh.recalculateBounds();
+        }
+    }
+}
+
+
+/************************************************************
+ * PIPELINE
+ ************************************************************/
+export class MeshParameterPipeline{
+    constructor(){
+        this.body=new BodyParameters();
+        this.pose=new PoseParameters();
+        this.crossSections=new CrossSectionProfiles();
+        this.topology=new TopologyBlueprint();
+        this.semanticRegions=new SemanticRegionMap();
+        this.constraintSolver=new ConstraintSolver();
+    }
+    process(image){
+        /*
+         Image
+            ↓
+         BodyParameters
+            ↓
+         PoseParameters
+            ↓
+         CrossSectionProfiles
+            ↓
+         TopologyBlueprint
+            ↓
+         PrimitiveFactory
+            ↓
+         HalfEdgeMesh
+            ↓
+         ConstraintSolver
+         */
+    }
+
+}
+
+    export class FeatureNode{
+    constructor(name){
+        this.name = name;
+        this.parent = null;
+        this.children = [];
+        // Local transform
+        this.position = new THREE.Vector3();
+        this.rotation = new THREE.Euler();
+        this.scale    = new THREE.Vector3(1,1,1);
+        // Semantic measurements
+        this.parameters = {};
+        // Radius profile
+        this.profile = null;
+        // Edge loops that belong here
+        this.edgeLoops = [];
+        // Generated mesh section
+        this.mesh = null;
+        // Optimization constraints
+        this.constraints = [];
+        // Optional landmark
+        this.landmark = null;
+    }
+    addChild(node){
+        node.parent=this;
+        this.children.push(node);
+    }
+}
+
+export class FeatureGraph{
+    constructor(){
+        this.nodes=new Map();
+    }
+    add(name){
+        const node=new FeatureNode(name);
+        this.nodes.set(name,node);
+        return node;
+    }
+    get(name){
+        return this.nodes.get(name);
+    }
+}
+
+const graph=new FeatureGraph();
+
+const pelvis=graph.add("pelvis");
+const torso=graph.add("torso");
+const neck=graph.add("neck");
+const head=graph.add("head");
+const leftEar=graph.add("leftEar");
+const rightEar=graph.add("rightEar");
+const leftArm=graph.add("leftUpperArm");
+const leftForearm=graph.add("leftForearm");
+const leftHand=graph.add("leftHand");
+const rightArm=graph.add("rightUpperArm");
+
+//...
+
+pelvis.addChild(torso);
+
+torso.addChild(neck);
+
+neck.addChild(head);
+
+head.addChild(leftEar);
+
+head.addChild(rightEar);
+
+torso.addChild(leftArm);
+
+leftArm.addChild(leftForearm);
+
+leftForearm.addChild(leftHand);
+
+// TOPOLOGY
+class HEVertex {
+    constructor(x,y,z){
+        this.position = new THREE.Vector3(x,y,z);
+        this.edge = null;
+        this.id = HEVertex._id++;
+        this.mask = 0;
+        this.weights = new Map();
+    }
+}
+HEVertex._id = 0;
+
+class HEFace {
+    constructor(){
+        this.edge = null;
+        this.id = HEFace._id++;
+    }
+}
+HEFace._id = 0;
+
+class HEEdge {
+    constructor(){
+        this.vertex = null;
+        this.face = null;
+        this.next = null;
+        this.prev = null;
+        this.twin = null;
+    }
+}
+
+class HalfEdgeMesh {
+    constructor(){
+        this.vertices = [];
+        this.faces = [];
+        this.edges = [];
+        this.edgeRegistry = new Map();
+    }
+    makeDirectedKey(a,b){
+        return `${a.id}_${b.id}`;
+    }
+    makeUndirectedKey(a,b){
+        const ia = a.id;
+        const ib = b.id;
+        return ia < ib ? `${ia}_${ib}` : `${ib}_${ia}`;
+    }
+    registerEdge(edge){
+        const start = edge.prev.vertex;
+        const end = edge.vertex;
+        const key = this.makeDirectedKey(start,end);
+        this.edgeRegistry.set(key,edge);
+    }
+    unregisterEdge(edge){
+        const start = edge.prev.vertex;
+        const end = edge.vertex;
+        const key = this.makeDirectedKey(start, end);
+        this.edgeRegistry.delete(key);
+    }
+    rebuildEdgeRegistry(){
+        this.edgeRegistry.clear();
+        for(const e of this.edges){
+            e.twin = null;
+        }
+        for(const e of this.edges){
+            if(e.prev.vertex === e.vertex) continue;
+            this.registerEdge(e);
+        }
+        for(const e of this.edges){
+            if(e.prev.vertex === e.vertex) continue;
+            this.registerTwin(e);
+        }
+    }
+    registerTwin(edge){
+        const start = edge.prev.vertex;
+        const end = edge.vertex;
+        const twinKey = this.makeDirectedKey(end,start);
+        const twin = this.edgeRegistry.get(twinKey);
+        if(twin){
+            edge.twin = twin;
+            twin.twin = edge;
+        }
+    }
+    createEdge(start, end, face){
+        const edge = new HEEdge();
+        edge.vertex = end;
+        edge.face = face;
+        edge.start = start;
+        if(!end.edge) end.edge = edge;
+        this.edges.push(edge);
+        return edge;
+    }
+    createFaceFromVertices(vertices){
+        const face = new HEFace();
+        this.faces.push(face);
+        const edges = [];
+        const count = vertices.length;
+        for(let i=0;i<count;i++){
+            const start = vertices[i];
+            const end = vertices[(i+1)%count];
+            const edge = this.createEdge(start,end,face);
+            edges.push(edge);
+        }
+        for(let i=0;i<count;i++){
+            const edge = edges[i];
+            edge.next = edges[(i+1)%count];
+            edge.prev = edges[(i-1+count)%count];
+        }
+        face.edge = edges[0];
+        for(const edge of edges){
+            this.registerEdge(edge);
+        }
+        for(const edge of edges){
+            this.registerTwin(edge);
+        }
+        return face;
+    }
+    weldVertex(position){
+        for(const v of this.vertices){
+            if(v.position.distanceTo(position) < 1e-6){
+                return v;
+            }
+        }
+        const nv = new HEVertex(position.x, position.y, position.z);
+        this.vertices.push(nv);
+        return nv;
+    }
+    findEdge(a,b){
+        return this.edgeRegistry.get(this.makeDirectedKey(a,b));
+    }
+    computeFaceNormal(face){
+        const verts = [];
+        let e = face.edge;
+        do {
+            verts.push(e.vertex.position);
+            e = e.next;
+        } while (e !== face.edge);
+        const ab = new THREE.Vector3().subVectors(verts[1], verts[0]);
+        const ac = new THREE.Vector3().subVectors(verts[2], verts[0]);
+        return new THREE.Vector3().crossVectors(ab, ac).normalize();
+    }
+    computeVertexNormal(vertex){
+        const normal = new THREE.Vector3();
+        const faces = new Set();
+        for(const edge of this.edges){
+            const isIncident = edge.vertex === vertex || (edge.prev && edge.prev.vertex === vertex);
+            if(!isIncident) continue;
+            if(edge.face) faces.add(edge.face);
+            if(edge.twin && edge.twin.face) faces.add(edge.twin.face);
+        }
+        for(const face of faces){
+            normal.add(this.computeFaceNormal(face));
+        }
+        if(normal.lengthSq() < 1e-12) return new THREE.Vector3(0,1,0);
+        return normal.normalize();
+    }
+    repairTwins(){
+        const map = new Map();
+        const canonicalKey = (a, b) => a < b ? `${a}_${b}` : `${b}_${a}`;
+        for (const e of this.edges) e.twin = null;
+        for (const e of this.edges) {
+            const a = e.prev.vertex.id;
+            const b = e.vertex.id;
+            const key = canonicalKey(a, b);
+            if (!map.has(key)) map.set(key, []);
+            map.get(key).push(e);
+        }
+        for (const [key, list] of map.entries()) {
+            if (list.length === 2) {
+                list[0].twin = list[1];
+                list[1].twin = list[0];
+            } else if (list.length > 2) {
+                console.warn("Non-manifold edge detected:", key, list.length);
+            }
+        }
+    }
+    validateFaceLoops(){
+        for(const face of this.faces){
+            let count = 0;
+            let e = face.edge;
+            do{
+                count++;
+                if(count > 100){
+                    console.error("Broken face loop", face.id);
+                    break;
+                }
+                e = e.next;
+            } while(e !== face.edge);
+        }
+    }
+    getFaceEdgeLoop(face){
+        const loop = [];
+        let start = face.edge;
+        let e = start;
+        do {
+            loop.push(e);
+            e = e.next;
+        } while (e !== start);
+        return loop;
+    }
+    enforceConsistentWinding(){
+        if (!this.faces.length) return;
+        const visited = new Set();
+        const stack = [];
+        const seed = this.faces[0];
+        stack.push(seed);
+        visited.add(seed);
+        while (stack.length) {
+            const face = stack.pop();
+            let e = face.edge;
+            do {
+                const twin = e.twin;
+                if (twin && twin.face && !visited.has(twin.face)) {
+                    const currentN = this.computeFaceNormal(face);
+                    const neighborN = this.computeFaceNormal(twin.face);
+                    if (currentN.dot(neighborN) < 0) {
+                        this.flipFaceWinding(twin.face);
+                    }
+                    visited.add(twin.face);
+                    stack.push(twin.face);
+                }
+                e = e.next;
+            } while (e !== face.edge);
+        }
+    }
+    flipFaceWinding(face){
+        const edges = [];
+        let e = face.edge;
+        do { edges.push(e); e = e.next; } while (e !== face.edge);
+        edges.reverse();
+        for (let i = 0; i < edges.length; i++) {
+            const curr = edges[i];
+            const next = edges[(i + 1) % edges.length];
+            const prev = edges[(i - 1 + edges.length) % edges.length];
+            curr.next = next;
+            curr.prev = prev;
+        }
+        face.edge = edges[0];
+    }
+    killFace(face){
+        if(!face) return;
+        const edges = [];
+        let e = face.edge;
+        do { edges.push(e); e = e.next; } while (e !== face.edge);
+        for (const edge of edges) {
+            if (edge.twin) {
+                edge.twin.twin = null;
+                edge.twin = null;
+            }
+        }
+        for (const edge of edges) this.unregisterEdge(edge);
+        this.edges = this.edges.filter(edge => !edges.includes(edge));
+        const index = this.faces.indexOf(face);
+        if (index !== -1) this.faces.splice(index, 1);
+    }
+    extrudeFace(face){
+        if (!face || !face.edge) return;
+        const baseRing = this.getFaceEdgeLoop(face);
+        const orderedVerts = baseRing.map(e => e.vertex);
+        const normal = this.computeFaceNormal(face);
+        const offset = normal.clone().multiplyScalar(0.8);
+        const dupVerts = orderedVerts.map(v => {
+            const nv = new HEVertex(
+                v.position.x + offset.x,
+                v.position.y + offset.y,
+                v.position.z + offset.z
+            );
+            this.vertices.push(nv);
+            nv.original = v;
+            return nv;
+        });
+        this.createFaceFromVertices(dupVerts);
+        const n = dupVerts.length;
+        for(let i=0;i<n;i++){
+            const v0 = orderedVerts[i];
+            const v1 = orderedVerts[(i+1)%n];
+            const v2 = dupVerts[(i+1)%n];
+            const v3 = dupVerts[i];
+            this.createFaceFromVertices([v0, v1, v2, v3]);
+        }
+        const idx = this.faces.indexOf(face);
+        if(idx !== -1) this.faces.splice(idx, 1);
+        this.repairTwins();
+    }
+    buildGeometry(){
+        const faceMap = [];
+        const positions = [];
+        for(const face of this.faces){
+            const verts = [];
+            let edge = face.edge;
+            do {
+                verts.push(edge.vertex.position);
+                edge = edge.next;
+            } while(edge !== face.edge);
+
+            if(verts.length === 4){
+                faceMap.push(face);
+                faceMap.push(face);
+                positions.push(
+                    verts[0].x, verts[0].y, verts[0].z,
+                    verts[1].x, verts[1].y, verts[1].z,
+                    verts[2].x, verts[2].y, verts[2].z
+                );
+                positions.push(
+                    verts[0].x, verts[0].y, verts[0].z,
+                    verts[2].x, verts[2].y, verts[2].z,
+                    verts[3].x, verts[3].y, verts[3].z
+                );
+            } else if(verts.length === 3){
+                faceMap.push(face);
+                positions.push(
+                    verts[0].x, verts[0].y, verts[0].z,
+                    verts[1].x, verts[1].y, verts[1].z,
+                    verts[2].x, verts[2].y, verts[2].z
+                );
+            } else if(verts.length > 4){
+                // fan triangulate n-gons
+                for(let i=1;i<verts.length-1;i++){
+                    faceMap.push(face);
+                    positions.push(
+                        verts[0].x, verts[0].y, verts[0].z,
+                        verts[i].x, verts[i].y, verts[i].z,
+                        verts[i+1].x, verts[i+1].y, verts[i+1].z
+                    );
+                }
+            } else {
+                console.warn("Degenerate face skipped", face.id, verts.length);
+            }
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute(positions, 3)
+        );
+        geometry.userData = { faceMap };
+        geometry.computeVertexNormals();
+        return geometry;
+    }
+    scale(sx, sy, sz){
+        for(const v of this.vertices){
+            v.position.x *= sx;
+            v.position.y *= sy;
+            v.position.z *= sz;
+        }
+        return this;
+    }
+    translate(tx, ty, tz){
+        for(const v of this.vertices){
+            v.position.x += tx;
+            v.position.y += ty;
+            v.position.z += tz;
+        }
+        return this;
+    }
+}
+
+// PRIMITIVE FACTORY
+class PrimitiveFactory {
+    createCube(size=1){
+        const mesh = new HalfEdgeMesh();
+        const s = size * 0.5;
+        const v = [
+            mesh.weldVertex(new THREE.Vector3(-s,-s,-s)),
+            mesh.weldVertex(new THREE.Vector3( s,-s,-s)),
+            mesh.weldVertex(new THREE.Vector3( s, s,-s)),
+            mesh.weldVertex(new THREE.Vector3(-s, s,-s)),
+            mesh.weldVertex(new THREE.Vector3(-s,-s, s)),
+            mesh.weldVertex(new THREE.Vector3( s,-s, s)),
+            mesh.weldVertex(new THREE.Vector3( s, s, s)),
+            mesh.weldVertex(new THREE.Vector3(-s, s, s))
+        ];
+        mesh.createFaceFromVertices([v[0],v[1],v[2],v[3]]); // back
+        mesh.createFaceFromVertices([v[5],v[4],v[7],v[6]]); // front
+        mesh.createFaceFromVertices([v[4],v[0],v[3],v[7]]); // left
+        mesh.createFaceFromVertices([v[1],v[5],v[6],v[2]]); // right
+        mesh.createFaceFromVertices([v[3],v[2],v[6],v[7]]); // top
+        mesh.createFaceFromVertices([v[4],v[5],v[1],v[0]]); // bottom
+        mesh.rebuildEdgeRegistry();
+        mesh.repairTwins();
+        mesh.enforceConsistentWinding();
+        return mesh;
+    }
+    createCylinder(radius, height, sides = 16){
+        const mesh = new HalfEdgeMesh();
+        const top = [];
+        const bottom = [];
+        const h = height * 0.5;
+        for(let i=0;i<sides;i++){
+            const a = i / sides * Math.PI * 2;
+            const x = Math.cos(a) * radius;
+            const z = Math.sin(a) * radius;
+            bottom.push(mesh.weldVertex(new THREE.Vector3(x, -h, z)));
+            top.push(mesh.weldVertex(new THREE.Vector3(x, h, z)));
+        }
+        for(let i=0;i<sides;i++){
+            const n = (i+1)%sides;
+            mesh.createFaceFromVertices([bottom[i], bottom[n], top[n], top[i]]);
+        }
+        const bottomCenter = mesh.weldVertex(new THREE.Vector3(0, -h, 0));
+        for(let i=0;i<sides;i++){
+            const n=(i+1)%sides;
+            mesh.createFaceFromVertices([bottomCenter, bottom[n], bottom[i]]);
+        }
+        const topCenter = mesh.weldVertex(new THREE.Vector3(0, h, 0));
+        for(let i=0;i<sides;i++){
+            const n=(i+1)%sides;
+            mesh.createFaceFromVertices([topCenter, top[i], top[n]]);
+        }
+        mesh.rebuildEdgeRegistry();
+        mesh.repairTwins();
+        return mesh;
+    }
+    createCone(radius,height,sides=16){
+        const mesh = new HalfEdgeMesh();
+        const ring=[];
+        const h=height*0.5;
+        for(let i=0;i<sides;i++){
+            const a=i/sides*Math.PI*2;
+            ring.push(mesh.weldVertex(new THREE.Vector3(Math.cos(a)*radius, -h, Math.sin(a)*radius)));
+        }
+        const apex = mesh.weldVertex(new THREE.Vector3(0,h,0));
+        for(let i=0;i<sides;i++){
+            const n=(i+1)%sides;
+            mesh.createFaceFromVertices([ring[i], ring[n], apex]);
+        }
+        const center = mesh.weldVertex(new THREE.Vector3(0, -h, 0));
+        for(let i=0;i<sides;i++){
+            const n=(i+1)%sides;
+            mesh.createFaceFromVertices([center, ring[n], ring[i]]);
+        }
+        mesh.rebuildEdgeRegistry();
+        mesh.repairTwins();
+        return mesh;
+    }
+    createSphere(radius=1, widthSegments=12, heightSegments=8){
+        const mesh = new HalfEdgeMesh();
+        const grid = [];
+        for(let iy=0; iy<=heightSegments; iy++){
+            const row = [];
+            const v = iy / heightSegments;
+            const phi = v * Math.PI; // 0..PI
+            for(let ix=0; ix<=widthSegments; ix++){
+                const u = ix / widthSegments;
+                const theta = u * Math.PI * 2; // 0..2PI
+                const x = -radius * Math.cos(theta) * Math.sin(phi);
+                const y = radius * Math.cos(phi);
+                const z = radius * Math.sin(theta) * Math.sin(phi);
+                row.push(mesh.weldVertex(new THREE.Vector3(x,y,z)));
+            }
+            grid.push(row);
+        }
+        for(let iy=0; iy<heightSegments; iy++){
+            for(let ix=0; ix<widthSegments; ix++){
+                const a = grid[iy][ix];
+                const b = grid[iy][ix+1];
+                const c = grid[iy+1][ix+1];
+                const d = grid[iy+1][ix];
+                // skip degenerate triangles at poles
+                if(iy === 0){
+                    mesh.createFaceFromVertices([a,c,d]);
+                } else if(iy === heightSegments-1){
+                    mesh.createFaceFromVertices([a,b,c]);
+                } else {
+                    mesh.createFaceFromVertices([a,b,c,d]);
+                }
+            }
+        }
+        mesh.rebuildEdgeRegistry();
+        mesh.repairTwins();
+        return mesh;
+    }
+    createCapsule(radius,height,sides=16){
+        const cylHeight = Math.max(height - radius*2, 0.001);
+        const body = this.createCylinder(radius, cylHeight, sides);
+        const top = this.createSphere(radius, sides, Math.max(4, Math.floor(sides/2)));
+        const bottom = this.createSphere(radius, sides, Math.max(4, Math.floor(sides/2)));
+        for(const v of top.vertices){
+            if(v.position.y < 0) continue;
+            v.position.y += cylHeight * 0.5;
+        }
+        for(const v of bottom.vertices){
+            if(v.position.y > 0) continue;
+            v.position.y -= cylHeight * 0.5;
+        }
+        return this.mergeMeshes(this.mergeMeshes(body, top), bottom);
+    }
+    mergeMeshes(meshA, meshB){
+        const result = new HalfEdgeMesh();
+        const vertexMap = new Map();
+        const addMeshVerts = (mesh) => {
+            for(const v of mesh.vertices){
+                const nv = result.weldVertex(v.position.clone());
+                vertexMap.set(v, nv);
+            }
+        };
+        addMeshVerts(meshA);
+        addMeshVerts(meshB);
+        const addMeshFaces = (mesh) => {
+            for(const face of mesh.faces){
+                const verts = [];
+                let e = face.edge;
+                do {
+                    verts.push(vertexMap.get(e.vertex));
+                    e = e.next;
+                } while(e !== face.edge);
+                result.createFaceFromVertices(verts);
+            }
+        };
+        addMeshFaces(meshA);
+        addMeshFaces(meshB);
+        result.rebuildEdgeRegistry();
+        result.repairTwins();
+        return result;
+    }
+}
+
+// IMAGE -> SILHOUETTE -> LANDMARKS PIPELINE
+
+class ImageReader {
+    constructor(){
+        this.canvas = document.createElement("canvas");
+        this.ctx = this.canvas.getContext("2d");
+    }
+    // Loads a URL (or object URL) into an internal canvas, downscaled so the
+    // pixel-scan passes below stay fast regardless of the source photo size.
+    async load(url, maxDim = 400){
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+            img.src = url;
+        });
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        this.canvas.width = w;
+        this.canvas.height = h;
+        this.ctx.drawImage(img, 0, 0, w, h);
+        return { width: w, height: h };
+    }
+    read(){
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        const data = this.ctx.getImageData(0, 0, w, h);
+        return { width: w, height: h, pixels: data.data };
+    }
+}
+
+// Simple brightness-threshold silhouette: assumes a reasonably plain
+// background and a darker (or distinctly-colored) subject. This is a
+// deliberately simple stand-in for real background removal — swap in a
+// proper matting step later if source photos are noisy.
+class SilhouetteExtractor {
+    extract(image, threshold = 200){
+        const { width, height, pixels } = image;
+        const mask = new Uint8Array(width * height);
+        for(let y = 0; y < height; y++){
+            for(let x = 0; x < width; x++){
+                const i = (y * width + x) * 4;
+                const r = pixels[i], g = pixels[i+1], b = pixels[i+2], a = pixels[i+3];
+                const brightness = (r + g + b) / 3;
+                mask[y * width + x] = (a > 10 && brightness < threshold) ? 1 : 0;
+            }
+        }
+        return { width, height, data: mask };
+    }
+    // Draws the mask into a preview <canvas> so you can see what the
+    // detector actually saw — invaluable for debugging bad thresholds.
+    drawPreview(mask, canvas){
+        canvas.width = mask.width;
+        canvas.height = mask.height;
+        const ctx = canvas.getContext("2d");
+        const imgData = ctx.createImageData(mask.width, mask.height);
+        for(let i = 0; i < mask.data.length; i++){
+            const v = mask.data[i] ? 255 : 30;
+            imgData.data[i*4] = v;
+            imgData.data[i*4+1] = v;
+            imgData.data[i*4+2] = v;
+            imgData.data[i*4+3] = 255;
+        }
+        ctx.putImageData(imgData, 0, 0);
+    }
+}
+
+// Scans the binary mask row-by-row to get a width profile, then reads
+// head / neck / shoulders / waist / hips / feet off that profile.
+class LandmarkDetector {
+    detect(mask){
+        const rows = this.sampleWidths(mask);
+        const nonEmpty = rows.filter(r => r.width > 0);
+        if(nonEmpty.length < 8){
+            // Not enough silhouette to work with (blank/near-blank image) —
+            // signal the caller to fall back to default proportions.
+            return null;
+        }
+        const minY = nonEmpty[0].y;
+        const maxY = nonEmpty[nonEmpty.length - 1].y;
+        const head = this.findWidestInRange(nonEmpty, 0, 0.25);
+        const neck = this.findNarrowestInRange(nonEmpty, 0.10, 0.35);
+        const shoulders = this.findSteepestWidening(nonEmpty, 0.15, 0.45);
+        const waist = this.findNarrowestInRange(nonEmpty, 0.35, 0.68);
+        const hips = this.findWidestInRange(nonEmpty, 0.55, 0.82);
+        const feet = nonEmpty[nonEmpty.length - 1];
+        return {
+            bounds: { minY, maxY, height: maxY - minY, width: mask.width },
+            head, neck, shoulders, waist, hips, feet
+        };
+    }
+    sampleWidths(mask){
+        const { width, height, data } = mask;
+        const rows = [];
+        for(let y = 0; y < height; y++){
+            let left = -1, right = -1;
+            for(let x = 0; x < width; x++){
+                if(data[y * width + x]){
+                    if(left === -1) left = x;
+                    right = x;
+                }
+            }
+            rows.push({
+                y,
+                left: left === -1 ? 0 : left,
+                right: right === -1 ? 0 : right,
+                width: left === -1 ? 0 : (right - left)
+            });
+        }
+        return rows;
+    }
+    slice(rows, fromFrac, toFrac){
+        const n = rows.length;
+        const start = Math.max(0, Math.floor(n * fromFrac));
+        const end = Math.min(n, Math.ceil(n * toFrac));
+        return rows.slice(start, end);
+    }
+    findWidestInRange(rows, fromFrac, toFrac){
+        const slice = this.slice(rows, fromFrac, toFrac);
+        if(!slice.length) return rows[0];
+        let best = slice[0];
+        for(const r of slice){
+            if(r.width > best.width) best = r;
+        }
+        return best;
+    }
+    findNarrowestInRange(rows, fromFrac, toFrac){
+        const slice = this.slice(rows, fromFrac, toFrac);
+        if(!slice.length) return rows[0];
+        let best = slice[0];
+        for(const r of slice){
+            if(r.width < best.width) best = r;
+        }
+        return best;
+    }
+    findSteepestWidening(rows, fromFrac, toFrac){
+        const slice = this.slice(rows, fromFrac, toFrac);
+        if(slice.length < 2) return slice[0] || rows[0];
+        let best = slice[1];
+        let bestDelta = -Infinity;
+        for(let i = 1; i < slice.length; i++){
+            const delta = slice[i].width - slice[i-1].width;
+            if(delta > bestDelta){
+                bestDelta = delta;
+                best = slice[i];
+            }
+        }
+        return best;
+    }
+}
+
+// OVERLAY DETECTION PIPELINE
+// Extracts a color-keyed wireframe overlay (matching MeshSystem's own
+// 0xff66aa edge color) from a reference image, reconstructs it into
+// closed face loops, classifies each face by limb, and measures
+// per-limb dimensions for use in GoblinGenerator.buildFromProportions.
+
+class OverlayExtractor {
+    // target: the wireframe color as [r,g,b]; tolerance: max channel distance
+    extract(image, target = [255, 102, 170], tolerance = 40){
+        const { width, height, pixels } = image;
+        const mask = new Uint8Array(width * height);
+        for(let y = 0; y < height; y++){
+            for(let x = 0; x < width; x++){
+                const i = (y * width + x) * 4;
+                const r = pixels[i], g = pixels[i+1], b = pixels[i+2], a = pixels[i+3];
+                if(a < 10) continue;
+                const d = Math.abs(r-target[0]) + Math.abs(g-target[1]) + Math.abs(b-target[2]);
+                mask[y * width + x] = d < tolerance ? 1 : 0;
+            }
+        }
+        return { width, height, data: mask };
+    }
+}
+
+class TopologyGraphBuilder {
+    // Vertex markers: connected components of the overlay mask small
+    // enough to be dots (not long thin edge strokes).
+    findVertices(mask, maxBlobSize = 30){
+        const { width, height, data } = mask;
+        const visited = new Uint8Array(width * height);
+        const verts = [];
+        for(let y = 0; y < height; y++){
+            for(let x = 0; x < width; x++){
+                const idx = y * width + x;
+                if(!data[idx] || visited[idx]) continue;
+                const blob = this.floodFill(mask, visited, x, y);
+                if(blob.pixels.length > 0 && blob.pixels.length <= maxBlobSize){
+                    verts.push({ x: blob.cx, y: blob.cy, id: verts.length });
+                }
+            }
+        }
+        return verts;
+    }
+    floodFill(mask, visited, sx, sy){
+        const { width, height, data } = mask;
+        const stack = [[sx, sy]];
+        const pixels = [];
+        let sumX = 0, sumY = 0;
+        while(stack.length){
+            const [x, y] = stack.pop();
+            if(x < 0 || y < 0 || x >= width || y >= height) continue;
+            const idx = y * width + x;
+            if(!data[idx] || visited[idx]) continue;
+            visited[idx] = 1;
+            pixels.push(idx);
+            sumX += x; sumY += y;
+            stack.push([x+1,y],[x-1,y],[x,y+1],[x,y-1]);
+        }
+        return { pixels, cx: pixels.length ? sumX/pixels.length : sx, cy: pixels.length ? sumY/pixels.length : sy };
+    }
+    // Connect two vertices if a sampled line between them stays "on"
+    // the overlay mask for most of its length.
+    findEdges(mask, verts, occupancyThreshold = 0.85, maxDist = 120){
+        const edges = [];
+        for(let i = 0; i < verts.length; i++){
+            for(let j = i+1; j < verts.length; j++){
+                const a = verts[i], b = verts[j];
+                const dist = Math.hypot(a.x-b.x, a.y-b.y);
+                if(dist > maxDist || dist < 1) continue;
+                if(this.lineOccupancy(mask, a, b) > occupancyThreshold){
+                    edges.push({ a: a.id, b: b.id });
+                }
+            }
+        }
+        return edges;
+    }
+    lineOccupancy(mask, a, b){
+        const steps = Math.max(4, Math.round(Math.hypot(a.x-b.x, a.y-b.y)));
+        let hits = 0;
+        for(let s = 1; s < steps; s++){ // skip endpoints (vertex blobs)
+            const t = s / steps;
+            const x = Math.round(a.x + (b.x-a.x)*t);
+            const y = Math.round(a.y + (b.y-a.y)*t);
+            if(x < 0 || y < 0 || x >= mask.width || y >= mask.height) continue;
+            if(mask.data[y * mask.width + x]) hits++;
+        }
+        return hits / Math.max(1, steps - 1);
+    }
+    // Turn the undirected vertex/edge graph into closed face loops by
+    // walking directed edges, always turning to the next neighbor
+    // clockwise from the one we arrived from. Drops the outer boundary
+    // loop (largest absolute signed area) since it isn't a real face.
+    buildFaces(verts, edges){
+        const vertMap = new Map(verts.map(v => [v.id, v]));
+
+        const adjacency = new Map();
+        for(const v of verts) adjacency.set(v.id, []);
+        for(const e of edges){
+            adjacency.get(e.a).push(e.b);
+            adjacency.get(e.b).push(e.a);
+        }
+
+        const angleOrder = new Map();
+        for(const [vid, neighbors] of adjacency){
+            const v = vertMap.get(vid);
+            const sorted = [...neighbors].sort((a, b) => {
+                const va = vertMap.get(a), vb = vertMap.get(b);
+                const angA = Math.atan2(va.y - v.y, va.x - v.x);
+                const angB = Math.atan2(vb.y - v.y, vb.x - v.x);
+                return angA - angB;
+            });
+            angleOrder.set(vid, sorted);
+        }
+
+        const nextDirectedEdge = (u, v) => {
+            const order = angleOrder.get(v);
+            if(!order || order.length === 0) return null;
+            const idx = order.indexOf(u);
+            if(idx === -1) return null;
+            const prevIdx = (idx - 1 + order.length) % order.length;
+            return { u: v, v: order[prevIdx] };
+        };
+
+        const key = (u, v) => `${u}_${v}`;
+        const visited = new Set();
+        const loops = [];
+        for(const e of edges){
+            for(const [u0, v0] of [[e.a, e.b], [e.b, e.a]]){
+                if(visited.has(key(u0, v0))) continue;
+                const loop = [];
+                let u = u0, v = v0, guard = 0;
+                do {
+                    visited.add(key(u, v));
+                    loop.push(v);
+                    const nxt = nextDirectedEdge(u, v);
+                    if(!nxt) break;
+                    ({ u, v } = nxt);
+                    guard++;
+                } while(!(u === u0 && v === v0) && guard < verts.length * 2);
+                if(loop.length >= 3) loops.push(loop);
+            }
+        }
+
+        const signedArea = (loopIds) => {
+            let area = 0;
+            for(let i = 0; i < loopIds.length; i++){
+                const a = vertMap.get(loopIds[i]);
+                const b = vertMap.get(loopIds[(i+1) % loopIds.length]);
+                area += a.x * b.y - b.x * a.y;
+            }
+            return area / 2;
+        };
+        let outerIdx = -1, maxAbsArea = -Infinity;
+        loops.forEach((loop, i) => {
+            const a = Math.abs(signedArea(loop));
+            if(a > maxAbsArea){ maxAbsArea = a; outerIdx = i; }
+        });
+
+        return loops.filter((_, i) => i !== outerIdx); // real faces only
+    }
+    // Rebuilds a real HalfEdgeMesh from image-space vertices + face loops,
+    // so downstream code can use the app's own HEFace/HEVertex machinery.
+    facesToHalfEdgeMesh(verts, innerFaces){
+        const he = new HalfEdgeMesh();
+        const vertMap = new Map(
+            verts.map(v => [v.id, he.weldVertex(new THREE.Vector3(v.x, -v.y, 0))])
+        );
+        for(const loop of innerFaces){
+            he.createFaceFromVertices(loop.map(id => vertMap.get(id)));
+        }
+        he.rebuildEdgeRegistry();
+        he.repairTwins();
+        return he;
+    }
+}
+
+class LimbClassifier {
+    // centroid: {x, y} in pixel space; bounds: overlay bbox
+    classify(centroid, bounds){
+        const nx = bounds.width ? (centroid.x - bounds.minX) / bounds.width : 0.5;
+        const ny = bounds.height ? (centroid.y - bounds.minY) / bounds.height : 0.5;
+        const side = nx < 0.5 ? "L" : "R";
+
+        if(ny < 0.20) return nx < 0.35 || nx > 0.75 ? `ear${side}` : "head";
+        if(ny < 0.30) return nx < 0.20 || nx > 0.80 ? `wing${side}` : "head";
+        if(ny < 0.40) return "torsoUpper";
+        if(ny < 0.60){
+            if(nx < 0.25 || nx > 0.75) return `upperArm${side}`;
+            return "torsoLower";
+        }
+        if(ny < 0.75){
+            if(nx < 0.20 || nx > 0.80) return `lowerArm${side}`;
+            return "pelvis";
+        }
+        if(ny < 0.85) return nx < 0.20 || nx > 0.80 ? `hand${side}` : `upperLeg${side}`;
+        return `lowerLeg_or_foot${side}`;
+    }
+}
+
+class PoseAngleEstimator {
+    // Returns estimated yaw in degrees (0 = front-on) via symmetry search
+    // over the silhouette mask about candidate vertical axes.
+    estimate(mask){
+        const { width, height, data } = mask;
+        let bestAxis = width / 2, bestScore = -Infinity;
+        for(let axis = width*0.3; axis <= width*0.7; axis += 2){
+            let score = 0, total = 0;
+            for(let y = 0; y < height; y++){
+                for(let x = 0; x < width; x++){
+                    const mirrored = Math.round(2*axis - x);
+                    if(mirrored < 0 || mirrored >= width) continue;
+                    const v = data[y*width + x];
+                    const mv = data[y*width + mirrored];
+                    if(v || mv){ total++; if(v === mv) score++; }
+                }
+            }
+            const norm = total ? score/total : 0;
+            if(norm > bestScore){ bestScore = norm; bestAxis = axis; }
+        }
+        const yawEstimate = (1 - Math.max(0, bestScore)) * 90; // 0..90 degrees, coarse
+        return { axisX: bestAxis, symmetry: Math.max(0, bestScore), yawDeg: yawEstimate };
+    }
+}
+
+class LimbDimensionMeasurer {
+    // limbFaces: [{x, y, limb}] centroids tagged by LimbClassifier.
+    // scale: pixels -> world units (same factor computeProportions uses).
+    measure(limbFaces, scale, yawDeg = 0){
+        const groups = new Map();
+        for(const f of limbFaces){
+            if(!groups.has(f.limb)) groups.set(f.limb, []);
+            groups.get(f.limb).push(f);
+        }
+        const yawCorrection = 1 / Math.max(0.2, Math.cos(yawDeg * Math.PI / 180));
+
+        const dims = {};
+        for(const [limb, points] of groups){
+            if(points.length < 2) continue; // not enough signal to trust
+            const xs = points.map(p => p.x);
+            const ys = points.map(p => p.y);
+            const pixelWidth = Math.max(...xs) - Math.min(...xs);
+            const pixelLength = Math.max(...ys) - Math.min(...ys);
+            dims[limb] = {
+                radius: (pixelWidth * 0.5) * scale * yawCorrection,
+                length: pixelLength * scale,
+                sampleCount: points.length
+            };
+        }
+        return dims;
+    }
+}
+
+function sanitizeDim(measured, fallback, minRatio = 0.3, maxRatio = 3){
+    if(measured == null || !isFinite(measured) || measured <= 0) return fallback;
+    return Math.min(fallback * maxRatio, Math.max(fallback * minRatio, measured));
+}
+
+// SELECTION
+class Selection {
+    constructor(){
+        this.mode = "face";
+        this.face = null;
+        this.edge = null;
+        this.vertex = null;
+    }
+    clear(){
+        this.face = null;
+        this.edge = null;
+        this.vertex = null;
+    }
+}
+
+// GOBLIN GENERATOR
+// Pipeline: Image -> SilhouetteExtractor -> LandmarkDetector -> proportions
+// -> primitives assembled with PrimitiveFactory.
+//
+// Note on scope: this maps the 2D silhouette's proportions (head size,
+// shoulder/hip width, body height) onto a primitive-based goblin rig. It
+// does NOT do true mesh-to-outline conforming (bending the mesh surface to
+// match the photo's contour) — that's a much bigger project (non-rigid
+// fitting / silhouette-constrained deformation) and belongs in its own
+// pass. This gets you a goblin whose build is actually driven by the photo
+// instead of hard-coded numbers.
+class GoblinGenerator {
+    constructor(topology, ui = {}){
+        this.topology = topology;
+        this.image = null;
+        this.factory = new PrimitiveFactory();
+        this.reader = new ImageReader();
+        this.extractor = new SilhouetteExtractor();
+        this.detector = new LandmarkDetector();
+        this.overlayExtractor = new OverlayExtractor();
+        this.graphBuilder = new TopologyGraphBuilder();
+        this.limbClassifier = new LimbClassifier();
+        this.poseEstimator = new PoseAngleEstimator();
+        this.dimensionMeasurer = new LimbDimensionMeasurer();
+        this.previewCanvas = ui.previewCanvas || null;
+        this.readoutEl = ui.readoutEl || null;
+        this.lastLandmarks = null;
+        this.lastLimbDims = null;
+        this.lastPose = null;
+    }
+    computeVertBounds(verts){
+        const xs = verts.map(v => v.x), ys = verts.map(v => v.y);
+        const minX = Math.min(...xs), maxX = Math.max(...xs);
+        const minY = Math.min(...ys), maxY = Math.max(...ys);
+        return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
+    }
+    // Runs the overlay -> graph -> face-loop -> limb-classify -> measure
+    // pipeline. Returns null (not an error) whenever there just isn't a
+    // usable wireframe overlay in the image — callers fall back to the
+    // existing scalar constants in that case.
+    detectLimbDimensions(imageData, landmarks, pose){
+        if(!landmarks) return null;
+        const overlayMask = this.overlayExtractor.extract(imageData);
+        const verts = this.graphBuilder.findVertices(overlayMask);
+        if(verts.length < 4) return null;
+
+        const edges = this.graphBuilder.findEdges(overlayMask, verts);
+        const innerFaces = this.graphBuilder.buildFaces(verts, edges);
+        if(!innerFaces.length) return null;
+
+        const vertMap = new Map(verts.map(v => [v.id, v]));
+        const bounds = this.computeVertBounds(verts);
+
+        const limbFaces = innerFaces.map(loop => {
+            const pts = loop.map(id => vertMap.get(id));
+            const cx = pts.reduce((s, v) => s + v.x, 0) / pts.length;
+            const cy = pts.reduce((s, v) => s + v.y, 0) / pts.length;
+            const centroid = { x: cx, y: cy };
+            return { ...centroid, limb: this.limbClassifier.classify(centroid, bounds) };
+        });
+
+        // same modelHeight/pixelHeight ratio computeProportions() uses,
+        // so measured units line up with the rest of the rig
+        const scale = 3.4 / Math.max(1, landmarks.bounds.height);
+        return this.dimensionMeasurer.measure(limbFaces, scale, pose ? pose.yawDeg : 0);
+    }
+    async setImage(file){
+        this.image = file;
+        const url = URL.createObjectURL(file);
+        try {
+            await this.reader.load(url);
+        } finally {
+            URL.revokeObjectURL(url);
+        }
+    }
+    // Converts pixel-space landmarks (y grows downward) into a set of
+    // normalized body proportions in world space (y grows upward, feet at
+    // y = 0), independent of the source photo's resolution.
+    computeProportions(landmarks, modelHeight = 3.4){
+        if(!landmarks){
+            // Default humanoid-ish proportions, used when there's no image
+            // or the silhouette didn't yield enough signal.
+            return {
+                modelHeight,
+                headCenterY: modelHeight * 0.92,
+                headRadius: modelHeight * 0.10,
+                neckY: modelHeight * 0.82,
+                shoulderY: modelHeight * 0.78,
+                shoulderHalfWidth: modelHeight * 0.19,
+                waistY: modelHeight * 0.55,
+                hipY: modelHeight * 0.48,
+                hipHalfWidth: modelHeight * 0.16,
+                feetY: 0
+            };
+        }
+        const { bounds, head, neck, shoulders, waist, hips } = landmarks;
+        const scale = modelHeight / Math.max(1, bounds.height);
+        const worldY = (y) => (bounds.maxY - y) * scale;
+        return {
+            modelHeight,
+            headCenterY: worldY(head.y),
+            headRadius: Math.max(0.08, (head.width * 0.5) * scale),
+            neckY: worldY(neck.y),
+            shoulderY: worldY(shoulders.y),
+            shoulderHalfWidth: Math.max(0.12, (shoulders.right - shoulders.left) * 0.5 * scale),
+            waistY: worldY(waist.y),
+            hipY: worldY(hips.y),
+            hipHalfWidth: Math.max(0.10, (hips.right - hips.left) * 0.5 * scale),
+            feetY: 0
+        };
+    }
+    buildFromProportions(p, limbDims = null){
+        const factory = this.factory;
+        const parts = [];
+
+        // Head (scaled slightly wide/forward for a goblin brow+jaw silhouette)
+        const head = factory.createSphere(p.headRadius, 12, 8);
+        head.scale(1.1, 1.0, 1.15);
+        head.translate(0, p.headCenterY, 0);
+        parts.push(head);
+
+        // Ears
+        const earLen = p.headRadius * 1.6;
+        const leftEar = factory.createCone(p.headRadius * 0.22, earLen, 8);
+        parts.push(leftEar);
+
+        // Neck
+        const neckHeight = Math.max(0.05, p.headCenterY - p.headRadius * 0.6 - p.shoulderY);
+        const neck = factory.createCylinder(p.headRadius * 0.4, neckHeight, 10);
+        neck.translate(0, p.shoulderY + neckHeight * 0.5, 0);
+        parts.push(neck);
+
+        // Torso
+        const torsoHeight = Math.max(0.2, p.shoulderY - p.hipY);
+        const torso = factory.createCapsule(p.shoulderHalfWidth * 0.85, torsoHeight, 14);
+        torso.translate(0, p.hipY + torsoHeight * 0.5, 0);
+        parts.push(torso);
+
+        // Pelvis
+        const pelvis = factory.createSphere(p.hipHalfWidth, 10, 6);
+        pelvis.scale(1.1, 0.6, 1.0);
+        pelvis.translate(0, p.hipY, 0);
+        parts.push(pelvis);
+
+        // Arms (upper + lower capsule per side) — per-limb measured
+        // radius/length where the overlay pipeline found a usable
+        // reading, sanitize()'d against the old scalar as a fallback and
+        // a clamp against bad measurements.
+        const armLength = Math.max(0.2, (p.shoulderY - p.hipY) * 1.15);
+        const fallbackArmRadius = p.headRadius * 0.32;
+        for(const side of [-1, 1]){
+            const sideKey = side === -1 ? "L" : "R";
+            const upperDim = limbDims?.[`upperArm${sideKey}`];
+            const lowerDim = limbDims?.[`lowerArm${sideKey}`];
+
+            const upperLen = upperDim ? Math.max(0.05, upperDim.length) : armLength * 0.5;
+            const upperRadius = sanitizeDim(upperDim?.radius, fallbackArmRadius);
+            const upperArm = factory.createCapsule(upperRadius, upperLen, 10);
+            upperArm.translate(
+                side * (p.shoulderHalfWidth + upperRadius * 0.9),
+                p.shoulderY - upperLen * 0.5,
+                0
+            );
+            parts.push(upperArm);
+
+            const lowerLen = lowerDim ? Math.max(0.05, lowerDim.length) : armLength * 0.5;
+            const lowerRadius = sanitizeDim(lowerDim?.radius, fallbackArmRadius * 0.85);
+            const lowerArm = factory.createCapsule(lowerRadius, lowerLen, 10);
+            lowerArm.translate(
+                side * (p.shoulderHalfWidth + upperRadius * 0.9),
+                p.shoulderY - upperLen - lowerLen * 0.5,
+                0
+            );
+            parts.push(lowerArm);
+        }
+
+        // Legs — same measured/fallback pattern. (upperLeg/lowerLeg still
+        // collapse to one capsule, matching the original structure; split
+        // it the same way arms are split above if knee articulation is
+        // needed later — that's what the lowerLeg_or_foot classifier
+        // bucket in LimbClassifier is a placeholder for.)
+        const legLength = Math.max(0.2, p.hipY - p.feetY);
+        const fallbackLegRadius = p.hipHalfWidth * 0.4;
+        for(const side of [-1, 1]){
+            const sideKey = side === -1 ? "L" : "R";
+            const legDim = limbDims?.[`upperLeg${sideKey}`];
+            const legRadius = sanitizeDim(legDim?.radius, fallbackLegRadius);
+            const legLen = legDim ? Math.max(0.05, legDim.length) : legLength;
+            const leg = factory.createCapsule(legRadius, legLen, 10);
+            leg.translate(side * p.hipHalfWidth * 0.55, p.feetY + legLen * 0.5, 0);
+            parts.push(leg);
+        }
+
+        // Nose
+        const nose = factory.createCone(p.headRadius * 0.18, p.headRadius * 0.7, 8);
+        nose.translate(0, p.headCenterY - p.headRadius * 0.1, p.headRadius * 1.05);
+        parts.push(nose);
+
+        // Ears, positioned now that we know head geometry
+        leftEar.translate(-p.headRadius * 1.05, p.headCenterY, 0);
+        const rightEar = factory.createCone(p.headRadius * 0.22, earLen, 8);
+        rightEar.translate(p.headRadius * 1.05, p.headCenterY, 0);
+        parts.push(rightEar);
+
+        let goblin = parts[0];
+        for(let i = 1; i < parts.length; i++){
+            goblin = factory.mergeMeshes(goblin, parts[i]);
+        }
+        return goblin;
+    }
+    updateUI(landmarks, mask, pose = null, limbDims = null){
+        if(this.previewCanvas && mask){
+            this.extractor.drawPreview(mask, this.previewCanvas);
+        }
+        if(this.readoutEl){
+            if(!landmarks){
+                this.readoutEl.textContent = "No image loaded — using default proportions.";
+                return;
+            }
+            const { head, neck, shoulders, waist, hips, feet, bounds } = landmarks;
+            let text =
+                `bounds: ${bounds.width}x${bounds.height} (h:${bounds.height}px)\n` +
+                `head    y=${head.y} w=${head.width}\n` +
+                `neck    y=${neck.y} w=${neck.width}\n` +
+                `shoulder y=${shoulders.y} w=${shoulders.right - shoulders.left}\n` +
+                `waist   y=${waist.y} w=${waist.width}\n` +
+                `hips    y=${hips.y} w=${hips.right - hips.left}\n` +
+                `feet    y=${feet.y}`;
+
+            if(pose){
+                text += `\n\npose: yaw≈${pose.yawDeg.toFixed(1)}° (symmetry ${pose.symmetry.toFixed(2)})`;
+            }
+            if(limbDims && Object.keys(limbDims).length){
+                text += `\n\nlimb overlay detected:`;
+                for(const [limb, d] of Object.entries(limbDims)){
+                    text += `\n  ${limb.padEnd(14)} r=${d.radius.toFixed(3)} len=${d.length.toFixed(3)} (n=${d.sampleCount})`;
+                }
+            } else {
+                text += `\n\nno overlay detected — using default limb radii.`;
+            }
+            this.readoutEl.textContent = text;
+        }
+    }
+    generate(){
+        let landmarks = null;
+        let mask = null;
+        let pose = null;
+        let limbDims = null;
+        if(this.image){
+            const imageData = this.reader.read();
+            mask = this.extractor.extract(imageData);
+            landmarks = this.detector.detect(mask);
+            if(mask) pose = this.poseEstimator.estimate(mask);
+            limbDims = this.detectLimbDimensions(imageData, landmarks, pose);
+        }
+        this.lastLandmarks = landmarks;
+        this.lastPose = pose;
+        this.lastLimbDims = limbDims;
+        this.updateUI(landmarks, mask, pose, limbDims);
+
+        const proportions = this.computeProportions(landmarks);
+        const goblin = this.buildFromProportions(proportions, limbDims);
+
+        // replace contents of the shared topology mesh in place
+        this.topology.vertices = goblin.vertices;
+        this.topology.faces = goblin.faces;
+        this.topology.edges = goblin.edges;
+        this.topology.edgeRegistry = goblin.edgeRegistry;
+        this.topology.rebuildEdgeRegistry();
+        this.topology.repairTwins();
+        return this.topology;
+    }
+}
+
+// GOBLIN GENERATOR V2
+// Same overall shape (image -> mask -> landmarks -> proportions -> mesh) as
+// GoblinGenerator above, but every stage is swapped for the new
+// image-analysis/ -> shape-fit/ -> mesh-gen/ pipeline: cleaned/denoised
+// masks, refined+confidence-scored landmarks, per-part radius profiles
+// pulled straight from the silhouette (instead of a handful of scalar
+// constants), and stylized builders (squarish head, barrel torso, wedge
+// ears, blocky hands, flattened feet) instead of plain spheres/cylinders.
+class GoblinGeneratorV2 {
+    constructor(topology, ui = {}){
+        this.topology = topology;
+        this.reader = new ImageReader();
+        this.image = null;
+        this.previewCanvas = ui.previewCanvas || null;
+        this.readoutEl = ui.readoutEl || null;
+    }
+    async setImage(file){
+        this.image = file;
+        const url = URL.createObjectURL(file);
+        try { await this.reader.load(url); }
+        finally { URL.revokeObjectURL(url); }
+    }
+    // Builds a stylized squarish-oval head as a loft over a RadiusProfile.
+    // With an image loaded, `profile` is the dense, silhouette-measured (and
+    // style-biased by SilhouetteFitOptimizer) head profile — so the head's
+    // vertical shape now comes from the actual measured silhouette rather
+    // than a fixed sin-curve heuristic. Without an image, a synthetic
+    // profile reproducing the old sin-curve heuristic is passed in instead,
+    // so this method doesn't need two separate code paths.
+    buildHead(profile, worldHeight, depthRatio = DEPTH_RATIOS.head){
+        const segments = 10;
+        const path = [];
+        for(let i=0;i<=segments;i++){
+            const t = i/segments;
+            const rx = profile.radius(t);
+            const ry = rx*depthRatio;
+            path.push({ position:[0, (t-0.5)*worldHeight, 0], rx, ry });
+        }
+        return loftLocal(path, 12, squarishRingFn(0.4));
+    }
+    // Picks per-limb-pair profiles for a turned/asymmetric pose: when the
+    // raw silhouette measurement shows the left and right side of this pair
+    // (arm or leg) are genuinely different — not just noise — each side
+    // keeps its own independently style-fitted profile instead of both
+    // being forced onto one shared/mirrored shape. Below the threshold
+    // (a front-facing-ish pose), falls back to the shared fitted profile
+    // exactly as before, so symmetric input is unaffected.
+    limbSideProfiles(dense, fitted, key, fallbackRadiusFn, asymmetryThreshold = 0.18){
+        const ratio = dense && dense.asymmetry ? (dense.asymmetry[key] || 0) : 0;
+        const rawL = dense && dense[key+"L"], rawR = dense && dense[key+"R"];
+        if(ratio > asymmetryThreshold && rawL && rawR){
+            const biasedL = regularizeProfile(applyStyleBias(key, rawL.samples, DEFAULT_STYLE_BIAS), { minRadius: 0.01, maxDeltaRatio: 0.3 });
+            const biasedR = regularizeProfile(applyStyleBias(key, rawR.samples, DEFAULT_STYLE_BIAS), { minRadius: 0.01, maxDeltaRatio: 0.3 });
+            return { L: new RadiusProfile(biasedL), R: new RadiusProfile(biasedR), asymmetric: true, ratio };
+        }
+        const shared = (fitted && fitted[key]) ? fitted[key] : { radius: fallbackRadiusFn };
+        return { L: shared, R: shared, asymmetric: false, ratio };
+    }
+    generate(){
+        let mask = null, landmarks = null, refined = null, pose = null, parts = [];
+        if(this.image){
+            const imageData = this.reader.read();
+            const rawMask = extractByBrightness(imageData);
+            mask = largestComponent(cleanMask(rawMask, { erode: 1, dilate: 1 }));
+            landmarks = detectLandmarks(mask);
+            if(landmarks){
+                const rows = sampleWidths(mask);
+                refined = refineLandmarks(landmarks, rows);
+                pose = estimatePose(mask, refined);
+                parts = segmentParts(mask, refined);
+            }
+        }
+        if(this.previewCanvas && mask){
+            const extractor = new SilhouetteExtractor();
+            extractor.drawPreview(mask, this.previewCanvas);
+        }
+
+        const modelHeight = 3.4;
+        const scale = landmarks ? modelHeight / Math.max(1, landmarks.bounds.height) : 1;
+        const worldY = (y) => landmarks ? (landmarks.bounds.maxY - y) * scale : 0;
+
+        // --- Step 1 + 2: dense silhouette-driven cross-sections, fitted by
+        // the iterative silhouette-fit optimizer against the goblin style
+        // targets. `fitted` holds one RadiusProfile per body part; falls
+        // back to null (heuristic profiles below) if no image is loaded.
+        // `dense` is kept too (not just `fitted`) since it also carries the
+        // per-side independent profiles + measured asymmetry/placement cues
+        // used below for turned/3-4-view poses.
+        let fitted = null, errorHistory = [], dense = null;
+        if(landmarks && mask){
+            dense = extractDenseCrossSections(mask, refined, parts, scale, { sampleCount: 24, symmetryWeight: 0.85 });
+            const optimizer = new SilhouetteFitOptimizer(dense, { maxIterations: 12, learningRate: 0.6 });
+            const fit = optimizer.run();
+            fitted = fit.profiles;
+            errorHistory = fit.errorHistory;
+        }
+
+        const headRadius = landmarks ? Math.max(0.08, (refined.head.width*0.5)*scale) : modelHeight*0.10;
+        const headCenterY = landmarks ? worldY(refined.head.y) : modelHeight*0.92;
+        const shoulderY = landmarks ? worldY(refined.shoulders.y) : modelHeight*0.78;
+        const hipY = landmarks ? worldY(refined.hips.y) : modelHeight*0.48;
+        const shoulderHalfWidth = landmarks ? Math.max(0.12,(refined.shoulders.right-refined.shoulders.left)*0.5*scale) : modelHeight*0.19;
+        const hipHalfWidth = landmarks ? Math.max(0.10,(refined.hips.right-refined.hips.left)*0.5*scale) : modelHeight*0.16;
+
+        const parts3d = [];
+
+        // Head
+        const headWorldHeight = landmarks ? Math.max(0.15,(refined.neck.y-refined.bounds.minY)*scale) : modelHeight*0.22;
+        const headProfile = fitted ? fitted.head : { radius: (t) => biasedWidth("head", headRadius*2)*0.5*(0.25+0.75*Math.sin(t*Math.PI)) };
+        const headMesh = this.buildHead(headProfile, headWorldHeight);
+        translateMesh(headMesh, 0, headCenterY, 0);
+        parts3d.push(headMesh);
+
+        // Torso — barrel profile, dense-sampled + style-fitted straight from the silhouette
+        const torsoWorldLength = landmarks ? Math.max(0.2, (refined.hips.y-refined.shoulders.y)*-1*scale) : (shoulderY-hipY);
+        const torsoProfile = fitted ? fitted.torso : { radius: () => shoulderHalfWidth*0.85 };
+        const torsoMesh = buildProfiledCapsule(torsoProfile, Math.max(0.3, torsoWorldLength), 14, 12, DEPTH_RATIOS.torso, squarishRingFn(0.3));
+        translateMesh(torsoMesh, 0, (shoulderY+hipY)/2, 0);
+        parts3d.push(torsoMesh);
+
+        // Pelvis — same profiled-loft treatment instead of a plain scaled sphere
+        const pelvisWorldLength = landmarks ? Math.max(0.12,(refined.hips.y-refined.waist.y)*-1*scale) : modelHeight*0.14;
+        const pelvisProfile = fitted ? fitted.pelvis : { radius: () => hipHalfWidth*0.9 };
+        const pelvis = buildProfiledCapsule(pelvisProfile, Math.max(0.15,pelvisWorldLength), 12, 8, DEPTH_RATIOS.pelvis, squarishRingFn(0.25));
+        translateMesh(pelvis, 0, hipY, 0);
+        parts3d.push(pelvis);
+
+        // Ears — thin tapering wedges with a strong tip flare
+        const earLen = headRadius*1.6;
+        for(const side of [-1,1]){
+            const ear = buildEar(headRadius*0.35, earLen, 0.65, 8, side);
+            translateMesh(ear, side*headRadius*1.0, headCenterY + headRadius*0.15, -headRadius*0.1);
+            parts3d.push(ear);
+        }
+
+        // Arms — capsule per segment, joint-blended at the shoulder. When
+        // the source pose reads clearly asymmetric (a 3/4 turn or walking
+        // stance — measured via computeAsymmetryRatio on the raw L/R
+        // silhouette widths), each arm keeps its own independently
+        // style-fitted profile instead of both sides being forced onto one
+        // shared/mirrored shape; placement also picks up the limb's real
+        // measured screen-x offset and a depth (z) push derived from which
+        // side reads larger (nearer) vs smaller (farther) in the source.
+        const armLength = Math.max(0.2, (shoulderY-hipY)*1.15);
+        const armRadius = headRadius*0.32;
+        const upperArmSides = this.limbSideProfiles(dense, fitted, "upperArm", (t) => armRadius*(1-t*0.15));
+        const lowerArmSides = this.limbSideProfiles(dense, fitted, "lowerArm", (t) => armRadius*0.85*(1-t*0.2));
+        const handWidthShared = fitted ? avgRadius(fitted.hand)*2 : biasedWidth("hand", armRadius*1.6);
+        const armPlacement = dense && dense.placement ? dense.placement.arm : null;
+        const armDepthCue = armPlacement ? armPlacement.depthCue : 0;
+        const armZMax = armRadius*1.8;
+        for(const side of [-1,1]){
+            const upperLen = armLength*0.5, lowerLen = armLength*0.5;
+            const upperArmProfile = side < 0 ? upperArmSides.L : upperArmSides.R;
+            const lowerArmProfile = side < 0 ? lowerArmSides.L : lowerArmSides.R;
+            const measuredX = armPlacement ? (side < 0 ? armPlacement.centerXL : armPlacement.centerXR) : null;
+            const heuristicX = side*(shoulderHalfWidth+armRadius*0.9);
+            const armX = measuredX != null ? measuredX*0.6 + heuristicX*0.4 : heuristicX;
+            // depthCue > 0 means the left side reads larger/nearer in the
+            // source silhouette; push that side toward the camera and the
+            // opposite side away, scaled by how strong the cue is.
+            const armZ = (side < 0 ? armDepthCue : -armDepthCue) * armZMax;
+
+            const upperArm = buildProfiledCapsule(upperArmProfile, upperLen, 10, 6, 0.95);
+            translateMesh(upperArm, armX, shoulderY-upperLen*0.5, armZ);
+            parts3d.push(upperArm);
+
+            const lowerArm = buildProfiledCapsule(lowerArmProfile, lowerLen, 10, 6, 0.9);
+            translateMesh(lowerArm, armX, shoulderY-upperLen-lowerLen*0.5, armZ);
+            parts3d.push(lowerArm);
+
+            const handProfile = side < 0 ? (dense && dense.handL) : (dense && dense.handR);
+            const handWidth = (lowerArmSides.asymmetric && handProfile) ? avgRadius(handProfile)*2 : handWidthShared;
+            const hand = buildHand(handWidth, armRadius*1.4, handWidth*DEPTH_RATIOS.hand, side);
+            translateMesh(hand, armX, shoulderY-upperLen-lowerLen-armRadius*0.7, armZ);
+            parts3d.push(hand);
+
+            // blend collar smoothing the shoulder -> upper-arm seam
+            const blend = buildBlendRing([armX*0.4, shoulderY, armZ*0.3], shoulderHalfWidth*0.4, [armX, shoulderY-upperLen*0.15, armZ], armRadius, 10, 3);
+            parts3d.push(blend);
+        }
+
+        // Legs + flattened feet — same perspective-aware treatment: an
+        // independent per-side profile when the pose reads asymmetric
+        // (e.g. a forward/back walking stance), plus measured x + depth
+        // placement per leg.
+        const legLength = Math.max(0.2, hipY);
+        const legRadius = hipHalfWidth*0.4;
+        const thighSides = this.limbSideProfiles(dense, fitted, "thigh", (t) => legRadius*(1-t*0.1));
+        const shinSides = this.limbSideProfiles(dense, fitted, "shin", (t) => legRadius*0.9*(1-t*0.1));
+        const footLengthShared = fitted ? avgRadius(fitted.foot)*2.4 : biasedWidth("foot", legRadius*2.4);
+        const legPlacement = dense && dense.placement ? dense.placement.leg : null;
+        const legDepthCue = legPlacement ? legPlacement.depthCue : 0;
+        const legZMax = legRadius*2.2;
+        for(const side of [-1,1]){
+            const thighProfile = side < 0 ? thighSides.L : thighSides.R;
+            const shinProfile = side < 0 ? shinSides.L : shinSides.R;
+            const measuredX = legPlacement ? (side < 0 ? legPlacement.centerXL : legPlacement.centerXR) : null;
+            const heuristicX = side*hipHalfWidth*0.55;
+            const legX = measuredX != null ? measuredX*0.6 + heuristicX*0.4 : heuristicX;
+            const legZ = (side < 0 ? legDepthCue : -legDepthCue) * legZMax;
+
+            const thigh = buildProfiledCapsule(thighProfile, legLength*0.42, 10, 6, 0.92);
+            translateMesh(thigh, legX, legLength*0.85 - legLength*0.42*0.5, legZ);
+            parts3d.push(thigh);
+
+            const shin = buildProfiledCapsule(shinProfile, legLength*0.43, 10, 6, 0.88);
+            translateMesh(shin, legX, legLength*0.85 - legLength*0.42 - legLength*0.43*0.5 + legLength*0.15, legZ);
+            parts3d.push(shin);
+
+            const footProfile = side < 0 ? (dense && dense.footL) : (dense && dense.footR);
+            const footLength = (shinSides.asymmetric && footProfile) ? avgRadius(footProfile)*2.4 : footLengthShared;
+            // shin bottom lands at ~y=0 (ground) by construction above, so
+            // the foot's own sole (its local y=0) sits at world y=0 too —
+            // its ankle-collar height then reaches up to roughly meet it.
+            const foot = buildFootWedge({
+                length: footLength,
+                widthOuter: legRadius*0.95,
+                widthInner: legRadius*0.78,
+                toeHeight: legRadius*1.1*DEPTH_RATIOS.foot,
+                ankleBaseHeight: legRadius*1.1,
+                ankleTopHeight: legRadius*2.0
+            }, side);
+            translateMesh(foot, legX, 0, legZ + legRadius*0.4);
+            parts3d.push(foot);
+        }
+
+        const merged = mergeMeshes(parts3d, { weldEpsilon: 1e-4 });
+        const goblin = toHalfEdgeMesh(merged, HalfEdgeMesh, THREE.Vector3);
+
+        if(this.readoutEl){
+            let text = landmarks
+                ? `[v2 pipeline]\nbounds: ${landmarks.bounds.width}x${landmarks.bounds.height}\n` +
+                  `head conf=${refined.head.confidence?.toFixed(2)} neck conf=${refined.neck.confidence?.toFixed(2)}\n` +
+                  `pose: yaw≈${pose.yawDeg.toFixed(1)}° tilt≈${pose.headTiltDeg.toFixed(1)}°\n` +
+                  `parts segmented: ${parts.map(p=>p.label).join(", ") || "none"}\n` +
+                  (fitted ? `silhouette-fit error: ${errorHistory[0]?.toFixed(4)} → ${errorHistory[errorHistory.length-1]?.toFixed(4)} over ${errorHistory.length} iters\n` : `silhouette-fit: skipped (no dense profiles)\n`) +
+                  (dense && dense.asymmetry ? `asymmetry (L/R diff): arm ${dense.asymmetry.upperArm.toFixed(2)}/${dense.asymmetry.lowerArm.toFixed(2)}, leg ${dense.asymmetry.thigh.toFixed(2)}/${dense.asymmetry.shin.toFixed(2)}` +
+                    ` → ${[upperArmSides.asymmetric&&"upperArm",lowerArmSides.asymmetric&&"lowerArm",thighSides.asymmetric&&"thigh",shinSides.asymmetric&&"shin"].filter(Boolean).join(",") || "all shared/symmetric"}\n` : "") +
+                  `verts=${merged.vertices.length} faces=${merged.faces.length}`
+                : `[v2 pipeline] no image loaded — using default proportions.\nverts=${merged.vertices.length} faces=${merged.faces.length}`;
+            this.readoutEl.textContent = text;
+        }
+
+        this.topology.vertices = goblin.vertices;
+        this.topology.faces = goblin.faces;
+        this.topology.edges = goblin.edges;
+        this.topology.edgeRegistry = goblin.edgeRegistry;
+        this.topology.rebuildEdgeRegistry();
+        this.topology.repairTwins();
+        return this.topology;
+    }
+}
+
+function avgRadius(profile){
+    const s = profile.samples;
+    return s.reduce((a,b)=>a+b,0) / Math.max(1,s.length);
+}
+
+// Minimal local loft (mirrors mesh-gen/loftBuilder.js) so the head builder
+// above doesn't need a second import path just for one call site — kept
+// numerically identical to the shared loft() for consistency.
+function loftLocal(path, sides, ringFn){
+    const m = { vertices: [], faces: [] };
+    const rings = [];
+    for(let i=0;i<path.length;i++){
+        const prev = path[Math.max(0,i-1)].position, next = path[Math.min(path.length-1,i+1)].position;
+        let fwd = [next[0]-prev[0], next[1]-prev[1], next[2]-prev[2]];
+        const flen = Math.hypot(...fwd) || 1;
+        fwd = [fwd[0]/flen, fwd[1]/flen, fwd[2]/flen];
+        const worldUp = Math.abs(fwd[1])>0.95 ? [1,0,0] : [0,1,0];
+        const cx = (a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+        let right = cx(fwd, worldUp); let rl = Math.hypot(...right)||1; right=[right[0]/rl,right[1]/rl,right[2]/rl];
+        let up = cx(right, fwd); let ul = Math.hypot(...up)||1; up=[up[0]/ul,up[1]/ul,up[2]/ul];
+        const { position, rx, ry } = path[i];
+        const pts = [];
+        for(let k=0;k<sides;k++){
+            const a = (k/sides)*Math.PI*2;
+            const p = ringFn(a, rx, ry);
+            pts.push([position[0]+right[0]*p.x+up[0]*p.y, position[1]+right[1]*p.x+up[1]*p.y, position[2]+right[2]*p.x+up[2]*p.y]);
+        }
+        rings.push(pts.map(p => { m.vertices.push(p); return m.vertices.length-1; }));
+    }
+    for(let i=0;i<rings.length-1;i++){
+        const a=rings[i], b=rings[i+1];
+        for(let k=0;k<sides;k++){ const n=(k+1)%sides; m.faces.push([a[k],a[n],b[n],b[k]]); }
+    }
+    const c0 = m.vertices.length; m.vertices.push(path[0].position.slice());
+    for(let k=0;k<sides;k++){ const n=(k+1)%sides; m.faces.push([c0, rings[0][n], rings[0][k]]); }
+    const c1 = m.vertices.length; m.vertices.push(path[path.length-1].position.slice());
+    const last = rings.length-1;
+    for(let k=0;k<sides;k++){ const n=(k+1)%sides; m.faces.push([c1, rings[last][k], rings[last][n]]); }
+    return m;
+}
+
+// MESH SYSTEM
+class MeshSystem {
+    constructor(scene){
+        this.scene = scene;
+        this.topology = new PrimitiveFactory().createCube(1);
+        this.createRenderMesh();
+    }
+    createRenderMesh(){
+        this.selectedEdgeLine = new THREE.Line(
+            new THREE.BufferGeometry(),
+            new THREE.LineBasicMaterial({ color:0xffff00 })
+        );
+        this.scene.add(this.selectedEdgeLine);
+
+        const geo = this.topology.buildGeometry();
+        const mat = new THREE.MeshStandardMaterial({
+            color:0x6688aa,
+            side:THREE.DoubleSide
+        });
+        this.mesh = new THREE.Mesh(geo, mat);
+        this.geometry = geo;
+        this.scene.add(this.mesh);
+
+        const edgeGeo = new THREE.EdgesGeometry(geo);
+        this.edgeLines = new THREE.LineSegments(
+            edgeGeo,
+            new THREE.LineBasicMaterial({ color:0xff66aa })
+        );
+        this.scene.add(this.edgeLines);
+
+        const pointMat = new THREE.PointsMaterial({
+            color:0xffffff,
+            size:0.08,
+            sizeAttenuation:true
+        });
+        this.points = new THREE.Points(geo, pointMat);
+        this.scene.add(this.points);
+
+        this.highlightMesh = this.mesh.clone();
+        this.highlightMesh.material = new THREE.MeshBasicMaterial({
+            color:0xffaa00,
+            transparent:true,
+            opacity:0.5,
+            side:THREE.DoubleSide
+        });
+        this.highlightMesh.visible = false;
+        this.scene.add(this.highlightMesh);
+    }
+    updateSelectedVertex(vertex){
+        if(!vertex){
+            if(this.selectedVertexPoint) this.selectedVertexPoint.visible = false;
+            return;
+        }
+        if(!this.selectedVertexPoint){
+            this.selectedVertexPoint = new THREE.Points(
+                new THREE.BufferGeometry(),
+                new THREE.PointsMaterial({ color:0xffff00, size:0.15 })
+            );
+            this.scene.add(this.selectedVertexPoint);
+        }
+        this.selectedVertexPoint.visible = true;
+        const p = vertex.position;
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.Float32BufferAttribute([p.x,p.y,p.z], 3));
+        this.selectedVertexPoint.geometry.dispose();
+        this.selectedVertexPoint.geometry = geo;
+    }
+    updateSelectedEdge(edge){
+        if(!edge){
+            this.selectedEdgeLine.visible = false;
+            return;
+        }
+        this.selectedEdgeLine.visible = true;
+        const a = edge.prev.vertex.position;
+        const b = edge.vertex.position;
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.Float32BufferAttribute([a.x,a.y,a.z, b.x,b.y,b.z], 3));
+        this.selectedEdgeLine.geometry.dispose();
+        this.selectedEdgeLine.geometry = geo;
+    }
+    rebuild(){
+        const geo = this.topology.buildGeometry();
+        this.mesh.geometry.dispose();
+        this.edgeLines.geometry.dispose();
+        this.mesh.geometry = geo;
+        this.edgeLines.geometry = new THREE.EdgesGeometry(geo);
+        this.points.geometry = geo;
+        this.highlightMesh.geometry = geo;
+        this.geometry = geo;
+        stats.innerHTML = `
+Vertices: ${this.topology.vertices.length}<br>
+Edges: ${this.topology.edges.length}<br>
+Faces: ${this.topology.faces.length}
+        `;
+    }
+}
+
+// APP
+class EditorApp{
+    constructor(){
+        this.selection = new Selection();
+        this.mouse = new THREE.Vector2();
+        this.initScene();
+        this.initHelpers();
+        this.goblinGenerator = new GoblinGenerator(this.meshSystem.topology, {
+            previewCanvas: document.getElementById("silhouettePreview"),
+            readoutEl: document.getElementById("landmarkReadout")
+        });
+        this.goblinGeneratorV2 = new GoblinGeneratorV2(this.meshSystem.topology, {
+            previewCanvas: document.getElementById("silhouettePreview"),
+            readoutEl: document.getElementById("landmarkReadout")
+        });
+        this.initInput();
+        this.animate();
+    }
+    initScene(){
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x2a2a2a);
+        this.camera = new THREE.PerspectiveCamera(
+            60,
+            viewport.clientWidth / viewport.clientHeight,
+            0.1,
+            1000
+        );
+        this.camera.position.set(4,4,6);
+        this.renderer = new THREE.WebGLRenderer({ antialias:true });
+        this.renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+        viewport.appendChild(this.renderer.domElement);
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.raycaster = new THREE.Raycaster();
+    }
+    initHelpers(){
+        const grid = new THREE.GridHelper(50,50);
+        this.scene.add(grid);
+        const axes = new THREE.AxesHelper(2);
+        this.scene.add(axes);
+        const ambient = new THREE.AmbientLight(0xffffff,1);
+        this.scene.add(ambient);
+        const sun = new THREE.DirectionalLight(0xffffff,2);
+        sun.position.set(10,10,5);
+        this.scene.add(sun);
+        this.meshSystem = new MeshSystem(this.scene);
+    }
+    pickEdge(ray){
+        let bestEdge = null;
+        let bestDistance = Infinity;
+        const cpRay = new THREE.Vector3();
+        const cpSeg = new THREE.Vector3();
+        for(const edge of this.meshSystem.topology.edges){
+            const a = edge.prev.vertex.position;
+            const b = edge.vertex.position;
+            ray.distanceSqToSegment(a, b, cpRay, cpSeg);
+            const d = cpRay.distanceTo(cpSeg);
+            if(d < 0.15 && d < bestDistance){
+                bestDistance = d;
+                bestEdge = edge;
+            }
+        }
+        return bestEdge;
+    }
+    pickVertex(ray){
+        let best = null;
+        let bestDistance = Infinity;
+        for(const v of this.meshSystem.topology.vertices){
+            const closest = ray.closestPointToPoint(v.position, true, new THREE.Vector3());
+            const d = closest.distanceTo(v.position);
+            if(d < 0.12 && d < bestDistance){
+                bestDistance = d;
+                best = v;
+            }
+        }
+        return best;
+    }
+    initInput(){
+        this.renderer.domElement.addEventListener("pointerdown", (event) => {
+            const ctrl = event.ctrlKey || event.metaKey;
+            if(!ctrl) this.selection.clear();
+
+            const rect = this.renderer.domElement.getBoundingClientRect();
+            this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            this.raycaster.setFromCamera(this.mouse, this.camera);
+
+            if(this.selection.mode === "vertex"){
+                this.selection.vertex = this.pickVertex(this.raycaster.ray);
+                return;
+            }
+            if(this.selection.mode === "edge"){
+                this.selection.edge = this.pickEdge(this.raycaster.ray);
+                return;
+            }
+            const hits = this.raycaster.intersectObject(this.meshSystem.mesh);
+            if(!hits.length) return;
+            const hit = hits[0];
+            const face = this.meshSystem.geometry.userData.faceMap[hit.faceIndex];
+            this.selection.face = face;
+        });
+        window.addEventListener("keydown", (e) => {
+            if(e.key === "e"){
+                const face = this.selection.face;
+                if(!face) return;
+                this.meshSystem.topology.extrudeFace(face);
+                this.meshSystem.topology.validateFaceLoops();
+                this.meshSystem.rebuild();
+            }
+        });
+    }
+    updateSelectionVisual(){
+        this.meshSystem.updateSelectedVertex(this.selection.vertex);
+        this.meshSystem.updateSelectedEdge(this.selection.edge);
+        if(!this.meshSystem.highlightMesh) return;
+        this.meshSystem.highlightMesh.visible = !!this.selection.face;
+    }
+    animate(){
+        requestAnimationFrame(() => this.animate());
+        this.controls.update();
+        this.renderer.render(this.scene, this.camera);
+        this.updateSelectionVisual();
+    }
+}
+
+const APP = new EditorApp();
+window.APP = APP;
+
+const topo = APP.meshSystem.topology;
+stats.innerHTML = `
+Vertices: ${topo.vertices.length}<br>
+Edges: ${topo.edges.length}<br>
+Faces: ${topo.faces.length}
+`;
+
+const fileInput = document.getElementById("imageInput");
+document.getElementById("generateGoblinTool").addEventListener("click", () => {
+    APP.goblinGenerator.generate();
+    APP.meshSystem.rebuild();
+});
+document.getElementById("generateGoblinToolV2").addEventListener("click", () => {
+    APP.goblinGeneratorV2.generate();
+    APP.meshSystem.rebuild();
+});
+
+fileInput.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    await APP.goblinGenerator.setImage(file);
+    await APP.goblinGeneratorV2.setImage(file);
+    APP.goblinGenerator.generate();
+    APP.meshSystem.rebuild();
+});
+
+window.addEventListener("resize", () => {
+    APP.camera.aspect = viewport.clientWidth / viewport.clientHeight;
+    APP.camera.updateProjectionMatrix();
+    APP.renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+});
+
+document.getElementById("selectTool").addEventListener("click", () => {
+    APP.selection.mode = "face";
+});
+document.getElementById("extrudeTool").addEventListener("click", () => {
+    APP.selection.mode = "face";
+});
+document.getElementById("sculptTool").addEventListener("click", () => {
+    APP.selection.mode = "vertex";
+});
+
+// Standalone "Load Image" button: loads + previews the silhouette without
+// rebuilding the mesh yet, so you can sanity-check the threshold before
+// committing to a full generate.
+const imageLoader = document.getElementById("imageLoader");
+document.getElementById("loadImg").addEventListener("click", () => {
+    imageLoader.click();
+});
+imageLoader.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    await APP.goblinGenerator.setImage(file);
+    await APP.goblinGeneratorV2.setImage(file);
+    const imageData = APP.goblinGenerator.reader.read();
+    const mask = APP.goblinGenerator.extractor.extract(imageData);
+    const landmarks = APP.goblinGenerator.detector.detect(mask);
+    const pose = mask ? APP.goblinGenerator.poseEstimator.estimate(mask) : null;
+    const limbDims = APP.goblinGenerator.detectLimbDimensions(imageData, landmarks, pose);
+    APP.goblinGenerator.updateUI(landmarks, mask, pose, limbDims);
+});
+
+
+/* ================================================================
+   SNOW GOLEM — LOW-POLY HEROIC RTS CHARACTER + RIG MODULE
+   Tuned specifically from the supplied chunky, Warcraft-era creature
+   proportions: oversized head/torso, broad shoulders, short powerful
+   legs, large feet, shield arm, and casting hand.
+   ================================================================ */
+
+const SnowGolem = {
+    rig:null,
+    bones:{},
+    visual:new THREE.Group(),
+    accessories:new THREE.Group(),
+    mixer:null,
+    clips:{},
+    action:null,
+    clock:new THREE.Clock(),
+    rigVisible:true,
+    skinned:null,
+    fireball:null,
+    fireTimer:0
+};
+
+function sgPart(factory, type, args, scale, pos){
+    const m = factory[type](...args);
+    m.scale(scale[0],scale[1],scale[2]);
+    m.translate(pos[0],pos[1],pos[2]);
+    return m;
+}
+
+function sgMerge(a,b){
+    return new PrimitiveFactory().mergeMeshes(a,b);
+}
+
+function sgBuildBody(){
+    const f = new PrimitiveFactory();
+    let body = new HalfEdgeMesh();
+    const parts=[];
+    // Heroic RTS proportions: broad upper body, compact waist, large feet.
+    parts.push(sgPart(f,'createSphere',[1,8,6],[1.25,1.15,.78],[0,3.55,0])); // torso
+    parts.push(sgPart(f,'createSphere',[1,8,6],[.98,.78,.72],[0,4.72,0])); // chest/head transition
+    parts.push(sgPart(f,'createSphere',[1,8,6],[1.05,.92,.82],[0,5.62,0])); // head
+    parts.push(sgPart(f,'createCube',[1],[.72,.42,.70],[0,4.15,.02])); // belly armor
+    parts.push(sgPart(f,'createCube',[1],[.66,.28,.58],[0,2.72,0])); // pelvis
+
+    // Neck / shoulders.
+    parts.push(sgPart(f,'createCylinder',[.27,.38,8],[1,1,1],[0,4.96,0]));
+    parts.push(sgPart(f,'createCube',[1],[.48,.38,.58],[-1.08,4.45,0]));
+    parts.push(sgPart(f,'createCube',[1],[.48,.38,.58],[ 1.08,4.45,0]));
+
+    // Thick segmented arms.
+    for(const side of [-1,1]){
+        parts.push(sgPart(f,'createCapsule',[.32,1.35,8],[1,1,1],[side*1.35,3.65,0]));
+        parts.push(sgPart(f,'createCapsule',[.27,1.15,8],[1,1,1],[side*1.48,2.48,0]));
+        parts.push(sgPart(f,'createSphere',[1,8,6],[.38,.32,.38],[side*1.48,1.82,0]));
+        // Massive legs and feet.
+        parts.push(sgPart(f,'createCapsule',[.44,1.35,8],[1,1,1],[side*.57,1.65,0]));
+        parts.push(sgPart(f,'createCapsule',[.39,1.10,8],[1,1,1],[side*.57,.48,0]));
+        parts.push(sgPart(f,'createCube',[1],[.62,.25,.82],[side*.57,-.28,.18]));
+    }
+
+    // Ears / tusks / beard-like silhouette pieces.
+    for(const side of [-1,1]){
+        const ear=sgPart(f,'createCone',[.34,.78,6],[1,1,.72],[side*1.00,5.83,0]);
+        // Tip outwards by rotating vertices.
+        for(const v of ear.vertices) v.position.x += side*Math.max(0,v.position.y)*.18;
+        parts.push(ear);
+        parts.push(sgPart(f,'createCone',[.13,.62,6],[1,1,1],[side*.48,5.18,.72]));
+        parts.push(sgPart(f,'createCone',[.11,.52,6],[1,1,1],[side*.27,5.08,.75]));
+    }
+    // Brow and nose give a strong heroic face silhouette.
+    parts.push(sgPart(f,'createCube',[1],[.72,.18,.18],[0,5.86,.76]));
+    parts.push(sgPart(f,'createCone',[.20,.55,6],[1,1,1],[0,5.48,.78]));
+
+    for(const p of parts) body=sgMerge(body,p);
+    body.rebuildEdgeRegistry(); body.repairTwins(); body.enforceConsistentWinding();
+    return body;
+}
+
+function sgBuildRig(){
+    const root = new THREE.Bone(); root.name='root'; root.position.set(0,0,0);
+    const pelvis = new THREE.Bone(); pelvis.name='pelvis'; pelvis.position.set(0,2.72,0); root.add(pelvis);
+    const spine = new THREE.Bone(); spine.name='spine'; spine.position.set(0,.75,0); pelvis.add(spine);
+    const chest = new THREE.Bone(); chest.name='chest'; chest.position.set(0,1.0,0); spine.add(chest);
+    const neck = new THREE.Bone(); neck.name='neck'; neck.position.set(0,.72,0); chest.add(neck);
+    const head = new THREE.Bone(); head.name='head'; head.position.set(0,.55,0); neck.add(head);
+
+    const makeArm=(side,name)=>{
+        const u=new THREE.Bone();u.name=`upper_arm.${name}`;u.position.set(side*1.08,.10,0);chest.add(u);
+        const l=new THREE.Bone();l.name=`forearm.${name}`;l.position.set(side*.22,-.78,0);u.add(l);
+        const h=new THREE.Bone();h.name=`hand.${name}`;h.position.set(0,-.75,0);l.add(h); return {u,l,h};
+    };
+    const L=makeArm(-1,'L'), R=makeArm(1,'R');
+    const makeLeg=(side,name)=>{
+        const t=new THREE.Bone();t.name=`thigh.${name}`;t.position.set(side*.57,-.10,0);pelvis.add(t);
+        const s=new THREE.Bone();s.name=`shin.${name}`;s.position.set(0,-1.15,0);t.add(s);
+        const f=new THREE.Bone();f.name=`foot.${name}`;f.position.set(0,-1.05,.18);s.add(f);return {t,s,f};
+    };
+    const LL=makeLeg(-1,'L'), RR=makeLeg(1,'R');
+
+    const handIKL=new THREE.Bone();handIKL.name='HandIK.L';handIKL.position.set(-1.48,1.82,.12);root.add(handIKL);
+    const handIKR=new THREE.Bone();handIKR.name='HandIK.R';handIKR.position.set(1.48,1.82,.12);root.add(handIKR);
+    const shieldIK=new THREE.Bone();shieldIK.name='ShieldIK.L';shieldIK.position.set(-1.78,2.62,.34);root.add(shieldIK);
+    const castTarget=new THREE.Bone();castTarget.name='CastTarget.R';castTarget.position.set(2.4,3.35,1.1);root.add(castTarget);
+
+    const skel=new THREE.Skeleton(root);
+    const all=[root,pelvis,spine,chest,neck,head,L.u,L.l,L.h,R.u,R.l,R.h,LL.t,LL.s,LL.f,RR.t,RR.s,RR.f,handIKL,handIKR,shieldIK,castTarget];
+    for(const b of all) SnowGolem.bones[b.name]=b;
+    SnowGolem.rig=new THREE.Group();SnowGolem.rig.name='SnowGolem_Rig';SnowGolem.rig.add(root);
+    SnowGolem.rig.userData.skeleton=skel;
+    return skel;
+}
+
+function sgMakeBonePyramid(a,b,material){
+    // Blender-style Octahedral bone: a tapered 4-sided pyramid/frustum between two joint spheres.
+    const va=new THREE.Vector3(), vb=new THREE.Vector3();
+    a.getWorldPosition(va); b.getWorldPosition(vb);
+    const d=vb.clone().sub(va), len=Math.max(.001,d.length());
+    const g=new THREE.Group();
+
+    // A custom 4-sided tapered shaft gives the characteristic low-poly Blender armature silhouette.
+    const rHead=.135, rTail=.055;
+    const geo=new THREE.CylinderGeometry(rTail,rHead,len,4,1,false);
+    const shaft=new THREE.Mesh(geo,material);
+    shaft.position.copy(va.clone().add(vb).multiplyScalar(.5));
+    shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.clone().normalize());
+    g.add(shaft);
+
+    // Small joint spheres, matching the "balls + pyramids" armature look.
+    const jointMat=new THREE.MeshBasicMaterial({color:0x8ee8ff,transparent:true,opacity:.95});
+    const head=new THREE.Mesh(new THREE.SphereGeometry(.105,8,6),jointMat);
+    head.position.copy(va); g.add(head);
+    const tail=new THREE.Mesh(new THREE.SphereGeometry(.082,8,6),jointMat);
+    tail.position.copy(vb); g.add(tail);
+    g.userData={bone:a,child:b,shaft,head,tail};
+    return g;
+}
+
+function sgBuildRigVisual(){
+    const g=new THREE.Group();g.name='Rig_Controls';
+    const mk=(p,c,r=.18)=>{const x=new THREE.Mesh(new THREE.TorusGeometry(r,.025,6,18),new THREE.MeshBasicMaterial({color:c}));x.position.copy(p);g.add(x);return x};
+    mk(new THREE.Vector3(-1.48,1.82,.2),0x5affb2,.28);
+    mk(new THREE.Vector3(1.48,1.82,.2),0xffb34a,.28);
+    mk(new THREE.Vector3(-1.78,2.62,.4),0x65a9ff,.42);
+    mk(new THREE.Vector3(2.4,3.35,1.1),0xff613f,.20);
+
+    // Blender-style armature: every parent/child pair gets a tapered pyramid
+    // between a spherical head and tail joint.
+    const boneMat=new THREE.MeshBasicMaterial({color:0x62b7e8,transparent:true,opacity:.78,depthTest:false,depthWrite:false});
+    const boneNames=['root','pelvis','spine','chest','neck','head','upper_arm.L','forearm.L','hand.L','upper_arm.R','forearm.R','hand.R','thigh.L','shin.L','foot.L','thigh.R','shin.R','foot.R'];
+    const boneSet=new Set(boneNames);
+    for(const name of boneNames){
+        const b=SnowGolem.bones[name];
+        if(!b)continue;
+        for(const child of b.children){
+            if(child.isBone && boneSet.has(child.name)) g.add(sgMakeBonePyramid(b,child,boneMat));
+        }
+    }
+    g.userData.updateBones=()=>{
+        for(const item of g.children){
+            if(!item.userData?.bone)continue;
+            const a=item.userData.bone,b=item.userData.child;
+            const va=new THREE.Vector3(),vb=new THREE.Vector3();
+            a.getWorldPosition(va);b.getWorldPosition(vb);
+            const d=vb.clone().sub(va),len=Math.max(.001,d.length());
+            const shaft=item.userData.shaft;
+            shaft.position.copy(va.clone().add(vb).multiplyScalar(.5));
+            shaft.scale.set(1,len/shaft.geometry.parameters.height,1);
+            shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize());
+            item.userData.head.position.copy(va);
+            item.userData.tail.position.copy(vb);
+        }
+    };
+    g.userData.updateBones();
+    return g;
+}
+
+function sgAddAccessories(){
+    const g=SnowGolem.accessories;g.clear();
+    const shieldMat=new THREE.MeshStandardMaterial({color:0x5f83a2,metalness:.55,roughness:.38,side:THREE.DoubleSide});
+    const rimMat=new THREE.MeshStandardMaterial({color:0xb98b3e,metalness:.75,roughness:.28});
+    const fireMat=new THREE.MeshBasicMaterial({color:0xff6a1a});
+    const darkMat=new THREE.MeshStandardMaterial({color:0x27313b,metalness:.7,roughness:.3});
+
+    // Heroic tower shield, held left.
+    const shield=new THREE.Mesh(new THREE.CylinderGeometry(.82,.95,.18,8),shieldMat);
+    shield.rotation.x=Math.PI/2;shield.rotation.z=Math.PI/2;shield.position.set(-1.86,2.62,.52);g.add(shield);
+    const rim=new THREE.Mesh(new THREE.TorusGeometry(.78,.075,6,8),rimMat);rim.position.copy(shield.position);rim.rotation.copy(shield.rotation);g.add(rim);
+    const boss=new THREE.Mesh(new THREE.ConeGeometry(.18,.18,8),rimMat);boss.rotation.x=Math.PI/2;boss.position.set(-1.86,2.62,.68);g.add(boss);
+
+    // Fire-ring on right hand.
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(.22,.07,8,16),rimMat);ring.position.set(1.52,1.82,.36);ring.rotation.x=Math.PI/2;g.add(ring);
+    const inner=new THREE.Mesh(new THREE.TorusGeometry(.13,.025,6,12),fireMat);inner.position.copy(ring.position);inner.rotation.copy(ring.rotation);g.add(inner);
+    // Parent the primary props to the rig controls so they follow the arms.
+    SnowGolem.bones['ShieldIK.L'].add(shield);
+    SnowGolem.bones['ShieldIK.L'].add(rim);
+    SnowGolem.bones['ShieldIK.L'].add(boss);
+    shield.position.set(0,0,.52); rim.position.set(0,0,.52); boss.position.set(0,0,.68);
+    const handR=SnowGolem.bones['hand.R'];
+    handR.add(ring); ring.position.set(0,0,.36);
+    handR.add(inner); inner.position.set(0,0,.36);
+    for(let i=0;i<4;i++){
+        const orb=new THREE.Mesh(new THREE.SphereGeometry(.045,6,5),fireMat);const a=i*Math.PI/2;orb.position.set(Math.cos(a)*.22,Math.sin(a)*.22,.36);handR.add(orb);
+    }
+    // Belt/armor plates.
+    for(const x of [-.62,.62]){
+        const plate=new THREE.Mesh(new THREE.BoxGeometry(.45,.28,.8),darkMat);plate.position.set(x,2.82,.58);g.add(plate);
+    }
+}
+
+function sgMakeWeightedSkinnedMesh(topology,skeleton){
+    const geo=topology.buildGeometry();
+    const pos=geo.attributes.position;
+    const idx=[],weights=[];
+    const bones=SnowGolem.bones;
+    const segments=[
+        ['head',new THREE.Vector3(0,5.62,0)],['chest',new THREE.Vector3(0,4.45,0)],['spine',new THREE.Vector3(0,3.45,0)],
+        ['upper_arm.L',new THREE.Vector3(-1.25,3.7,0)],['forearm.L',new THREE.Vector3(-1.48,2.5,0)],['hand.L',new THREE.Vector3(-1.48,1.82,0)],
+        ['upper_arm.R',new THREE.Vector3(1.25,3.7,0)],['forearm.R',new THREE.Vector3(1.48,2.5,0)],['hand.R',new THREE.Vector3(1.48,1.82,0)],
+        ['thigh.L',new THREE.Vector3(-.57,1.65,0)],['shin.L',new THREE.Vector3(-.57,.48,0)],['foot.L',new THREE.Vector3(-.57,-.28,.18)],
+        ['thigh.R',new THREE.Vector3(.57,1.65,0)],['shin.R',new THREE.Vector3(.57,.48,0)],['foot.R',new THREE.Vector3(.57,-.28,.18)]
+    ];
+    const boneList=skeleton.bones;let weighted=0;
+    for(let i=0;i<pos.count;i++){
+        const p=new THREE.Vector3().fromBufferAttribute(pos,i);let ds=[];
+        for(let j=0;j<segments.length;j++){const q=segments[j][1];const d=p.distanceTo(q);ds.push([d,j]);}
+        ds.sort((a,b)=>a[0]-b[0]);const take=ds.slice(0,2), inv=take.map(x=>1/(x[0]+.18));const sum=inv[0]+inv[1];
+        idx.push(boneList.indexOf(bones[segments[take[0][1]][0]]),boneList.indexOf(bones[segments[take[1][1]][0]]),0,0);
+        weights.push(inv[0]/sum,inv[1]/sum,0,0);weighted++;
+    }
+    geo.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(idx,4));geo.setAttribute('skinWeight',new THREE.Float32BufferAttribute(weights,4));
+    const mat=new THREE.MeshStandardMaterial({color:0x9bd9ea,roughness:.82,metalness:.05,flatShading:true});
+    const sk=new THREE.SkinnedMesh(geo,mat);sk.bind(skeleton);sk.castShadow=true;sk.receiveShadow=true;
+    SnowGolem.skinned=sk;SnowGolem.visual.add(sk);
+    document.getElementById('snowWeightCount').textContent=weighted;
+}
+
+function sgClip(name,frames,apply){
+    const tracks=[];
+    for(const [boneName,arr] of Object.entries(frames)){
+        const times=arr.map(x=>x[0]), vals=arr.flatMap(x=>x[1]);
+        tracks.push(new THREE.QuaternionKeyframeTrack(boneName+'.quaternion',times,vals));
+    }
+    return new THREE.AnimationClip(name,1.0,tracks);
+}
+function sgQ(x,y,z){const q=new THREE.Quaternion();q.setFromEuler(new THREE.Euler(THREE.MathUtils.degToRad(x),THREE.MathUtils.degToRad(y),THREE.MathUtils.degToRad(z)));return q.toArray()}
+
+function sgBuildClips(){
+    const q=(a,b,c)=>sgQ(a,b,c);
+    SnowGolem.clips.idle=sgClip('SnowGolem_Idle',{
+      'spine':[[0,q(0,0,0)],[.5,q(2,0,0)],[1,q(0,0,0)]],
+      'chest':[[0,q(0,0,0)],[.5,q(-2,0,0)],[1,q(0,0,0)]],
+      'head':[[0,q(0,-3,0)],[.5,q(0,3,0)],[1,q(0,-3,0)]]},);
+    SnowGolem.clips.cast=sgClip('SnowGolem_Cast',{
+      'upper_arm.R':[[0,q(0,0,0)],[.25,q(-20,0,-24)],[.48,q(-62,0,-45)],[.72,q(-12,0,-8)],[1,q(0,0,0)]],
+      'forearm.R':[[0,q(0,0,0)],[.25,q(0,0,-20)],[.48,q(0,0,-62)],[.72,q(0,0,-8)],[1,q(0,0,0)]],
+      'hand.R':[[0,q(0,0,0)],[.48,q(0,0,-35)],[.72,q(0,0,0)],[1,q(0,0,0)]],
+      'chest':[[0,q(0,0,0)],[.48,q(-8,0,0)],[.72,q(4,0,0)],[1,q(0,0,0)]]});
+    SnowGolem.clips.block=sgClip('SnowGolem_ShieldBlock',{
+      'upper_arm.L':[[0,q(0,0,0)],[.35,q(0,0,28)],[.7,q(0,0,28)],[1,q(0,0,0)]],
+      'forearm.L':[[0,q(0,0,0)],[.35,q(0,0,-42)],[.7,q(0,0,-42)],[1,q(0,0,0)]],
+      'spine':[[0,q(0,0,0)],[.35,q(0,8,0)],[.7,q(0,8,0)],[1,q(0,0,0)]]});
+}
+
+function sgPlay(name,loop=false){
+    if(!SnowGolem.mixer)return;
+    if(SnowGolem.action)SnowGolem.action.fadeOut(.12);
+    const clip=SnowGolem.clips[name];if(!clip)return;
+    SnowGolem.action=SnowGolem.mixer.clipAction(clip);SnowGolem.action.reset().setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce,loop?Infinity:1).fadeIn(.12).play();
+}
+
+function sgLoad(){
+    const topo=sgBuildBody();
+    APP.meshSystem.topology=topo;
+    APP.meshSystem.rebuild();
+    APP.meshSystem.mesh.material.color.set(0x8dcfe1);
+    APP.meshSystem.mesh.material.flatShading=true;
+    APP.meshSystem.mesh.material.needsUpdate=true;
+    APP.meshSystem.mesh.visible=false;
+    APP.meshSystem.edgeLines.visible=false;
+    APP.meshSystem.points.visible=false;
+
+    SnowGolem.visual.clear();SnowGolem.accessories.clear();SnowGolem.rigVisible=true;
+    SnowGolem.rig=sgBuildRig();
+    sgMakeWeightedSkinnedMesh(topo,SnowGolem.rig.userData.skeleton);
+    SnowGolem.visual.add(SnowGolem.rig);
+    APP.scene.add(SnowGolem.visual);APP.scene.add(SnowGolem.accessories);
+    sgAddAccessories();
+    SnowGolem.rig.add(SnowGolem.accessories);
+    const rigVis=sgBuildRigVisual();SnowGolem.visual.add(rigVis);SnowGolem.rigVisual=rigVis;
+    SnowGolem.mixer=new THREE.AnimationMixer(SnowGolem.skinned);sgBuildClips();sgPlay('idle',true);
+
+    APP.camera.position.set(7.5,4.9,8.5);APP.controls.target.set(0,3.1,0);APP.controls.update();
+    document.getElementById('snowBoneCount').textContent=SnowGolem.rig.userData.skeleton.bones.length;
+    document.getElementById('snowRigPanel').style.display='block';document.getElementById('snowBadge').style.display='block';
+    document.getElementById('landmarkReadout').textContent='SNOW GOLEM PRESET\n\nHeroic RTS proportions tuned:\n• oversized head and shoulders\n• compact waist / heavy legs\n• large armored feet\n• left tower shield control\n• right fire-ring cast control\n\nRig controls:\nHandIK.L • ShieldIK.L • HandIK.R • CastTarget.R';
+}
+
+function sgToggleRig(){SnowGolem.rigVisible=!SnowGolem.rigVisible;if(SnowGolem.rigVisual)SnowGolem.rigVisual.visible=SnowGolem.rigVisible}
+
+// Wire controls after EditorApp has initialized.
+document.getElementById('snowGolemTool').addEventListener('click',sgLoad);
+document.getElementById('snowIdle').addEventListener('click',()=>sgPlay('idle',true));
+document.getElementById('snowCast').addEventListener('click',()=>{sgPlay('cast',false);SnowGolem.fireTimer=0});
+document.getElementById('snowBlock').addEventListener('click',()=>sgPlay('block',false));
+document.getElementById('snowToggleRig').addEventListener('click',sgToggleRig);
+document.getElementById('snowClose').addEventListener('click',()=>{document.getElementById('snowRigPanel').style.display='none';document.getElementById('snowBadge').style.display='none'});
+
+// Add a fireball projectile that follows the cast hand and launches toward CastTarget.R.
+function sgSpawnFireball(){
+    if(!SnowGolem.skinned)return;
+    if(SnowGolem.fireball)APP.scene.remove(SnowGolem.fireball);
+    const m=new THREE.Mesh(new THREE.SphereGeometry(.13,8,6),new THREE.MeshBasicMaterial({color:0xff6a1a}));
+    const light=new THREE.PointLight(0xff6a1a,3,5);m.add(light);APP.scene.add(m);SnowGolem.fireball=m;SnowGolem.fireTimer=.01;
+}
+
+// Extend animation loop without replacing the editor's loop.
+const _snowTick=()=>{
+    if(SnowGolem.mixer){const dt=SnowGolem.clock.getDelta();SnowGolem.mixer.update(dt)}
+    if(SnowGolem.rigVisual?.userData.updateBones)SnowGolem.rigVisual.userData.updateBones();
+    if(SnowGolem.action && SnowGolem.action.getClip().name==='SnowGolem_Cast' && SnowGolem.action.time>.43 && !SnowGolem.fireball)sgSpawnFireball();
+    if(SnowGolem.fireball){
+        const target=new THREE.Vector3(2.8,3.35,1.0);SnowGolem.fireball.position.lerp(target,.045);SnowGolem.fireTimer+=.016;
+        if(SnowGolem.fireTimer>1.0){APP.scene.remove(SnowGolem.fireball);SnowGolem.fireball=null}
+    }
+    requestAnimationFrame(_snowTick);
+};
+_snowTick();
+
+// Load the Snow Golem immediately so this tuned character is the default mesh/rig.
+sgLoad();
+
+</script>
+</body>
+</html>
