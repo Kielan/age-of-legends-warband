@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Three.js Armature Studio</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:#17191c;color:#d8dadd;font:12px Inter,system-ui,sans-serif}
+button,input,select{font:inherit;color:inherit;background:#30343a;border:1px solid #444a50;border-radius:3px}
+button{padding:5px 9px;cursor:pointer}button:hover{background:#3b4046}.active{background:#65551d!important;border-color:#a18a36}
+#app{height:100%;display:grid;grid-template-rows:40px 1fr 292px}
+#top{display:flex;align-items:center;gap:6px;padding:5px 8px;background:#25282c;border-bottom:1px solid #0b0c0e}
+.logo{font-weight:800;margin-right:10px}.sep{width:1px;height:24px;background:#454a50;margin:0 4px}.small{font-size:10px;color:#888e95}
+#main{position:relative;min-height:0;overflow:hidden}#view{position:absolute;inset:0}
+#props{position:absolute;right:0;top:0;width:280px;height:100%;background:#24272b;border-left:1px solid #0b0c0e;overflow:auto}
+.ptitle,.shead{background:#2b2f34;border-bottom:1px solid #121416;padding:9px 10px;font-weight:700}.shead{padding:7px 10px;color:#bfc4c9}
+.section{border-bottom:1px solid #111315}.row{display:grid;grid-template-columns:86px 1fr;gap:6px;padding:5px 10px;align-items:center}.row label{color:#8f959c}.v3{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}.row input,.row select{width:100%;padding:4px}
+#badge{position:absolute;left:10px;top:10px;background:#181b1ec9;border:1px solid #3c4147;border-radius:4px;padding:7px 10px;pointer-events:none}#badge b{color:#f1ca49}
+#help{position:absolute;left:10px;bottom:10px;background:#181b1ec9;border:1px solid #363b40;border-radius:4px;padding:7px;color:#969ba1;pointer-events:none}
+#timeline{display:grid;grid-template-rows:36px 1fr 24px;min-height:0;background:#1b1d20;border-top:1px solid #08090a}
+#tbar{display:flex;gap:5px;align-items:center;padding:4px 8px;background:#272a2e;border-bottom:1px solid #0b0c0d}.grow{flex:1}
+#body{display:grid;grid-template-columns:235px 1fr;min-height:0;overflow:hidden}
+#channels{background:#202327;border-right:1px solid #090a0b;overflow:hidden}
+.ch{height:26px;border-bottom:1px solid #30343a;padding:6px 8px;white-space:nowrap}.ch.head{height:26px;background:#292c30;font-weight:700}.ch .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#6ca9d9;margin-right:7px}.ch.rot .dot{background:#d5ad43}.ch.loc .dot{background:#76b96a}.ch.scale .dot{background:#a86fc4}
+#scroll{position:relative;overflow:auto;background:#181a1d}#ruler{height:26px;position:sticky;top:0;z-index:3;background:#282b2f;border-bottom:1px solid #090a0b;min-width:1300px}
+.tick{position:absolute;height:26px;border-left:1px solid #454a50;padding-left:3px;color:#90969c;font-size:10px}
+#tracks{position:relative;min-width:1300px}.track{height:26px;border-bottom:1px solid #30343a;position:relative}
+.key{position:absolute;width:10px;height:10px;top:7px;transform:rotate(45deg);background:#e0ae32;border:1px solid #765a16;cursor:pointer}.key.sel{background:#fff}
+#playhead{position:absolute;top:0;width:1px;height:100%;background:#ef5050;z-index:5;pointer-events:none}.handle{position:absolute;top:0;left:-5px;width:11px;height:11px;background:#ef5050;clip-path:polygon(50% 0,100% 45%,100% 100%,0 100%,0 45%)}
+#status{padding:5px 9px;background:#202327;border-top:1px solid #0a0b0c;color:#8e949b}#status span{margin-right:22px}
+#starter{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(8,10,12,.82);backdrop-filter:blur(4px)}
+#starterCard{width:min(820px,92vw);background:#25282c;border:1px solid #4a4f55;border-radius:8px;box-shadow:0 18px 60px #000b;padding:22px}
+#starterCard h1{margin:0 0 5px;font-size:21px}.starterSub{color:#92989f;margin-bottom:18px}
+.starterGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.starter{min-height:230px;text-align:left;padding:0;overflow:hidden;background:#1c1f22;border:1px solid #42474d;border-radius:6px}
+.starter:hover{border-color:#c9a936;transform:translateY(-1px)}
+.starterPreview{height:150px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#30343a,#17191c);font-size:62px}
+.starterInfo{padding:12px}.starterInfo b{font-size:14px}.starterInfo div{color:#92989f;margin-top:5px}.starterTag{display:inline-block;margin-top:8px;padding:3px 6px;border:1px solid #565b61;border-radius:3px;font-size:10px;color:#c7cbd0}
+</style>
+</head>
+<body>
+<div id="starter">
+  <div id="starterCard">
+    <h1>Choose Starter Animation</h1>
+    <div class="starterSub">Select a default scene to load into the armature, rig and keyframe editor.</div>
+    <div class="starterGrid">
+      <button class="starter" id="starterWalk">
+        <div class="starterPreview">🤖</div>
+        <div class="starterInfo"><b>Arms Walk</b><div>FP arms rig with alternating arm motion.</div><span class="starterTag">ARMATURE • 60 FRAMES</span></div>
+      </button>
+      <button class="starter" id="starterChop">
+        <div class="starterPreview">🪓</div>
+        <div class="starterInfo"><b>Wood Chopping</b><div>Arms + axe + stump with a full chopping cycle.</div><span class="starterTag">IK / AXE • 60 FRAMES</span></div>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+<header id="top">
+ <div class="logo">ARMATURE STUDIO</div><button>Object Mode ▾</button><button id="pose" class="active">Pose</button>
+ <button id="play">▶ Play</button><button id="stop">■</button><button id="insert">Insert Keyframe</button><div class="sep"></div>
+ <button id="reset">Reset Pose</button><button id="add">+ Bone</button><div class="sep"></div><span class="small">Three.js • Armature • Rig • Keyframe Animation • Visual Properties</span>
+</header>
+<main id="main">
+ <div id="view"></div>
+ <div id="badge"><b>POSE MODE</b> &nbsp; Armature: FP_Arms &nbsp; | &nbsp; Action: Arms_Walk</div>
+ <div id="help">LMB select bone • Drag rotation gizmo • Space play • I insert key</div>
+ <aside id="props">
+  <div class="ptitle">Transform</div>
+  <div class="section"><div class="shead">Selected Bone</div>
+   <div class="row"><label>Name</label><div id="name">HandIK.L</div></div>
+   <div class="row"><label>Parent</label><div id="parent">forearm.L</div></div>
+   <div class="row"><label>Rig</label><select><option>IK Control</option><option>FK Bone</option><option>Deform</option></select></div>
+  </div>
+  <div class="section"><div class="shead">Location</div><div class="row"><label>X/Y/Z</label><div class="v3"><input id="lx" type="number" step=".01"><input id="ly" type="number" step=".01"><input id="lz" type="number" step=".01"></div></div></div>
+  <div class="section"><div class="shead">Rotation °</div><div class="row"><label>X/Y/Z</label><div class="v3"><input id="rx" type="number"><input id="ry" type="number"><input id="rz" type="number"></div></div></div>
+  <div class="section"><div class="shead">Scale</div><div class="row"><label>X/Y/Z</label><div class="v3"><input id="sx" type="number" step=".01"><input id="sy" type="number" step=".01"><input id="sz" type="number" step=".01"></div></div></div>
+  <div class="section"><div class="shead">Visual Properties</div>
+   <div class="row"><label>Display</label><select><option>Octahedral</option><option>Stick</option><option>B-Bone</option><option>Envelope</option></select></div>
+   <div class="row"><label>In Front</label><input type="checkbox" checked></div>
+   <div class="row"><label>IK Controls</label><input id="show" type="checkbox" checked></div>
+  </div>
+  <div class="section"><div class="shead">Animation</div>
+   <div class="row"><label>Action</label><select><option>Arms_Walk</option><option>Idle</option><option>Punch</option></select></div>
+   <div class="row"><label>Interp.</label><select><option>Bezier</option><option>Linear</option><option>Constant</option></select></div>
+   <div class="row"><label>Frame</label><input id="frame" type="number" min="1" max="60" value="1"></div>
+  </div>
+ </aside>
+</main>
+<section id="timeline">
+ <div id="tbar"><button id="rewind">|◀</button><button id="prev">◀</button><button id="tplay">▶</button><button id="next">▶</button>
+  <b>Action: Arms_Walk</b><span class="small">Start 1 • End 60 • 30 FPS</span><span class="grow"></span><button id="auto" class="active">● Auto Key</button><button id="new">+ Key</button><button id="del">Delete Key</button>
+ </div>
+ <div id="body"><div id="channels">
+  <div class="ch head">Armature Action</div><div class="ch"><span class="dot"></span>HandIK.L</div><div class="ch rot"><span class="dot"></span>Rotation</div><div class="ch loc"><span class="dot"></span>Location</div><div class="ch scale"><span class="dot"></span>Scale</div>
+  <div class="ch"><span class="dot"></span>forearm.L</div><div class="ch rot"><span class="dot"></span>Rotation</div><div class="ch"><span class="dot"></span>upper_arm.L</div><div class="ch rot"><span class="dot"></span>Rotation</div>
+  <div class="ch"><span class="dot"></span>HandIK.R</div><div class="ch rot"><span class="dot"></span>Rotation</div><div class="ch"><span class="dot"></span>forearm.R</div><div class="ch rot"><span class="dot"></span>Rotation</div><div class="ch"><span class="dot"></span>upper_arm.R</div><div class="ch rot"><span class="dot"></span>Rotation</div>
+ </div><div id="scroll"><div id="ruler"></div><div id="tracks"></div><div id="playhead"><div class="handle"></div></div></div></div>
+ <div id="status"><span>Frame: <b id="fl">1</b></span><span>Keys: <b id="kc">0</b></span><span id="msg">Ready</span></div>
+</section>
+</div>
+
+<script type="module">
+import * as THREE from "https://esm.sh/three@0.165.0";
+import {OrbitControls} from "https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js";
+import {TransformControls} from "https://esm.sh/three@0.165.0/examples/jsm/controls/TransformControls.js";
+
+const view=document.querySelector("#view"), scene=new THREE.Scene();
+scene.background=new THREE.Color(0x181b1e);scene.fog=new THREE.Fog(0x181b1e,18,42);
+const camera=new THREE.PerspectiveCamera(48,1,.05,100);camera.position.set(7,5,9);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.outputColorSpace=THREE.SRGBColorSpace;view.appendChild(renderer.domElement);
+const orbit=new OrbitControls(camera,renderer.domElement);orbit.target.set(0,2.6,0);orbit.enableDamping=true;
+scene.add(new THREE.HemisphereLight(0xaeb8c6,0x24262a,2.2));let sun=new THREE.DirectionalLight(0xffffff,3);sun.position.set(6,10,7);sun.castShadow=true;scene.add(sun);
+let rim=new THREE.DirectionalLight(0x6688ff,1.2);rim.position.set(-7,6,-5);scene.add(rim);
+scene.add(new THREE.GridHelper(30,30,0x45494e,0x2c3035));
+const mat={red:new THREE.MeshStandardMaterial({color:0xa9151b,metalness:.55,roughness:.35}),dark:new THREE.MeshStandardMaterial({color:0x292d31,metalness:.75,roughness:.3}),steel:new THREE.MeshStandardMaterial({color:0xb9bdc1,metalness:.85,roughness:.22}),gold:new THREE.MeshStandardMaterial({color:0xb7a044,metalness:.7,roughness:.25}),green:new THREE.MeshStandardMaterial({color:0x25a95d})};
+function mesh(g,m,n,p=new THREE.Vector3()){let o=new THREE.Mesh(g,m);o.name=n;o.position.copy(p);o.castShadow=true;o.receiveShadow=true;return o}
+const robot=new THREE.Group();robot.position.y=.15;scene.add(robot);
+
+const workScene=new THREE.Group();scene.add(workScene);
+const axeGroup=new THREE.Group();axeGroup.visible=false;scene.add(axeGroup);
+const chopLog=new THREE.Group();chopLog.visible=false;scene.add(chopLog);
+
+function buildChoppingScene(){
+  if(axeGroup.children.length)return;
+  const woodMat=new THREE.MeshStandardMaterial({color:0x71411f,metalness:.05,roughness:.82});
+  const cutMat=new THREE.MeshStandardMaterial({color:0xb47a43,metalness:.02,roughness:.9});
+  const axeHeadMat=new THREE.MeshStandardMaterial({color:0x969da5,metalness:.9,roughness:.2});
+  const handleMat=new THREE.MeshStandardMaterial({color:0x7c4a22,metalness:.05,roughness:.7});
+
+  const log=new THREE.Mesh(new THREE.CylinderGeometry(.78,.86,2.7,20),woodMat);
+  log.rotation.z=Math.PI/2;log.position.set(3.5,.55,-1.5);log.castShadow=true;log.receiveShadow=true;chopLog.add(log);
+  const cut=new THREE.Mesh(new THREE.CylinderGeometry(.63,.63,.035,20),cutMat);
+  cut.rotation.z=Math.PI/2;cut.position.set(3.5,.55,-2.86);chopLog.add(cut);
+  const stump=new THREE.Mesh(new THREE.CylinderGeometry(1.0,1.08,.85,24),woodMat);
+  stump.position.set(3.5,.45,-1.55);stump.castShadow=true;stump.receiveShadow=true;chopLog.add(stump);
+  const stumpTop=new THREE.Mesh(new THREE.CylinderGeometry(.84,.84,.04,24),cutMat);
+  stumpTop.position.set(3.5,.88,-1.55);chopLog.add(stumpTop);
+
+  const handle=new THREE.Mesh(new THREE.CylinderGeometry(.095,.115,1.65,12),handleMat);
+  handle.position.set(0,0.78,0);handle.rotation.z=Math.PI*.08;handle.castShadow=true;axeGroup.add(handle);
+  const head=new THREE.Mesh(new THREE.BoxGeometry(.62,.42,.16),axeHeadMat);
+  head.position.set(0,1.55,0);head.castShadow=true;axeGroup.add(head);
+  const blade=new THREE.Mesh(new THREE.ConeGeometry(.28,.62,4),axeHeadMat);
+  blade.scale.set(1,.72,.35);blade.rotation.z=Math.PI/2;blade.position.set(.34,1.55,0);blade.castShadow=true;axeGroup.add(blade);
+  axeGroup.position.set(-2.0,1.0,.42);
+  axeGroup.rotation.set(0,0,-.15);
+}
+
+buildChoppingScene();
+function box(n,s,p,m){let o=mesh(new THREE.BoxGeometry(...s),m,n,p);robot.add(o);return o}
+box("Pelvis",[1.8,.8,1.15],[0,2.35,0],mat.dark);box("Torso",[2.05,2,1.12],[0,3.75,0],mat.red);box("Chest",[2.15,.65,1.18],[0,4.35,.02],mat.red);box("Head",[1.05,1.05,.95],[0,5.55,0],mat.red);box("Face",[.7,.4,1],[0,5.5,.5],mat.dark);box("Eye",[.2,.16,.08],[0,5.6,1.02],mat.green);
+for(const s of [-1,1]){let side=s<0?"L":"R";box("Shoulder."+side,[.78,.72,1.2],[s*1.5,4.45,0],mat.red);box("UpperArmor."+side,[.65,1.4,.7],[s*1.9,3.6,0],mat.red);box("ForeArmor."+side,[.72,1.35,.72],[s*2,2.15,0],mat.red);box("Hand."+side,[.6,.55,.62],[s*2,1.25,0],mat.steel);box("Thigh."+side,[.75,1.5,.82],[s*.68,1.3,0],mat.red);box("Shin."+side,[.7,1.15,.76],[s*.68,-.05,0],mat.gold);box("Foot."+side,[.9,.35,1.5],[s*.68,-.8,.28],mat.dark)}
+
+const boneDefs=[
+["root",null,[0,2.3,0],[0,3.05,0]],["spine","root",[0,3.05,0],[0,4.2,0]],["chest","spine",[0,4.2,0],[0,4.8,0]],["head","chest",[0,4.8,0],[0,5.55,0]],
+["upper_arm.L","chest",[-.9,4.45,0],[-1.95,3.55,0]],["forearm.L","upper_arm.L",[-1.95,3.55,0],[-2,1.9,0]],["HandIK.L","forearm.L",[-2,1.9,0],[-2,1.2,0]],
+["upper_arm.R","chest",[.9,4.45,0],[1.95,3.55,0]],["forearm.R","upper_arm.R",[1.95,3.55,0],[2,1.9,0]],["HandIK.R","forearm.R",[2,1.9,0],[2,1.2,0]],
+["thigh.L","root",[-.65,2.25,0],[-.68,.45,0]],["shin.L","thigh.L",[-.68,.45,0],[-.68,-.65,0]],["foot.L","shin.L",[-.68,-.65,0],[-.68,-.82,.55]],
+["thigh.R","root",[.65,2.25,0],[.68,.45,0]],["shin.R","thigh.R",[.68,.45,0],[.68,-.65,0]],["foot.R","shin.R",[.68,-.65,0],[.68,-.82,.55]]
+];
+const armature=new THREE.Group();scene.add(armature);const bones={};
+const bm=new THREE.MeshBasicMaterial({color:0x64a8dc}),selm=new THREE.MeshBasicMaterial({color:0xffd54d});
+for(const d of boneDefs){let [n,p,a,b]=d,g=new THREE.Group(),A=new THREE.Vector3(...a),B=new THREE.Vector3(...b),v=B.clone().sub(A),len=v.length();
+ let sh=new THREE.Mesh(new THREE.ConeGeometry(.095,.72,6),bm);sh.position.copy(A.clone().add(B).multiplyScalar(.5));sh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),v.normalize());sh.scale.y=len/.72;g.add(sh);
+ let h=new THREE.Mesh(new THREE.SphereGeometry(.13,10,8),bm);h.position.copy(A);g.add(h);let t=new THREE.Mesh(new THREE.SphereGeometry(.09,10,8),bm);t.position.copy(B);g.add(t);
+ g.name=n;g.userData={parent:p};armature.add(g);bones[n]=g}
+const controls=[];
+function ctrl(n,p){let c=new THREE.Mesh(new THREE.TorusGeometry(.28,.035,8,24),new THREE.MeshBasicMaterial({color:0x42c878,wireframe:true}));c.name=n+"_CTRL";c.position.set(...p);scene.add(c);controls.push(c)}
+ctrl("HandIK.L",[-2,1.2,.25]);ctrl("HandIK.R",[2,1.2,.25]);ctrl("FootIK.L",[-.68,-.82,.55]);ctrl("FootIK.R",[.68,-.82,.55]);
+
+const tc=new TransformControls(camera,renderer.domElement);tc.setMode("rotate");tc.setSize(.75);scene.add(tc);tc.addEventListener("dragging-changed",e=>orbit.enabled=!e.value);
+let selected=bones["HandIK.L"],frame=1,playing=false,auto=true,last=performance.now();
+function selectBone(b){if(!b)return;if(selected)selected.children[0].material=bm;selected=b;selected.children[0].material=selm;tc.attach(selected);props()}
+selectBone(selected);
+
+const keys={
+"HandIK.L":{1:[0,0,-12],15:[0,0,-42],30:[0,0,-18],45:[0,0,16],60:[0,0,-12]},
+"forearm.L":{1:[0,0,10],15:[0,0,35],30:[0,0,8],45:[0,0,-30],60:[0,0,10]},
+"upper_arm.L":{1:[0,0,8],15:[0,0,-18],30:[0,0,5],45:[0,0,22],60:[0,0,8]},
+"HandIK.R":{1:[0,0,12],15:[0,0,42],30:[0,0,18],45:[0,0,-16],60:[0,0,12]},
+"forearm.R":{1:[0,0,-10],15:[0,0,-35],30:[0,0,-8],45:[0,0,30],60:[0,0,-10]},
+"upper_arm.R":{1:[0,0,-8],15:[0,0,18],30:[0,0,-5],45:[0,0,-22],60:[0,0,-8]}
+};
+
+const chopKeys = {
+  "HandIK.L":{1:[-18,0,-18],10:[-30,0,-38],20:[-58,0,-58],30:[-8,0,-8],40:[18,0,18],50:[-10,0,-10],60:[-18,0,-18]},
+  "forearm.L":{1:[0,0,10],10:[0,0,25],20:[0,0,48],30:[0,0,8],40:[0,0,-20],50:[0,0,5],60:[0,0,10]},
+  "upper_arm.L":{1:[0,0,8],10:[0,0,18],20:[0,0,38],30:[0,0,5],40:[0,0,-20],50:[0,0,6],60:[0,0,8]},
+  "HandIK.R":{1:[18,0,18],10:[30,0,38],20:[58,0,58],30:[8,0,8],40:[-18,0,-18],50:[10,0,10],60:[18,0,18]},
+  "forearm.R":{1:[0,0,-10],10:[0,0,-25],20:[0,0,-48],30:[0,0,-8],40:[0,0,20],50:[0,0,-5],60:[0,0,-10]},
+  "upper_arm.R":{1:[0,0,-8],10:[0,0,-18],20:[0,0,-38],30:[0,0,-5],40:[0,0,20],50:[0,0,-6],60:[0,0,-8]}
+};
+
+let starterScene="walk";
+let activeKeys=keys;
+
+function sample(t,f){let a=Object.keys(t).map(Number).sort((a,b)=>a-b);if(f<=a[0])return t[a[0]];if(f>=a.at(-1))return t[a.at(-1)];let i=0;while(!(f>=a[i]&&f<=a[i+1]))i++;let u=(f-a[i])/(a[i+1]-a[i]);return t[a[i]].map((v,j)=>v+(t[a[i+1]][j]-v)*u)}
+function apply(f){frame=Math.max(1,Math.min(60,f));for(const [n,t] of Object.entries(activeKeys)){let r=sample(t,frame),b=bones[n];b.rotation.set(...r.map(THREE.MathUtils.degToRad))}props();timeline();document.querySelector("#frame").value=Math.round(frame);document.querySelector("#fl").textContent=Math.round(frame);document.querySelector("#playhead").style.left=(frame*20)+"px";updateAxe(frame)}
+function insertKey(){let b=selected;if(!b)return;activeKeys[b.name]??={};activeKeys[b.name][Math.round(frame)]=[THREE.MathUtils.radToDeg(b.rotation.x),THREE.MathUtils.radToDeg(b.rotation.y),THREE.MathUtils.radToDeg(b.rotation.z)];timeline();document.querySelector("#msg").textContent="Inserted key: "+b.name+" @ "+Math.round(frame)}
+function props(){let b=selected;if(!b)return;document.querySelector("#name").textContent=b.name;document.querySelector("#parent").textContent=b.userData.parent||"—";let p=b.position.toArray(),r=[b.rotation.x,b.rotation.y,b.rotation.z].map(THREE.MathUtils.radToDeg),s=b.scale.toArray();["lx","ly","lz"].forEach((x,i)=>document.querySelector("#"+x).value=p[i].toFixed(3));["rx","ry","rz"].forEach((x,i)=>document.querySelector("#"+x).value=r[i].toFixed(1));["sx","sy","sz"].forEach((x,i)=>document.querySelector("#"+x).value=s[i].toFixed(2))}
+function timeline(){let ruler=document.querySelector("#ruler"),tracks=document.querySelector("#tracks");ruler.innerHTML="";tracks.innerHTML="";for(let f=0;f<=60;f+=5){let x=document.createElement("div");x.className="tick";x.style.left=f*20+"px";x.textContent=f;ruler.appendChild(x)}
+ let rows=[["x"],["HandIK.L"],["HandIK.L"],["HandIK.L"],["forearm.L"],["upper_arm.L"],["HandIK.R"],["forearm.R"],["upper_arm.R"]];rows.forEach((r,i)=>{let tr=document.createElement("div");tr.className="track";tracks.appendChild(tr);let t=activeKeys[r[0]];if(t)Object.keys(t).forEach(f=>{let k=document.createElement("div");k.className="key"+(+f===Math.round(frame)?" sel":"");k.style.left=(+f*20-5)+"px";k.title=r[0]+" frame "+f;k.onclick=()=>{selectBone(bones[r[0]]);apply(+f)};tr.appendChild(k)})});let n=Object.values(activeKeys).reduce((a,t)=>a+Object.keys(t).length,0);document.querySelector("#kc").textContent=n}
+function loadStarterScene(type){
+  starterScene=type;
+  activeKeys=type==="chop"?chopKeys:keys;
+  axeGroup.visible=type==="chop";
+  chopLog.visible=type==="chop";
+  document.querySelector("#badge").innerHTML=type==="chop"
+    ? "<b>POSE MODE</b> &nbsp; Armature: FP_Arms &nbsp; | &nbsp; Action: Wood_Chop"
+    : "<b>POSE MODE</b> &nbsp; Armature: FP_Arms &nbsp; | &nbsp; Action: Arms_Walk";
+  if(type==="chop"){
+    axeGroup.position.set(-2.0,1.0,.42);
+    axeGroup.rotation.set(0,0,-.15);
+  }
+  apply(1);
+  timeline();
+  document.querySelector("#starter").style.display="none";
+  document.querySelector("#msg").textContent=type==="chop"?"Wood Chopping starter loaded":"Arms Walk starter loaded";
+}
+
+function updateAxe(frameValue){
+  if(starterScene!=="chop")return;
+  const t=(frameValue-1)/59;
+  const swing=Math.sin(t*Math.PI*2);
+  const hit=Math.max(0,Math.sin(t*Math.PI*2));
+  axeGroup.position.x=-2.0+Math.sin(t*Math.PI*2)*.18;
+  axeGroup.position.y=1.0+hit*.52;
+  axeGroup.position.z=.42-hit*.34;
+  axeGroup.rotation.z=-.15+swing*.92;
+}
+
+function setInput(id,fn){document.querySelector("#"+id).onchange=e=>{fn(+e.target.value);if(auto)insertKey();props()}}
+setInput("lx",v=>selected.position.x=v);setInput("ly",v=>selected.position.y=v);setInput("lz",v=>selected.position.z=v);
+setInput("rx",v=>selected.rotation.x=THREE.MathUtils.degToRad(v));setInput("ry",v=>selected.rotation.y=THREE.MathUtils.degToRad(v));setInput("rz",v=>selected.rotation.z=THREE.MathUtils.degToRad(v));
+setInput("sx",v=>selected.scale.x=v);setInput("sy",v=>selected.scale.y=v);setInput("sz",v=>selected.scale.z=v);
+
+renderer.domElement.addEventListener("pointerdown",e=>{let r=renderer.domElement.getBoundingClientRect(),m=new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-((e.clientY-r.top)/r.height)*2+1),ray=new THREE.Raycaster();ray.setFromCamera(m,camera);let hit=ray.intersectObjects(armature.children.flatMap(x=>x.children),true)[0];if(hit){let o=hit.object;while(o.parent&&o.parent!==armature)o=o.parent;if(o.userData?.parent!==undefined)selectBone(o)}});
+tc.addEventListener("change",()=>{props();if(auto)insertKey()});
+document.querySelector("#starterWalk").onclick=()=>loadStarterScene("walk");
+document.querySelector("#starterChop").onclick=()=>loadStarterScene("chop");
+
+document.querySelector("#play").onclick=()=>{playing=!playing;document.querySelector("#play").textContent=playing?"❚❚ Pause":"▶ Play";document.querySelector("#tplay").textContent=playing?"❚❚":"▶"};
+document.querySelector("#tplay").onclick=()=>document.querySelector("#play").click();document.querySelector("#stop").onclick=()=>{playing=false;apply(1)};
+document.querySelector("#rewind").onclick=()=>apply(1);document.querySelector("#prev").onclick=()=>apply(Math.floor(frame)-1);document.querySelector("#next").onclick=()=>apply(Math.floor(frame)+1);
+document.querySelector("#insert").onclick=insertKey;document.querySelector("#new").onclick=insertKey;document.querySelector("#auto").onclick=e=>{auto=!auto;e.currentTarget.classList.toggle("active",auto)};
+document.querySelector("#frame").onchange=e=>apply(+e.target.value);document.querySelector("#reset").onclick=()=>{Object.values(bones).forEach(b=>b.rotation.set(0,0,0));apply(1);updateAxe(1)};
+document.querySelector("#show").onchange=e=>controls.forEach(c=>c.visible=e.target.checked);
+window.onkeydown=e=>{if(e.code==="Space"){e.preventDefault();document.querySelector("#play").click()}if(e.key.toLowerCase()==="i")insertKey()};
+function resize(){let w=view.clientWidth,h=view.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false)}window.onresize=resize;resize();timeline();apply(1);
+function loop(t){requestAnimationFrame(loop);let dt=Math.min(.05,(t-last)/1000);last=t;if(playing){frame+=dt*30;if(frame>60)frame=1;apply(frame)}orbit.update();renderer.render(scene,camera)}loop(performance.now());
+</script>
+</body>
+</html>
