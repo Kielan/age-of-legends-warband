@@ -10661,10 +10661,8 @@ class HeroicRTSPrimitiveFactory {
         trimMaterial=null
     }={}){
         const THREE=this.THREE;
-        const group =
-            new THREE.Group();
-        group.name=
-            "HeroicRTS_WedgeBoot";
+        const group =new THREE.Group();
+        group.name="HeroicRTS_WedgeBoot";
         const hw=width*.5;
         const hl=length*.5;
         const aw=ankleWidth*.5;
@@ -10752,12 +10750,8 @@ class HeroicRTSPrimitiveFactory {
         }
         return group;
     }
-    
-    // ========================================================
     // 2. BEVELED SHIN + KNEE TUBE
-    //
     // Generates:
-    //
     // ankle ring
     //   ↓
     // lower shin
@@ -10767,115 +10761,61 @@ class HeroicRTSPrimitiveFactory {
     // knee collar
     //
     // Uses faceted rings rather than cylinders.
-    //
     // Good candidate for merging into thigh/body.
-    //
-    // ========================================================
-
     createBeveledShin({
-
         length=1.35,
-
         ankleRadius=0.23,
         shinRadius=0.28,
         calfRadius=0.34,
         kneeRadius=0.37,
-
         depthScale=.82,
-
         segments=6,
-
         material,
-
         kneeMaterial=null
-
     }={}){
-
         const THREE=this.THREE;
-
-        const group=
-            new THREE.Group();
-
-        group.name=
-            "HeroicRTS_BeveledShin";
-
-
+        const group=new THREE.Group();
+        group.name="HeroicRTS_BeveledShin";
         // rings from bottom → top
-
         const rings=[
-
             {
                 y:0,
                 radius:ankleRadius
             },
-
             {
                 y:length*.22,
                 radius:shinRadius
             },
-
             {
                 y:length*.62,
                 radius:calfRadius
             },
-
             {
                 y:length*.88,
                 radius:kneeRadius*.90
             },
-
             {
                 y:length,
                 radius:kneeRadius
             }
-
         ];
 
-
         const vertices=[];
-
-
         for(const ring of rings){
-
             for(let i=0;i<segments;i++){
-
-                const a=
-                    (i/segments)*
-                    Math.PI*2;
-
+                const a=(i/segments)*Math.PI*2;
                 vertices.push(
-
                     Math.cos(a)*
-                    ring.radius,
-
-                    ring.y,
-
-                    Math.sin(a)*
-                    ring.radius*
-                    depthScale
-
+                    ring.radius,ring.y,Math.sin(a)*ring.radius*depthScale
                 );
             }
         }
-
-
         const indices=[];
-
-
-        for(
-            let r=0;
-            r<rings.length-1;
-            r++
-        ){
+        for(let r=0;r<rings.length-1;r++){
             for(let i=0;i<segments;i++){
-                const ni=
-                    (i+1)%segments;
-
-                const a=
-                    r*segments+i;
-
-                const b=
-                    r*segments+ni;
+                const ni=(i+1)%segments;
+                const a=r*segments+i;
+                const b=r*segments+ni;
 
                 const c=
                     (r+1)*segments+ni;
