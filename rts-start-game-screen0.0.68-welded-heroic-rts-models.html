@@ -9440,12 +9440,17 @@ function createRiflemanModel(team="blue"){
     const metal=new THREE.MeshStandardMaterial({color:0x777d83,metalness:.45,roughness:.5,flatShading:true});
     const beard=new THREE.MeshStandardMaterial({color:0xe2e2e2,flatShading:true});
 
-    const primitiveFactory =
-    new HeroicRTSPrimitiveFactory(THREE);
+    const primitiveFactory=new HeroicRTSPrimitiveFactory(THREE);
 
+    const bodyMat=new THREE.MeshStandardMaterial({color:0x8a6a4a,roughness:.9,flatShading:true});
+    const armorMat=new THREE.MeshStandardMaterial({color:0x73777b,metalness:.5,roughness:.48,flatShading:true});
+
+    const bootMat=new THREE.MeshStandardMaterial({color:0x4b3224,roughness:.9,flatShading:true});
     const armorMat = new THREE.MeshStandardMaterial({color:0x6f7274,roughness:0.55,metalness:0.45,flatShading:true});
     const armorTrimMat = new THREE.MeshStandardMaterial({color:0xa57a32,roughness:0.45,metalness:0.55,flatShading:true});
     const gloveMat = new THREE.MeshStandardMaterial({color:0x4a2f1d,roughness:0.9,flatShading:true});
+
+    
     
     const accent=factionMat(team);
 
@@ -9486,8 +9491,51 @@ function createRiflemanModel(team="blue"){
         plateMaterial:armorTrimMat,
         thumbSide:-1
     }); leftForearm.add(gloveL); gloveL.position.set(0,-1.02,0.18);
+    const leftShin =primitiveFactory.createBeveledShin({
+        length:1.35,
+        ankleRadius:.22,
+        shinRadius:.27,
+        calfRadius:.32,
+        kneeRadius:.37,
+        material:bodyMat,
+        kneeMaterial:armorMat
+    }); leftShin.position.set(-.42,.48,0); g.add(leftShin);
+    const leftBoot =primitiveFactory.createWedgeBoot({
+        width:.70,
+        height:.48,
+        length:1.0,
+        ankleWidth:.46,
+        toeLift:.12,
+        toeFlare:.08,
+        material:bootMat,
+        soleMaterial:armorMat
+    }); leftBoot.position.set(-.42,0,.16); g.add(leftBoot);
+    const rightShin=leftShin.clone(true);rightShin.position.x=.42; g.add(rightShin);
+    const rightBoot=leftBoot.clone(true);rightBoot.position.x=.42; g.add(rightBoot);
+    const torso=primitiveFactory.createWeldedTorsoLoft({
+        height:2.3,
+        pelvisWidth:.72,
+        waistWidth:.57,
+        abdomenWidth:.68,
+        chestWidth:1.02,
+        upperChestWidth:.90,
+        neckWidth:.32,
+        depth:.62,
+        segments:8,
+        material:bodyMat
+    });torso.position.y=2.6;g.add(torso);
+    const head=primitiveFactory.createFacetedHeadWithBeard({
+        headWidth:.82,
+        headHeight:.88,
+        headDepth:.76,
+        beardLength:.88,
+        beardWidth:.88,
+        skinMaterial:skinMat,
+        beardMaterial:beardMat,
+        hairMaterial:hairMat
+    });head.position.set(0,5.25,0); g.add(head);
     
-    const head=box(.85,.85,.85,skin); head.position.y=3.7; g.add(head);
+    //const head=box(.85,.85,.85,skin); head.position.y=3.7; g.add(head);
     const hood=cone(.75,1.05,4,accent); hood.position.y=4.15; g.add(hood);
     const beardPiece=cone(.34,1.0,4,beard); beardPiece.position.set(0,3.15,.35); g.add(beardPiece);
     for(const side of [-1,1]){
@@ -10627,7 +10675,6 @@ class HeroicRTSPrimitiveFactory {
             geometry.deleteAttribute("normal");
             geometry.computeVertexNormals();
         }
-
         const mesh = new THREE.Mesh(
             geometry,
             material
@@ -10759,7 +10806,6 @@ class HeroicRTSPrimitiveFactory {
     // wider calf
     //   ↓
     // knee collar
-    //
     // Uses faceted rings rather than cylinders.
     // Good candidate for merging into thigh/body.
     createBeveledShin({
@@ -10816,13 +10862,8 @@ class HeroicRTSPrimitiveFactory {
                 const ni=(i+1)%segments;
                 const a=r*segments+i;
                 const b=r*segments+ni;
-
-                const c=
-                    (r+1)*segments+ni;
-
-                const d=
-                    (r+1)*segments+i;
-
+                const c=(r+1)*segments+ni;
+                const d=(r+1)*segments+i;
                 indices.push(
                     a,b,c,
                     a,c,d
@@ -10869,7 +10910,6 @@ class HeroicRTSPrimitiveFactory {
         }
         return group;
     }
-
     // INTERNAL RING LOFT HELPER
     // Very useful for:
     // pelvis
@@ -10877,7 +10917,6 @@ class HeroicRTSPrimitiveFactory {
     // ribs
     // chest
     // neck
-    //
     // Each ring may define:
     // y
     // rx
@@ -10959,14 +10998,11 @@ class HeroicRTSPrimitiveFactory {
     }
     // 3. WELDED
     // PELVIS → LOWER ABDOMEN → CHEST LOFT
-    //
     // Instead of:
-    //
     // box pelvis
     // box torso
     //
     // we make:
-    //
     // pelvis
     //  ╲
     // lower waist
@@ -10976,7 +11012,6 @@ class HeroicRTSPrimitiveFactory {
     // rib cage
     //      ╲
     // broad chest
-    //
     // Result is one humanoid "mound".
     createWeldedTorsoLoft({
         height=2.25,
@@ -11057,7 +11092,6 @@ class HeroicRTSPrimitiveFactory {
     // Blacksmith
     // Viking
     // hunter
-    //
     // More readable than:
     // SphereGeometry + cone beard
     createFacetedHeadWithBeard({
@@ -11070,7 +11104,6 @@ class HeroicRTSPrimitiveFactory {
         beardMaterial,
         hairMaterial=null,
         browMaterial=null
-
     }={}){
         const THREE=this.THREE;
         const group=new THREE.Group();
@@ -11094,7 +11127,6 @@ class HeroicRTSPrimitiveFactory {
 
              0,-.04,.52
         ];
-
         const noseIndices=[
             0,1,4,
             1,3,4,
