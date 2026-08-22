@@ -9441,9 +9441,54 @@ function createRiflemanModel(team="blue"){
     const skin=new THREE.MeshStandardMaterial({color:0xd1b08c,flatShading:true});
     const metal=new THREE.MeshStandardMaterial({color:0x777d83,metalness:.45,roughness:.5,flatShading:true});
     const beard=new THREE.MeshStandardMaterial({color:0xe2e2e2,flatShading:true});
+
+    const primitiveFactory =
+    new HeroicRTSPrimitiveFactory(THREE);
+
+    const armorMat = new THREE.MeshStandardMaterial({color:0x6f7274,roughness:0.55,metalness:0.45,flatShading:true});
+    const armorTrimMat = new THREE.MeshStandardMaterial({color:0xa57a32,roughness:0.45,metalness:0.55,flatShading:true});
+    const gloveMat = new THREE.MeshStandardMaterial({color:0x4a2f1d,roughness:0.9,flatShading:true});
+    
     const accent=factionMat(team);
 
     const body=box(1.5,1.7,1.05,brown); body.position.y=2.35; g.add(body);
+    const shoulderR=primitiveFactory.createShoulderPad({
+        width:1.2,
+        height:0.7,
+        depth:1.05,
+        flare:0.24,
+        crown:0.16,
+        material:armorMat,
+        rimMaterial:armorTrimMat,
+        side:1}); shoulderR.position.set(0.92,4.8,0); g.add(shoulderR);
+    const shoulderL=primitiveFactory.createShoulderPad({
+        width:1.2,
+        height:0.7,
+        depth:1.05,
+        flare:0.24,
+        crown:0.16,
+        material:armorMat,
+        rimMaterial:armorTrimMat,
+        side:-1}); shoulderL.position.set(-0.92,4.8,0); g.add(shoulderL);
+    const gloveR=primitiveFactory.createGlove({
+        width:0.62,
+        height:0.52,
+        depth:0.78,
+        material:gloveMat,
+        cuffMaterial:armorMat,
+        plateMaterial:armorTrimMat,
+        thumbSide:1
+    }); rightForearm.add(gloveR); gloveR.position.set(0,-1.02,0.18);
+    const gloveL=primitiveFactory.createGlove({
+        width:0.62,
+        height:0.52,
+        depth:0.78,
+        material:gloveMat,
+        cuffMaterial:armorMat,
+        plateMaterial:armorTrimMat,
+        thumbSide:-1
+    }); leftForearm.add(gloveL); gloveL.position.set(0,-1.02,0.18);
+    
     const head=box(.85,.85,.85,skin); head.position.y=3.7; g.add(head);
     const hood=cone(.75,1.05,4,accent); hood.position.y=4.15; g.add(hood);
     const beardPiece=cone(.34,1.0,4,beard); beardPiece.position.set(0,3.15,.35); g.add(beardPiece);
@@ -10819,7 +10864,6 @@ class HeroicRTSPrimitiveFactory {
         thumb.castShadow = true;
         group.add(thumb);
         // KNUCKLE ARMOR
-        // --------------------------------------------
         if(addKnucklePlate){
             const plate = new THREE.Mesh(
                 new THREE.BoxGeometry(
