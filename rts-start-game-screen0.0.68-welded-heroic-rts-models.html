@@ -4280,7 +4280,7 @@ function renderSelectedHUD(entity){
             font-size:50px;line-height:1;">🗡️</div>`;
         const itemStats=getHeroDisplayedStats(entity);
         stats.innerHTML=`
-            <div class="heroName">Witch Hunter — Men of the North</div><div style="font:10px Arial;color:#bcae8b;margin:-3px 0 5px">Heroic RTS Low-Poly Hunter</div>
+            <div class="heroName">Witch Hunter — Men of the North</div><div style="font:10px Arial;color:#bcae8b;margin:-3px 0 5px"> RTS Low-Poly Hunter</div>
             <div class="heroStatGrid">
                 <div>⚔ Damage: ${getEffectiveAttackDamage(entity)}</div><div>🛡 Armor: ${itemStats.armor||entity.userData.armor||0}</div>
                 <div>Level: ${entity.userData.level||1}</div><div>Skill Points: ${entity.userData.skillPoints||0}</div>
@@ -10561,7 +10561,287 @@ const HeroicRTSKit={
     }
 };
 
+// HEROIC RTS PRIMITIVE FACTORY
+// shoulder pad + glove / gauntlet
+class HeroicRTSPrimitiveFactory {
+    constructor(THREE){
+        this.THREE = THREE;
+    }
+    // helper
+    makeMesh(vertices, indices, material, {
+        flatShading = true,
+        name = "HeroicPrimitive"
+    } = {}){
+        const THREE = this.THREE;
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute(vertices, 3)
+        );
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+        if(flatShading){
+            geometry.deleteAttribute("normal");
+            geometry.computeVertexNormals();
+        }
 
+        const mesh = new THREE.Mesh(
+            geometry,
+            material
+        );
+        mesh.name = name;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        return mesh;
+    }
+    // SHOULDER PAD
+    // local orientation:
+    //      +Y = up
+    //      +Z = forward
+    //      +X = outward from torso
+    // mount left/right by multiplying X position.
+    createShoulderPad({
+        width = 1.25,
+        height = 0.65,
+        depth = 1.05,
+        flare = 0.25,
+        crown = 0.18,
+        material,
+        side = 1,
+        addRim = true,
+        rimMaterial = null
+    } = {}){
+        const THREE = this.THREE;
+        const group = new THREE.Group();
+        group.name = "HeroicRTS_ShoulderPad";
+        // BASE ARMOR SHELL
+        // 3 cross-sections:
+        // inner
+        // middle / crown
+        // outer / flare
+        const hw = width * 0.5;
+        const hd = depth * 0.5;
+        const verts = [
+            // INNER RING
+            // x = 0
+             0.00,  height * 0.25, -hd * 0.70,   // 0 back lower
+             0.00,  height * 0.62, -hd * 0.38,   // 1 back upper
+             0.00,  height * 0.72,  hd * 0.18,   // 2 front upper
+             0.00,  height * 0.20,  hd * 0.72,   // 3 front lower
+            // MID / CROWN RING
+             hw * 0.58,
+             height * (0.30 + crown),
+            -hd * 0.92,
+
+             hw * 0.58,
+             height * (0.78 + crown),
+            -hd * 0.50,
+
+             hw * 0.58,
+             height * (0.92 + crown),
+             hd * 0.28,
+
+             hw * 0.58,
+             height * (0.26 + crown),
+             hd * 0.94,
+
+            // OUTER / FLARED RING
+             hw + flare,
+             height * 0.12,
+            -hd,
+
+             hw + flare,
+             height * 0.60,
+            -hd * 0.62,
+
+             hw + flare,
+             height * 0.66,
+             hd * 0.34,
+
+             hw + flare,
+             height * 0.05,
+             hd
+        ];
+        const idx = [
+            // inner -> middle
+            0,4,5,  0,5,1,
+            1,5,6,  1,6,2,
+            2,6,7,  2,7,3,
+            3,7,4,  3,4,0,
+            // middle -> outer
+            4,8,9,   4,9,5,
+            5,9,10,  5,10,6,
+            6,10,11, 6,11,7,
+            7,11,8,  7,8,4,
+            // outer cap
+            8,11,10,
+            8,10,9
+        ];
+        const shell = this.makeMesh(
+            verts,
+            idx,
+            material,
+            {
+                name:"HeroicShoulderPadShell"
+            }
+        );
+        group.add(shell);
+        // OPTIONAL TOP RIM
+        if(addRim){
+            const mat = rimMaterial || material;
+            const rim = new THREE.Mesh(
+                new THREE.BoxGeometry(
+                    width * 0.92,
+                    height * 0.14,
+                    depth * 0.78
+                ),
+                mat
+            );
+            rim.name = "HeroicShoulderPadRim";
+            rim.position.set(
+                hw * 0.38,
+                height * 0.84,
+                -depth * 0.05
+            );
+            rim.rotation.z = side * -0.12;
+            rim.castShadow = true;
+            rim.receiveShadow = true;
+            group.add(rim);
+        }
+        // flip geometry for left side
+        if(side < 0){
+            group.scale.x = -1;
+        }
+        return group;
+    }
+    // HEROIC GLOVE / GAUNTLET
+    // Designed as a readable RTS mitten shape.
+    // wrist side = -Y
+    // fingers     = +Z
+    createGlove({
+        width = 0.62,
+        height = 0.52,
+        depth = 0.78,
+        material,
+        cuffMaterial = null,
+        plateMaterial = null,
+        thumbSide = 1,
+        addKnucklePlate = true
+    } = {}){
+        const THREE = this.THREE;
+        const group = new THREE.Group();
+        group.name = "HeroicRTS_Glove";
+        const hw = width * 0.5;
+        const hh = height * 0.5;
+        const hd = depth * 0.5;
+
+        // MAIN HAND MASS
+        // tapered wedge-like mitten
+        const verts = [
+            // wrist/back ring
+            -hw * 0.82, -hh, -hd,
+             hw * 0.82, -hh, -hd,
+
+            -hw,          hh, -hd * 0.88,
+             hw,          hh, -hd * 0.88,
+
+            // finger/front ring
+            -hw * 0.92, -hh * 0.72, hd,
+             hw * 0.92, -hh * 0.72, hd,
+            
+            -hw * 0.72,  hh * 0.55, hd * 1.08,
+             hw * 0.72,  hh * 0.55, hd * 1.08
+        ];
+        const idx = [
+            // back
+            0,2,3,
+            0,3,1,
+            // bottom
+            0,1,5,
+            0,5,4,
+            // top
+            2,6,7,
+            2,7,3,
+            // left
+            0,4,6,
+            0,6,2,
+            // right
+            1,3,7,
+            1,7,5,
+            // front
+            4,5,7,
+            4,7,6
+        ];
+        const hand = this.makeMesh(
+            verts,
+            idx,
+            material,
+            {
+                name:"HeroicGloveHand"
+            }
+        );
+        group.add(hand);
+        // CUFF
+        const cuff = new THREE.Mesh(
+            new THREE.CylinderGeometry(
+                width * 0.42,
+                width * 0.52,
+                height * 0.42,
+                6
+            ),
+            cuffMaterial || material
+        );
+        cuff.name = "HeroicGloveCuff";
+        cuff.rotation.x = Math.PI / 2;
+        cuff.position.z = -depth * 0.58;
+        cuff.castShadow = true;
+        group.add(cuff);
+        // THUMB
+        const thumb = new THREE.Mesh(
+            new THREE.CylinderGeometry(
+                width * 0.11,
+                width * 0.14,
+                depth * 0.48,
+                5
+            ),
+            material
+        );
+        thumb.name = "HeroicGloveThumb";
+        thumb.rotation.z =
+            thumbSide * Math.PI * 0.32;
+        thumb.rotation.x =
+            Math.PI * 0.30;
+        thumb.position.set(
+            thumbSide * width * 0.48,
+            -height * 0.05,
+            depth * 0.22
+        );
+        thumb.castShadow = true;
+        group.add(thumb);
+        // KNUCKLE ARMOR
+        // --------------------------------------------
+        if(addKnucklePlate){
+            const plate = new THREE.Mesh(
+                new THREE.BoxGeometry(
+                    width * 0.78,
+                    height * 0.24,
+                    depth * 0.32
+                ),
+                plateMaterial || cuffMaterial || material
+            );
+            plate.name = "HeroicGloveKnucklePlate";
+            plate.position.set(
+                0,
+                height * 0.44,
+                depth * 0.35
+            );
+            plate.rotation.x = -0.18;
+            plate.castShadow = true;
+            group.add(plate);
+        }
+        return group;
+    }
+}
 
 /* =====================================================================
    HeroicRTSWeld
