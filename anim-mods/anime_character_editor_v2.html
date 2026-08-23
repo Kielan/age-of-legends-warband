@@ -1,0 +1,1213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ananta / Starpilot Character Editor V2</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#080d14;color:#e7edf5;font:13px Inter,system-ui,sans-serif}
+button,input{font:inherit}
+.app{height:100%;display:grid;grid-template-rows:48px 1fr}
+.top{display:flex;align-items:center;gap:26px;padding:0 17px;background:#0d141d;border-bottom:1px solid #29394b}
+.brand{font-weight:800;letter-spacing:.2px}.brand b{color:#5ba2ff}
+.menu{display:flex;gap:25px;color:#91a1b5}.sp{flex:1}.window{color:#78899c}
+.main{min-height:0;display:grid;grid-template-columns:310px minmax(420px,1fr) 380px}
+.left,.right{background:#101720;min-height:0}.left{border-right:1px solid #2b3a4b}.right{border-left:1px solid #2b3a4b;overflow:auto;padding:10px}
+.title{height:45px;display:flex;align-items:center;padding:0 14px;font-size:15px;font-weight:750;border-bottom:1px solid #29394b}.close{margin-left:auto;color:#718197}
+.cards{padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px}.card{background:#172230;border:1px solid #314258;border-radius:7px;overflow:hidden;cursor:pointer}.card.active{border-color:#4b9cff;box-shadow:0 0 0 1px #2b78df}.thumb{height:148px;background:#151f2c}.thumb canvas{display:block;width:100%;height:100%}.cardname{padding:9px;text-align:center;font-size:11px;color:#c7d2df}
+.files{margin:0 12px 12px;border:1px solid #2a394a;border-radius:7px;height:calc(100% - 330px);min-height:250px;display:flex;flex-direction:column}.path{margin:10px;padding:8px;background:#1c2836;border:1px solid #33465b;border-radius:4px;color:#aebdcd;font-size:11px}.fl{overflow:auto;padding:0 8px}.file{padding:9px;border-radius:4px;color:#9eafc1;cursor:pointer}.file:hover,.file.sel{background:#223248;color:#fff}.load{margin:auto 10px 10px;height:37px;border:0;border-radius:5px;background:#176fe5;color:#fff;font-weight:700;cursor:pointer}
+.center{position:relative;min-width:0;background:#080e16}.center canvas.maincanvas{display:block;width:100%;height:100%}
+.viewportTop{position:absolute;z-index:5;left:15px;top:14px;display:flex;gap:5px}.tool{height:32px;min-width:34px;border:1px solid #33475d;border-radius:5px;background:#14202d;color:#c7d4e3;cursor:pointer}.tool.active{border-color:#58a1ff;color:#fff;background:#1c2d42}
+.viewInfo{position:absolute;z-index:5;right:15px;top:14px;padding:7px 10px;border:1px solid #304256;border-radius:5px;background:#101b28dd;color:#93a4b7;font-size:10px}
+.hint{position:absolute;z-index:5;left:15px;bottom:14px;padding:9px 11px;border:1px solid #304256;border-radius:6px;background:#101b28e8;color:#9aabbe;font-size:10px;line-height:1.8}.hint kbd{display:inline-block;min-width:18px;padding:0 4px;text-align:center;border:1px solid #41546a;border-radius:3px;background:#1c2a3a;color:#dce6f1}
+.right>.title{margin:-10px -10px 10px}.tabs{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid #293a4c;border-radius:6px;overflow:hidden;margin-bottom:9px}.tab{border:0;background:#111a24;color:#8596a9;padding:9px 3px;cursor:pointer}.tab.active{color:#fff;background:#1d2c3e;box-shadow:inset 0 -2px #398df5}
+.sec{border:1px solid #29394a;border-radius:6px;background:#131d28;margin-bottom:9px;overflow:hidden}.sh{padding:9px 11px;border-bottom:1px solid #29394a;font-weight:700}.sb{padding:7px 10px}
+.row{display:grid;grid-template-columns:108px 1fr 45px;gap:7px;align-items:center;min-height:31px}.row label{font-size:10px;color:#aab8c8}.row output{font-size:10px;text-align:right;color:#d2dce7}.row input{width:100%;accent-color:#378ff4}
+.color{display:grid;grid-template-columns:108px 1fr 55px;gap:7px;align-items:center;margin:5px 0}.color input{width:100%;height:22px}.color output{font-size:10px;color:#aebdce}
+.actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}.actions button{height:37px;border:1px solid #3b4e63;border-radius:5px;background:#182432;color:#dbe5ef;cursor:pointer}.actions .apply{background:#176fe5;border-color:#176fe5;color:#fff}.status{padding:8px 2px;color:#718397;font-size:10px;line-height:1.5}
+.badge{display:inline-block;margin-left:7px;padding:2px 5px;border:1px solid #3c526a;border-radius:3px;color:#82baff;font-size:9px}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="top">
+  <div class="brand">◈ <b>HeroicRTS</b> Character Editor <span class="badge">V2</span></div>
+  <div class="menu"><span>File</span><span>Edit</span><span>View</span><span>Templates</span><span>Mesh</span></div>
+  <div class="sp"></div><span class="window">—</span><span class="window">□</span><span class="window">×</span>
+</header>
+
+<main class="main">
+<aside class="left">
+  <div class="title">Template Library <span class="close">×</span></div>
+  <div class="cards">
+    <div class="card active" data-template="ananta">
+      <div class="thumb"><canvas id="thumbAnanta"></canvas></div>
+      <div class="cardname">Ananta · Simplified</div>
+    </div>
+    <div class="card" data-template="pilot">
+      <div class="thumb"><canvas id="thumbPilot"></canvas></div>
+      <div class="cardname">Starpilot · Red Hair</div>
+    </div>
+  </div>
+  <div class="files">
+    <div class="title">Preview / Files</div>
+    <div class="path">/assets/templates/characters/</div>
+    <div class="fl">
+      <div class="file" data-template="ananta">▤ ananta_simplified.json</div>
+      <div class="file sel" data-template="pilot">▤ starpilot_redhair.json</div>
+      <div class="file">▤ heroic_rts_character.schema</div>
+      <div class="file">▤ hair_profiles/</div>
+      <div class="file">▤ materials/</div>
+    </div>
+    <button class="load" id="loadTemplate">Load Template</button>
+  </div>
+</aside>
+
+<section class="center" id="viewport">
+  <div class="viewportTop">
+    <button class="tool active" id="selectTool">◉</button>
+    <button class="tool" id="frontTool">F</button>
+    <button class="tool" id="sideTool">S</button>
+    <button class="tool" id="wireTool">W</button>
+    <button class="tool" id="gridTool">G</button>
+  </div>
+  <div class="viewInfo" id="viewInfo">Perspective · Object Mode · V2 topology</div>
+  <div class="hint">
+    <div><kbd>1</kbd> Face &nbsp; <kbd>2</kbd> Edge &nbsp; <kbd>3</kbd> Vertex</div>
+    <div><kbd>W</kbd> Wireframe &nbsp; <kbd>G</kbd> Grid &nbsp; <kbd>R</kbd> Rebuild</div>
+    <div>Drag = Orbit &nbsp; Wheel = Zoom &nbsp; Shift+Drag = Pan</div>
+  </div>
+</section>
+
+<aside class="right">
+  <div class="title">Character Parameters</div>
+  <div class="tabs">
+    <button class="tab active" data-tab="body">Body</button>
+    <button class="tab" data-tab="face">Face</button>
+    <button class="tab" data-tab="hair">Hair</button>
+    <button class="tab" data-tab="outfit">Outfit</button>
+  </div>
+  <div id="controls"></div>
+  <div class="actions">
+    <button id="reset">Reset</button>
+    <button id="random">Randomize</button>
+    <button class="apply" id="apply">Apply</button>
+  </div>
+  <div class="status" id="status">Template: Ananta · HeroicRTSWeld V2 · Loft topology live</div>
+</aside>
+</main>
+</div>
+
+<script type="module">
+import * as THREE from "https://esm.sh/three@0.165.0";
+import {OrbitControls} from "https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js";
+
+/* ================================================================
+   HEROIC RTS WELD V2
+   ================================================================
+   V2 keeps the same core idea as the supplied HeroicRTSWeld framework,
+   but exposes the loft ring data as character parameters.
+
+   The torso, upper/lower arms, thighs and calves are generated from
+   continuous ring chains.  Adjacent rings share the same coordinate
+   system, are welded after construction, and are then converted to
+   indexed BufferGeometry.
+
+   The face is intentionally assembled from readable anime primitives:
+   ears, brows, eyeballs/irises, nose, mouth and a segmented hair cap.
+   ================================================================ */
+
+const HeroicRTSWeld = {
+  ring(spec, sides=8){
+    const c = spec.center || [0,0,0];
+    const rz = spec.rz ?? spec.rx;
+    const twist = spec.twist || 0;
+    const out = [];
+    for(let i=0;i<sides;i++){
+      const a = i/sides*Math.PI*2 + twist;
+      out.push([
+        c[0] + Math.cos(a)*spec.rx,
+        c[1],
+        c[2] + Math.sin(a)*rz
+      ]);
+    }
+    return out;
+  },
+
+  loftPart(rings, sides=8){
+    const vertices=[], loops=[];
+    for(const ringSpec of rings){
+      const loop=[];
+      for(const p of this.ring(ringSpec,sides)){
+        loop.push(vertices.length);
+        vertices.push(p);
+      }
+      loops.push(loop);
+    }
+
+    const faces=[];
+    for(let r=0;r<loops.length-1;r++){
+      const a=loops[r], b=loops[r+1];
+      for(let i=0;i<sides;i++){
+        const j=(i+1)%sides;
+        faces.push([a[i],a[j],b[j]],[a[i],b[j],b[i]]);
+      }
+    }
+    return {
+      vertices,faces,
+      bottomLoop:loops[0],
+      topLoop:loops[loops.length-1],
+      loops
+    };
+  },
+
+  weldVertices(mesh, epsilon=1e-5){
+    const buckets=new Map(), remap=[], vertices=[];
+    const key=v=>`${Math.round(v[0]/epsilon)}_${Math.round(v[1]/epsilon)}_${Math.round(v[2]/epsilon)}`;
+
+    mesh.vertices.forEach((v,i)=>{
+      const k=key(v);
+      if(buckets.has(k)) remap[i]=buckets.get(k);
+      else{
+        remap[i]=vertices.length;
+        vertices.push(v.slice());
+        buckets.set(k,remap[i]);
+      }
+    });
+
+    const faces=mesh.faces
+      .map(f=>f.map(i=>remap[i]))
+      .filter(f=>new Set(f).size===f.length);
+
+    return {vertices,faces};
+  },
+
+  assembleParts(parts){
+    const mesh={vertices:[],faces:[]};
+    const topology={};
+
+    for(const [name,part] of Object.entries(parts)){
+      const offset=mesh.vertices.length;
+      part.vertices.forEach(v=>mesh.vertices.push(v.slice()));
+      part.faces.forEach(f=>mesh.faces.push(f.map(i=>i+offset)));
+
+      const remap=loop=>loop.map(i=>i+offset);
+      topology[name]={
+        bottomLoop:remap(part.bottomLoop),
+        topLoop:remap(part.topLoop)
+      };
+    }
+    return {mesh,topology};
+  },
+
+  alignLoops(mesh,a,b){
+    let best=b.slice(),bestScore=Infinity;
+    for(const reverse of [false,true]){
+      const src=reverse?b.slice().reverse():b.slice();
+      for(let off=0;off<src.length;off++){
+        const test=src.map((_,i)=>src[(i+off)%src.length]);
+        let score=0;
+        for(let i=0;i<a.length;i++){
+          const p=mesh.vertices[a[i]],q=mesh.vertices[test[i]];
+          score+=(p[0]-q[0])**2+(p[1]-q[1])**2+(p[2]-q[2])**2;
+        }
+        if(score<bestScore){bestScore=score;best=test;}
+      }
+    }
+    return best;
+  },
+
+  weldSeam(mesh,loopA,loopB,{influenceA=.5,influenceB=.5,bridge=true}={}){
+    const b=this.alignLoops(mesh,loopA,loopB);
+    const d=Math.max(1e-8,influenceA+influenceB);
+
+    for(let i=0;i<loopA.length;i++){
+      const a=mesh.vertices[loopA[i]], q=mesh.vertices[b[i]];
+      const p=[
+        (a[0]*influenceA+q[0]*influenceB)/d,
+        (a[1]*influenceA+q[1]*influenceB)/d,
+        (a[2]*influenceA+q[2]*influenceB)/d
+      ];
+      mesh.vertices[loopA[i]]=p.slice();
+      mesh.vertices[b[i]]=p.slice();
+    }
+
+    if(bridge){
+      for(let i=0;i<loopA.length;i++){
+        const j=(i+1)%loopA.length;
+        mesh.faces.push(
+          [loopA[i],loopA[j],b[j]],
+          [loopA[i],b[j],b[i]]
+        );
+      }
+    }
+  },
+
+  toGeometry(simple){
+    const positions=[],indices=[];
+    simple.vertices.forEach(v=>positions.push(v[0],v[1],v[2]));
+    simple.faces.forEach(f=>{
+      for(let i=1;i<f.length-1;i++)
+        indices.push(f[0],f[i],f[i+1]);
+    });
+
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute("position",new THREE.Float32BufferAttribute(positions,3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    return geo;
+  },
+
+  weldedChain(parent,rings,material,sides=8){
+    const raw=this.loftPart(rings,sides);
+    const welded=this.weldVertices(raw,1e-5);
+    const mesh=new THREE.Mesh(this.toGeometry(welded),material);
+    mesh.userData.welded=true;
+    mesh.userData.vertexCount=welded.vertices.length;
+    parent.add(mesh);
+    return mesh;
+  },
+
+  weldedAssembly(parent,parts,material,sides=8){
+    const built=this.assembleParts(parts);
+
+    const names=Object.keys(parts);
+    for(let i=0;i<names.length-1;i++){
+      const A=names[i],B=names[i+1];
+      this.weldSeam(
+        built.mesh,
+        built.topology[A].topLoop,
+        built.topology[B].bottomLoop,
+        {influenceA:.5,influenceB:.5,bridge:true}
+      );
+    }
+
+    const simple=this.weldVertices(built.mesh,1e-5);
+    const mesh=new THREE.Mesh(this.toGeometry(simple),material);
+    mesh.userData.welded=true;
+    mesh.userData.weldedSeams=names;
+    parent.add(mesh);
+    return mesh;
+  }
+};
+
+/* ================================================================
+   STATE
+   ================================================================ */
+
+const state={
+  template:"ananta",
+  tab:"body",
+  wire:false,
+  grid:true,
+
+  body:{
+    height:1,
+    shoulder:1,
+    chest:1,
+    waist:.86,
+    hips:.96,
+    armLength:1,
+    armMuscle:1,
+    legLength:1,
+    legMuscle:1,
+    neck:.9
+  },
+
+  face:{
+    headSize:1,
+    faceWidth:1,
+    jaw:.94,
+    ear:.9,
+    eyeSize:1,
+    eyeSpacing:1,
+    eyeHeight:1,
+    browAngle:.12,
+    nose:.9,
+    mouth:.9,
+    chin:.94
+  },
+
+  hair:{
+    volume:1,
+    length:1,
+    fringe:.9,
+    spikes:1,
+    back:1
+  },
+
+  outfit:{
+    jacketFit:1,
+    collar:1,
+    glove:.95,
+    boot:1,
+    belt:1
+  },
+
+  colors:{
+    hair:"#302b32",
+    skin:"#d6a07d",
+    jacket:"#202936",
+    shirt:"#edf0ef",
+    accent:"#347ed4",
+    eye:"#88a8ff",
+    hairRed:"#b51e2c"
+  }
+};
+
+const defaults=JSON.parse(JSON.stringify(state));
+
+let scene,camera,renderer,controls;
+let character=null;
+let wireGroup=null;
+let gridObject=null;
+let selectionGroup=null;
+
+/* ================================================================
+   MATERIAL / UTILITY
+   ================================================================ */
+
+function mat(hex,rough=.82,metal=0){
+  return new THREE.MeshStandardMaterial({
+    color:new THREE.Color(hex),
+    roughness:rough,
+    metalness:metal,
+    flatShading:true
+  });
+}
+
+function box(parent,size,pos,material,rot=[0,0,0]){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(...size),material);
+  m.position.set(...pos);
+  m.rotation.set(...rot);
+  parent.add(m);
+  return m;
+}
+
+function sphere(parent,r,pos,material,scale=[1,1,1]){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(r,12,8),material);
+  m.position.set(...pos);
+  m.scale.set(...scale);
+  parent.add(m);
+  return m;
+}
+
+function tubeBetween(parent,a,b,r1,r2,material,segments=8){
+  const A=new THREE.Vector3(...a), B=new THREE.Vector3(...b);
+  const d=new THREE.Vector3().subVectors(B,A);
+  const m=new THREE.Mesh(
+    new THREE.CylinderGeometry(r1,r2,d.length(),segments,1,false),
+    material
+  );
+  m.position.copy(A).add(B).multiplyScalar(.5);
+  m.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0,1,0),
+    d.normalize()
+  );
+  parent.add(m);
+  return m;
+}
+
+function cone(parent,r,h,pos,material,rot=[0,0,0],segments=6){
+  const m=new THREE.Mesh(new THREE.ConeGeometry(r,h,segments),material);
+  m.position.set(...pos);
+  m.rotation.set(...rot);
+  parent.add(m);
+  return m;
+}
+
+/* ================================================================
+   HEAD
+   ================================================================ */
+
+function buildAnimeHead(parent,isPilot){
+  const f=state.face;
+  const h=state.hair;
+
+  const skin=mat(state.colors.skin,.82);
+  const eyeWhite=mat("#f5f5f2",.45);
+  const iris=mat(state.colors.eye,.28);
+  const browMat=mat(isPilot?"#4b151c":state.colors.hair,.92);
+  const lipMat=mat("#833d49",.78);
+  const hairColor=isPilot?state.colors.hairRed:state.colors.hair;
+  const hairMat=mat(hairColor,.9);
+
+  const head=new THREE.Group();
+
+  const skull=sphere(
+    head,
+    .79*f.headSize,
+    [0,6.62,0],
+    skin,
+    [.86*f.faceWidth,.98,.78]
+  );
+  skull.userData.region="head";
+
+  /* ears */
+  for(const s of [-1,1]){
+    const ear=new THREE.Mesh(
+      new THREE.CylinderGeometry(.16*f.ear,.12*f.ear,.09,8),
+      skin
+    );
+    ear.rotation.z=Math.PI/2;
+    ear.position.set(s*.69*f.faceWidth,6.62,.0);
+    ear.scale.y=1.25;
+    head.add(ear);
+  }
+
+  /* eyes: white sclera + iris + tiny highlight */
+  for(const s of [-1,1]){
+    const x=s*.285*f.eyeSpacing;
+
+    sphere(head,.205*f.eyeSize,[x,6.73,.665],eyeWhite,[1,.84,.34]);
+    sphere(head,.112*f.eyeSize,[x,6.73,.735],iris,[1,.95,.24]);
+    sphere(head,.035*f.eyeSize,[x-.035*s,6.77,.755],eyeWhite,[1,1,.3]);
+
+    /* anime eyebrow */
+    const brow=box(
+      head,
+      [.34,.055,.055],
+      [x,7.035,.67],
+      browMat,
+      [0,0,s*f.browAngle]
+    );
+    brow.scale.x=.95*f.faceWidth;
+  }
+
+  /* nose bridge + small tip */
+  const noseLen=.28*f.nose;
+  cone(
+    head,
+    .115*f.nose,
+    noseLen,
+    [0,6.55,.71],
+    skin,
+    [Math.PI/2,0,0],
+    5
+  );
+  sphere(head,.075*f.nose,[0,6.49,.775],skin,[1,.7,.75]);
+
+  /* mouth: upper lip, lower lip and tiny opening */
+  box(head,[.27*f.mouth,.035,.025],[0,6.31,.735],lipMat);
+  box(head,[.18*f.mouth,.018,.018],[0,6.285,.74],skin);
+
+  /* chin plane */
+  sphere(head,.30*f.chin,[0,6.18,.06],skin,[.72,.38,.5]);
+
+  /* hair cap */
+  const cap=sphere(
+    head,
+    .82*h.volume,
+    [0,7.05,-.10],
+    hairMat,
+    [.91,1.0,.79]
+  );
+  cap.userData.region="hair";
+
+  /* fringe spikes across forehead */
+  const spikeCount=17;
+  for(let i=0;i<spikeCount;i++){
+    const t=i/(spikeCount-1)-.5;
+    const edge=Math.abs(t);
+    const width=.13+.065*(1-edge*1.7);
+    const length=(.56+.30*(1-edge))*h.length*h.fringe;
+    const spike=new THREE.Mesh(
+      new THREE.ConeGeometry(width,length,5),
+      hairMat
+    );
+
+    spike.position.set(
+      t*1.48*h.volume,
+      7.30-.18*(1-Math.abs(t*2)),
+      .48-.18*Math.abs(t)
+    );
+    spike.rotation.z=-.58+t*.95;
+    spike.rotation.x=.22+.18*Math.abs(t);
+    spike.scale.y=1;
+    head.add(spike);
+  }
+
+  /* rear hair locks */
+  for(let s of [-1,1]){
+    for(let i=0;i<4;i++){
+      const lock=cone(
+        head,
+        .12*h.volume,
+        (.68+.14*i)*h.length*h.back,
+        [s*(.38+.11*i),6.85-.09*i,-.38],
+        hairMat,
+        [s*.32,0,s*.13],
+        5
+      );
+      lock.userData.region="hair";
+    }
+  }
+
+  parent.add(head);
+  return head;
+}
+
+/* ================================================================
+   BODY
+   ================================================================ */
+
+function buildBody(parent,isPilot){
+  const b=state.body;
+  const o=state.outfit;
+
+  const skin=mat(state.colors.skin,.82);
+  const jacket=mat(state.colors.jacket,.88);
+  const shirt=mat(state.colors.shirt,.68);
+  const accent=mat(state.colors.accent,.58,.08);
+  const white=mat("#e7ebec",.58);
+  const red=mat(state.colors.hairRed,.75);
+  const dark=mat("#141b23",.9);
+
+  /* welded torso: pelvis -> abdomen -> chest */
+  const pelvis=HeroicRTSWeld.loftPart([
+    {center:[0,2.72,0],rx:.66*b.waist,rz:.40*b.waist},
+    {center:[0,2.96,0],rx:.78*b.hips,rz:.46},
+    {center:[0,3.20,0],rx:.72*b.waist,rz:.43}
+  ],8);
+
+  const abdomen=HeroicRTSWeld.loftPart([
+    {center:[0,3.20,0],rx:.72*b.waist,rz:.43},
+    {center:[0,3.50,.01],rx:.72*b.waist,rz:.44},
+    {center:[0,3.82,.02],rx:.88*b.chest,rz:.51}
+  ],8);
+
+  const chest=HeroicRTSWeld.loftPart([
+    {center:[0,3.82,.02],rx:.88*b.chest,rz:.51},
+    {center:[0,4.18,.03],rx:1.02*b.shoulder,rz:.58},
+    {center:[0,4.48,.02],rx:1.08*b.shoulder,rz:.61},
+    {center:[0,4.72,0],rx:.48*b.neck,rz:.35}
+  ],8);
+
+  const torsoMat=isPilot?shirt:jacket;
+  HeroicRTSWeld.weldedAssembly(
+    parent,
+    {pelvis,abdomen,chest},
+    torsoMat,
+    8
+  );
+
+  /* jacket panels / tie / collar */
+  if(isPilot){
+    box(parent,[1.55*o.jacketFit,.82,.08],[0,4.02,.62],jacket,[0,0,0]);
+    box(parent,[.12,1.05,.06],[0,4.03,.69],accent);
+    box(parent,[.42,.10,.08],[0,4.50,.68],red);
+    for(const s of [-1,1]){
+      box(parent,[.13,.95,.08],[s*.48,4.03,.63],white,[0,0,s*.10]);
+    }
+    box(parent,[1.30*o.jacketFit,.15,.12],[0,3.28,.49],dark);
+    box(parent,[.27,.26,.11],[0,3.28,.56],white);
+  }else{
+    box(parent,[1.45*o.jacketFit,.18,.09],[0,3.27,.48],dark);
+    box(parent,[1.35,.68,.07],[0,4.22,.63],jacket);
+    box(parent,[.24,.96,.07],[0,4.23,.69],accent);
+  }
+
+  /* neck */
+  tubeBetween(
+    parent,
+    [0,4.64,0],
+    [0,5.48,0],
+    .28*b.neck,
+    .30*b.neck,
+    skin,
+    8
+  );
+
+  /* shoulders and arms are separate articulated tubes, with editable
+     upper/lower ring radii rather than fixed primitive dimensions. */
+  for(const s of [-1,1]){
+    const shoulderX=s*1.02*b.shoulder;
+
+    const upper=HeroicRTSWeld.loftPart([
+      {center:[shoulderX,4.48,.01],rx:.35*b.armMuscle,rz:.31*b.armMuscle},
+      {center:[s*1.10*b.shoulder,4.18,.02],rx:.32*b.armMuscle,rz:.28*b.armMuscle},
+      {center:[s*1.18*b.shoulder,3.83,.05],rx:.29*b.armMuscle,rz:.25*b.armMuscle},
+      {center:[s*1.21*b.shoulder,3.57,.07],rx:.26*b.armMuscle,rz:.23*b.armMuscle}
+    ],7);
+
+    const upperMesh=HeroicRTSWeld.weldVertices(upper,1e-5);
+    const upperObj=new THREE.Mesh(
+      HeroicRTSWeld.toGeometry(upperMesh),
+      isPilot?skin:jacket
+    );
+    parent.add(upperObj);
+
+    sphere(
+      parent,
+      .27*b.armMuscle,
+      [s*1.21*b.shoulder,3.54,.08],
+      isPilot?skin:jacket,
+      [1,.85,.95]
+    );
+
+    const lowerEnd=3.54-.76*b.armLength;
+    const fore=HeroicRTSWeld.loftPart([
+      {center:[s*1.21*b.shoulder,3.50,.08],rx:.25*b.armMuscle,rz:.23*b.armMuscle},
+      {center:[s*1.24*b.shoulder,3.22,.11],rx:.23*b.armMuscle,rz:.21*b.armMuscle},
+      {center:[s*1.26*b.shoulder,lowerEnd+.25,.15],rx:.21*b.armMuscle,rz:.19*b.armMuscle},
+      {center:[s*1.27*b.shoulder,lowerEnd,.18],rx:.19*b.armMuscle,rz:.18*b.armMuscle}
+    ],7);
+
+    const foreMesh=HeroicRTSWeld.weldVertices(fore,1e-5);
+    parent.add(new THREE.Mesh(
+      HeroicRTSWeld.toGeometry(foreMesh),
+      isPilot?skin:jacket
+    ));
+
+    const handMat=isPilot?white:skin;
+    sphere(
+      parent,
+      .24*o.glove,
+      [s*1.27*b.shoulder,lowerEnd-.14,.20],
+      handMat,
+      [1,.85,.9]
+    );
+
+    if(isPilot){
+      box(
+        parent,
+        [.42,.18,.36],
+        [s*1.27*b.shoulder,lowerEnd+.03,.22],
+        accent
+      );
+    }
+  }
+
+  /* legs: two independently parameterized welded chains */
+  for(const s of [-1,1]){
+    const x=s*.48*b.hips;
+
+    const thigh=HeroicRTSWeld.loftPart([
+      {center:[x,2.70,0],rx:.43*b.legMuscle,rz:.34*b.legMuscle},
+      {center:[x*1.03,2.30,0],rx:.45*b.legMuscle,rz:.36*b.legMuscle},
+      {center:[x*1.04,1.90,0],rx:.37*b.legMuscle,rz:.31*b.legMuscle},
+      {center:[x*1.05,1.48,0],rx:.31*b.legMuscle,rz:.26*b.legMuscle}
+    ],7);
+
+    const calf=HeroicRTSWeld.loftPart([
+      {center:[x*1.05,1.48,0],rx:.31*b.legMuscle,rz:.26*b.legMuscle},
+      {center:[x*1.06,1.15,0],rx:.30*b.legMuscle,rz:.25*b.legMuscle},
+      {center:[x*1.08,.70,0],rx:.25*b.legMuscle,rz:.21*b.legMuscle},
+      {center:[x*1.10,.25,0],rx:.20*b.legMuscle,rz:.18*b.legMuscle}
+    ],7);
+
+    const built=HeroicRTSWeld.assembleParts({thigh,calf});
+    HeroicRTSWeld.weldSeam(
+      built.mesh,
+      built.topology.thigh.topLoop,
+      built.topology.calf.bottomLoop,
+      {influenceA:.5,influenceB:.5,bridge:true}
+    );
+
+    const simple=HeroicRTSWeld.weldVertices(built.mesh,1e-5);
+    parent.add(new THREE.Mesh(
+      HeroicRTSWeld.toGeometry(simple),
+      jacket
+    ));
+
+    sphere(
+      parent,
+      .29*b.legMuscle,
+      [x*1.05,1.46,.08],
+      dark,
+      [1,.7,.9]
+    );
+
+    box(
+      parent,
+      [.62*o.boot,.28,.82*o.boot],
+      [x*1.10,.05,.16],
+      isPilot?white:accent
+    );
+
+    if(isPilot){
+      box(
+        parent,
+        [.54*o.boot,.25,.32],
+        [x*1.10,.28,.18],
+        red
+      );
+    }
+  }
+}
+
+/* ================================================================
+   CHARACTER ROOT
+   ================================================================ */
+
+function buildCharacter(template){
+  const isPilot=template==="pilot";
+  const root=new THREE.Group();
+  root.name=isPilot?"Starpilot_RedHair_V2":"Ananta_Simplified_V2";
+
+  buildBody(root,isPilot);
+  buildAnimeHead(root,isPilot);
+
+  root.scale.setScalar(.95*state.body.height);
+
+  root.traverse(o=>{
+    if(o.isMesh){
+      o.castShadow=true;
+      o.receiveShadow=true;
+    }
+  });
+
+  root.userData.template=template;
+  root.userData.framework="HeroicRTSWeld V2";
+  root.userData.parameterized=true;
+  return root;
+}
+
+/* ================================================================
+   VIEWPORT / DEBUG
+   ================================================================ */
+
+function rebuild(){
+  if(character)scene.remove(character);
+  if(wireGroup)scene.remove(wireGroup);
+
+  character=buildCharacter(state.template);
+  scene.add(character);
+
+  wireGroup=null;
+  if(state.wire)toggleWire(true);
+  updateStatus();
+}
+
+function toggleWire(force){
+  state.wire=force===undefined?!state.wire:force;
+  if(wireGroup)scene.remove(wireGroup);
+  wireGroup=null;
+
+  if(state.wire){
+    wireGroup=new THREE.Group();
+
+    character.traverse(o=>{
+      if(!o.isMesh) return;
+      const lines=new THREE.LineSegments(
+        new THREE.WireframeGeometry(o.geometry),
+        new THREE.LineBasicMaterial({
+          color:0x5b98dc,
+          transparent:true,
+          opacity:.28
+        })
+      );
+      lines.position.copy(o.position);
+      lines.quaternion.copy(o.quaternion);
+      lines.scale.copy(o.scale);
+      wireGroup.add(lines);
+    });
+
+    scene.add(wireGroup);
+  }
+
+  document.getElementById("wireTool").classList.toggle("active",state.wire);
+  updateStatus();
+}
+
+function toggleGrid(){
+  state.grid=!state.grid;
+  gridObject.visible=state.grid;
+  document.getElementById("gridTool").classList.toggle("active",state.grid);
+}
+
+function frontView(){
+  camera.position.set(0,4.2,11);
+  controls.target.set(0,3.65,0);
+  controls.update();
+}
+
+function sideView(){
+  camera.position.set(10,4.2,0);
+  controls.target.set(0,3.65,0);
+  controls.update();
+}
+
+function updateStatus(){
+  const n=state.template==="pilot"?"Starpilot · Red Hair":"Ananta · Simplified";
+  document.getElementById("status").textContent=
+    `Template: ${n} · HeroicRTSWeld V2 · `+
+    `${state.wire?"Wireframe ON":"Loft topology live"} · `+
+    `${state.grid?"Grid ON":"Grid OFF"}`;
+}
+
+/* ================================================================
+   UI SCHEMA
+   ================================================================ */
+
+const schema={
+  body:[
+    ["Silhouette",[
+      ["Height","height",.78,1.24],
+      ["Shoulder Width","shoulder",.72,1.32],
+      ["Chest Width","chest",.72,1.28],
+      ["Waist Width","waist",.62,1.12],
+      ["Hip Width","hips",.72,1.24]
+    ]],
+    ["Limb Construction",[
+      ["Arm Length","armLength",.72,1.30],
+      ["Arm Muscle","armMuscle",.68,1.45],
+      ["Leg Length","legLength",.75,1.28],
+      ["Leg Muscle","legMuscle",.70,1.40],
+      ["Neck Width","neck",.72,1.18]
+    ]]
+  ],
+
+  face:[
+    ["Head Shape",[
+      ["Head Size","headSize",.78,1.18],
+      ["Face Width","faceWidth",.74,1.18],
+      ["Jaw","jaw",.70,1.20],
+      ["Chin","chin",.70,1.20],
+      ["Ear Size","ear",.65,1.25]
+    ]],
+    ["Features",[
+      ["Eye Size","eyeSize",.70,1.32],
+      ["Eye Spacing","eyeSpacing",.72,1.30],
+      ["Eye Height","eyeHeight",.88,1.12],
+      ["Brow Angle","browAngle",-0.30,.42],
+      ["Nose","nose",.65,1.30],
+      ["Mouth","mouth",.65,1.30]
+    ]]
+  ],
+
+  hair:[
+    ["Hair Mass",[
+      ["Volume","volume",.60,1.45],
+      ["Length","length",.55,1.50],
+      ["Fringe","fringe",.55,1.45],
+      ["Spike Size","spikes",.60,1.45],
+      ["Back Locks","back",.55,1.45]
+    ]]
+  ],
+
+  outfit:[
+    ["Fit / Equipment",[
+      ["Jacket Fit","jacketFit",.75,1.25],
+      ["Collar","collar",.70,1.30],
+      ["Glove Size","glove",.70,1.30],
+      ["Boot Size","boot",.72,1.32],
+      ["Belt","belt",.70,1.30]
+    ]],
+    ["Material Colors",[
+      ["Hair","hair","color"],
+      ["Skin","skin","color"],
+      ["Jacket","jacket","color"],
+      ["Shirt","shirt","color"],
+      ["Accent","accent","color"],
+      ["Eye","eye","color"],
+      ["Red Hair","hairRed","color"]
+    ]]
+  ]
+};
+
+function renderControls(){
+  const host=document.getElementById("controls");
+  host.innerHTML="";
+
+  for(const [section,rows] of schema[state.tab]){
+    const sec=document.createElement("div");
+    sec.className="sec";
+
+    const head=document.createElement("div");
+    head.className="sh";
+    head.textContent=section;
+    sec.appendChild(head);
+
+    const body=document.createElement("div");
+    body.className="sb";
+
+    for(const row of rows){
+      const [label,key,min,max,type]=row;
+
+      if(type==="color"){
+        const wrap=document.createElement("div");
+        wrap.className="color";
+        wrap.innerHTML=
+          `<label>${label}</label>`+
+          `<input type="color" value="${state.colors[key]}">`+
+          `<output>${state.colors[key]}</output>`;
+
+        wrap.querySelector("input").addEventListener("input",e=>{
+          state.colors[key]=e.target.value;
+          wrap.querySelector("output").textContent=e.target.value;
+          rebuild();
+        });
+
+        body.appendChild(wrap);
+      }else{
+        const wrap=document.createElement("div");
+        wrap.className="row";
+        wrap.innerHTML=
+          `<label>${label}</label>`+
+          `<input type="range" min="${min}" max="${max}" step=".01" value="${state[state.tab][key]}">`+
+          `<output>${Number(state[state.tab][key]).toFixed(2)}</output>`;
+
+        wrap.querySelector("input").addEventListener("input",e=>{
+          state[state.tab][key]=Number(e.target.value);
+          wrap.querySelector("output").textContent=Number(e.target.value).toFixed(2);
+          rebuild();
+        });
+
+        body.appendChild(wrap);
+      }
+    }
+
+    sec.appendChild(body);
+    host.appendChild(sec);
+  }
+}
+
+function chooseTemplate(t){
+  state.template=t;
+
+  document.querySelectorAll("[data-template]").forEach(el=>{
+    el.classList.toggle(
+      "active",
+      el.dataset.template===t && el.classList.contains("card")
+    );
+    if(el.classList.contains("file")){
+      el.classList.toggle("sel",el.dataset.template===t);
+    }
+  });
+
+  rebuild();
+}
+
+/* ================================================================
+   RANDOMIZER
+   ================================================================ */
+
+function randomize(){
+  const ranges={
+    height:[.88,1.15],
+    shoulder:[.84,1.20],
+    chest:[.82,1.18],
+    waist:[.72,1.04],
+    hips:[.86,1.12],
+    armLength:[.84,1.16],
+    armMuscle:[.82,1.28],
+    legLength:[.88,1.16],
+    legMuscle:[.82,1.25],
+    neck:[.82,1.10],
+
+    headSize:[.90,1.08],
+    faceWidth:[.88,1.10],
+    jaw:[.82,1.10],
+    chin:[.85,1.12],
+    ear:[.85,1.12],
+    eyeSize:[.86,1.16],
+    eyeSpacing:[.88,1.14],
+    eyeHeight:[.94,1.06],
+    browAngle:[-.08,.24],
+    nose:[.82,1.12],
+    mouth:[.82,1.14],
+
+    volume:[.82,1.25],
+    length:[.75,1.28],
+    fringe:[.80,1.22],
+    spikes:[.82,1.22],
+    back:[.78,1.25],
+
+    jacketFit:[.86,1.14],
+    collar:[.86,1.16],
+    glove:[.86,1.14],
+    boot:[.86,1.14],
+    belt:[.86,1.14]
+  };
+
+  for(const group of ["body","face","hair","outfit"]){
+    for(const key in state[group]){
+      if(ranges[key]){
+        const [a,b]=ranges[key];
+        state[group][key]=a+Math.random()*(b-a);
+      }
+    }
+  }
+
+  renderControls();
+  rebuild();
+}
+
+/* ================================================================
+   INIT
+   ================================================================ */
+
+function init(){
+  const viewport=document.getElementById("viewport");
+
+  scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x080e16);
+
+  camera=new THREE.PerspectiveCamera(34,1,.1,100);
+  camera.position.set(0,4.2,10.5);
+
+  renderer=new THREE.WebGLRenderer({antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setSize(viewport.clientWidth,viewport.clientHeight,false);
+  renderer.shadowMap.enabled=true;
+  renderer.outputColorSpace=THREE.SRGBColorSpace;
+  renderer.domElement.className="maincanvas";
+  viewport.appendChild(renderer.domElement);
+
+  controls=new OrbitControls(camera,renderer.domElement);
+  controls.enableDamping=true;
+  controls.dampingFactor=.075;
+  controls.minDistance=5;
+  controls.maxDistance=17;
+  controls.target.set(0,3.7,0);
+
+  scene.add(new THREE.HemisphereLight(0xbcd3ee,0x151b23,2.1));
+
+  const key=new THREE.DirectionalLight(0xffffff,3.2);
+  key.position.set(4,9,7);
+  key.castShadow=true;
+  scene.add(key);
+
+  const fill=new THREE.DirectionalLight(0x668fff,1.8);
+  fill.position.set(-5,5,-6);
+  scene.add(fill);
+
+  const rim=new THREE.DirectionalLight(0xff7890,1.15);
+  rim.position.set(4,5,-7);
+  scene.add(rim);
+
+  gridObject=new THREE.GridHelper(20,40,0x314255,0x192634);
+  gridObject.position.y=0;
+  scene.add(gridObject);
+
+  rebuild();
+  renderControls();
+  window.addEventListener("resize",resize);
+  animate();
+}
+
+function resize(){
+  const v=document.getElementById("viewport");
+  const w=v.clientWidth,h=v.clientHeight;
+  camera.aspect=w/h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w,h,false);
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene,camera);
+}
+
+/* ================================================================
+   TEMPLATE PREVIEW RENDERERS
+   ================================================================ */
+
+function makeThumb(canvas,template){
+  const s=new THREE.Scene();
+  s.background=new THREE.Color(0x172230);
+
+  const c=new THREE.PerspectiveCamera(31,2,.1,30);
+  c.position.set(0,4.1,9.2);
+  c.lookAt(0,3.65,0);
+
+  const r=new THREE.WebGLRenderer({
+    canvas,
+    antialias:true,
+    alpha:false
+  });
+
+  r.setPixelRatio(1);
+  r.setSize(270,148,false);
+
+  s.add(new THREE.HemisphereLight(0xffffff,0x25364a,2.3));
+
+  const d=new THREE.DirectionalLight(0xffffff,3);
+  d.position.set(3,7,5);
+  s.add(d);
+
+  const old=state.template;
+  state.template=template;
+  const oldWire=state.wire;
+  state.wire=false;
+  const g=buildCharacter(template);
+  state.template=old;
+  state.wire=oldWire;
+
+  s.add(g);
+
+  function draw(){
+    r.render(s,c);
+    requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+/* ================================================================
+   EVENTS
+   ================================================================ */
+
+document.querySelectorAll(".card,.file[data-template]").forEach(el=>{
+  el.addEventListener("click",()=>{
+    chooseTemplate(el.dataset.template);
+  });
+});
+
+document.getElementById("loadTemplate").addEventListener("click",rebuild);
+document.getElementById("wireTool").addEventListener("click",()=>toggleWire());
+document.getElementById("gridTool").addEventListener("click",toggleGrid);
+document.getElementById("frontTool").addEventListener("click",frontView);
+document.getElementById("sideTool").addEventListener("click",sideView);
+
+document.getElementById("reset").addEventListener("click",()=>{
+  const snapshot=JSON.parse(JSON.stringify(defaults));
+  for(const group of ["body","face","hair","outfit","colors"])
+    Object.assign(state[group],snapshot[group]);
+
+  renderControls();
+  rebuild();
+});
+
+document.getElementById("random").addEventListener("click",randomize);
+document.getElementById("apply").addEventListener("click",rebuild);
+
+document.querySelectorAll(".tab").forEach(tab=>{
+  tab.addEventListener("click",()=>{
+    state.tab=tab.dataset.tab;
+    document.querySelectorAll(".tab").forEach(t=>
+      t.classList.toggle("active",t===tab)
+    );
+    renderControls();
+  });
+});
+
+window.addEventListener("keydown",e=>{
+  const k=e.key.toLowerCase();
+
+  if(k==="w")toggleWire();
+  if(k==="g")toggleGrid();
+  if(k==="r")rebuild();
+  if(k==="f")frontView();
+  if(k==="s")sideView();
+
+  if(k==="1")document.getElementById("viewInfo").textContent=
+    "Perspective · Face Select · V2 topology";
+  if(k==="2")document.getElementById("viewInfo").textContent=
+    "Perspective · Edge Select · V2 topology";
+  if(k==="3")document.getElementById("viewInfo").textContent=
+    "Perspective · Vertex Select · V2 topology";
+});
+
+/* Initial UI */
+renderControls();
+init();
+
+makeThumb(document.getElementById("thumbAnanta"),"ananta");
+makeThumb(document.getElementById("thumbPilot"),"pilot");
+</script>
+</body>
+</html>
