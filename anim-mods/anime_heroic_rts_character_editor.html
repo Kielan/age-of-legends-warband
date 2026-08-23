@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Ananta Style Character Editor — HeroicRTSWeld</title>
+<style>
+:root{
+    --bg:#17191d;--panel:#22252b;--panel2:#292d34;--line:#3b414a;
+    --text:#e9edf3;--muted:#929aa7;--accent:#4fa7ff;--accent2:#ffb454;
+    --danger:#ff6678;--good:#65d89a;
+}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);
+    color:var(--text);font-family:Inter,Arial,sans-serif}
+button,select,input{font:inherit}
+button{border:1px solid #4a505a;background:#30343b;color:#eee;border-radius:6px;
+    padding:7px 10px;cursor:pointer}
+button:hover{background:#3a4048}
+button.active{background:#27679c;border-color:#55b2ff}
+#app{display:grid;grid-template-columns:1fr 420px;width:100%;height:100%}
+#viewport{position:relative;min-width:0;overflow:hidden}
+canvas{display:block}
+#topbar{position:absolute;z-index:20;left:14px;top:14px;background:rgba(20,22,26,.86);
+    border:1px solid #454b55;border-radius:10px;padding:11px 14px;backdrop-filter:blur(8px)}
+#topbar h1{font-size:16px;margin:0 0 4px}
+#topbar p{font-size:11px;color:#aeb5bf;margin:0}
+#stats{position:absolute;left:14px;bottom:14px;z-index:20;background:rgba(20,22,26,.82);
+    border:1px solid #454b55;border-radius:8px;padding:9px 11px;font:11px monospace;color:#bfc6cf}
+#right{background:var(--panel);border-left:1px solid #454a52;display:flex;flex-direction:column;min-width:0}
+#tabs{display:flex;border-bottom:1px solid var(--line)}
+.tab{flex:1;border:0;border-radius:0;background:#1d2025;padding:11px 6px;font-size:12px}
+.tab.active{background:#2b3037;color:white;border-bottom:2px solid var(--accent)}
+#panel{overflow:auto;padding:12px;height:100%}
+.section{border:1px solid var(--line);border-radius:8px;margin-bottom:10px;overflow:hidden}
+.section h2{font-size:12px;margin:0;padding:9px 10px;background:#2a2e35;color:#dfe4eb}
+.sectionBody{padding:9px}
+.row{display:grid;grid-template-columns:112px 1fr 48px;align-items:center;gap:7px;margin:7px 0}
+.row label{font-size:11px;color:#b8bec8}
+.row input[type=range]{width:100%}
+.value{font:10px monospace;text-align:right;color:#7fc5ff}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.toolgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.small{font-size:10px;color:var(--muted);line-height:1.4}
+.badge{display:inline-block;padding:2px 6px;border-radius:10px;background:#343a43;color:#cbd3de;font-size:10px}
+hr{border:0;border-top:1px solid var(--line);margin:10px 0}
+#nodeArea{display:none}
+.checkbox{display:flex;align-items:center;gap:7px;font-size:11px;color:#bfc6cf;margin:7px 0}
+select{width:100%;background:#30343b;border:1px solid #4a505a;color:#eee;border-radius:5px;padding:6px}
+.colorRow{display:grid;grid-template-columns:1fr 60px;gap:8px;align-items:center}
+input[type=color]{width:100%;height:30px;border:0;background:transparent}
+#toast{position:absolute;z-index:50;right:14px;top:14px;background:#20242a;border:1px solid #4c535d;
+    padding:8px 11px;border-radius:7px;opacity:0;transform:translateY(-5px);transition:.2s;
+    pointer-events:none;font-size:11px}
+#toast.show{opacity:1;transform:none}
+</style>
+</head>
+<body>
+<div id="app">
+    <div id="viewport">
+        <div id="topbar">
+            <h1>Ananta Style Character Editor</h1>
+            <p>Anime head + welded torso + articulated arm tubes • HeroicRTSWeld / Half-Edge</p>
+        </div>
+        <div id="stats"></div>
+        <div id="toast"></div>
+    </div>
+    <aside id="right">
+        <div id="tabs">
+            <button class="tab active" data-tab="character">Character</button>
+            <button class="tab" data-tab="face">Face</button>
+            <button class="tab" data-tab="topology">Topology</button>
+            <button class="tab" data-tab="material">Material</button>
+        </div>
+        <div id="panel"></div>
+    </aside>
+</div>
+
+<script type="module">
+import * as THREE from "https://esm.sh/three@0.165.0";
+import {OrbitControls} from "https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js";
+
+/* =====================================================================
+   HEROICRTSWELD
+   Welded faceted loft pipeline adapted directly around the supplied
+   meshMerger / joint-blend workflow.
+   ===================================================================== */
+const HeroicRTSWeld={
+    weldVertices(mesh,epsilon=1e-4){
+        const buckets=new Map();
+        const key=v=>`${Math.round(v[0]/epsilon)}_${Math.round(v[1]/epsilon)}_${Math.round(v[2]/epsilon)}`;
+        const remap=new Array(mesh.vertices.length),newVerts=[];
+        for(let i=0;i<mesh.vertices.length;i++){
+            const v=mesh.vertices[i],k=key(v);
+            if(buckets.has(k)) remap[i]=buckets.get(k);
+            else{
+                const idx=newVerts.length;
+                newVerts.push(v.slice()); buckets.set(k,idx); remap[i]=idx;
+            }
+        }
+        const newFaces=mesh.faces.map(f=>f.map(i=>remap[i]))
+            .filter(f=>new Set(f).size===f.length);
+        return {vertices:newVerts,faces:newFaces};
+    },
+    mergeMeshes(meshes,{weldEpsilon=0}={}){
+        const out={vertices:[],faces:[]};
+        for(const m of meshes){
+            const offset=out.vertices.length;
+            for(const v of m.vertices)out.vertices.push(v.slice());
+            for(const f of m.faces)out.faces.push(f.map(i=>i+offset));
+        }
+        return weldEpsilon>0?this.weldVertices(out,weldEpsilon):out;
+    },
+    rotateLoop(loop,offset){
+        const n=loop.length;return loop.map((_,i)=>loop[(i+offset+n)%n]);
+    },
+    loopScore(mesh,a,b){
+        let score=0;
+        for(let i=0;i<a.length;i++){
+            const p=mesh.vertices[a[i]],q=mesh.vertices[b[i]];
+            score+=(p[0]-q[0])**2+(p[1]-q[1])**2+(p[2]-q[2])**2;
+        }
+        return score;
+    },
+    alignLoops(mesh,a,b){
+        if(a.length!==b.length)throw Error("Loop size mismatch");
+        let best=null,bestScore=Infinity;
+        for(const source of [b.slice(),b.slice().reverse()]){
+            for(let o=0;o<source.length;o++){
+                const t=this.rotateLoop(source,o),s=this.loopScore(mesh,a,t);
+                if(s<bestScore){bestScore=s;best=t}
+            }
+        }
+        return {loopA:a.slice(),loopB:best,score:bestScore};
+    },
+    snapLoops(mesh,a,b,{influenceA=.5,influenceB=.5}={}){
+        const d=Math.max(1e-8,influenceA+influenceB);
+        for(let i=0;i<a.length;i++){
+            const A=mesh.vertices[a[i]],B=mesh.vertices[b[i]];
+            const p=[
+                (A[0]*influenceA+B[0]*influenceB)/d,
+                (A[1]*influenceA+B[1]*influenceB)/d,
+                (A[2]*influenceA+B[2]*influenceB)/d
+            ];
+            mesh.vertices[a[i]]=p.slice();mesh.vertices[b[i]]=p.slice();
+        }
+    },
+    bridgeLoops(mesh,a,b,{flip=false}={}){
+        const n=a.length;
+        for(let i=0;i<n;i++){
+            const j=(i+1)%n,a0=a[i],a1=a[j],b0=b[i],b1=b[j];
+            if(!flip)mesh.faces.push([a0,a1,b1],[a0,b1,b0]);
+            else mesh.faces.push([a0,b1,a1],[a0,b0,b1]);
+        }
+    },
+    weldSeam(mesh,a,b,opts={}){
+        const x=this.alignLoops(mesh,a,b);
+        this.snapLoops(mesh,x.loopA,x.loopB,opts);
+        if(opts.bridge!==false)this.bridgeLoops(mesh,x.loopA,x.loopB,opts);
+        return x;
+    },
+    ring(spec,sides=8){
+        const c=spec.center||[0,0,0],rx=spec.rx,rz=spec.rz??rx,twist=spec.twist||0;
+        const pts=[];
+        for(let i=0;i<sides;i++){
+            const a=i/sides*Math.PI*2+twist;
+            pts.push([c[0]+Math.cos(a)*rx,c[1],c[2]+Math.sin(a)*rz]);
+        }
+        return pts;
+    },
+    loftPart(rings,sides=8){
+        const vertices=[],loops=[];
+        for(const spec of rings){
+            const ring=this.ring(spec,sides),loop=[];
+            for(const v of ring){loop.push(vertices.length);vertices.push(v)}
+            loops.push(loop);
+        }
+        const faces=[];
+        for(let r=0;r<loops.length-1;r++){
+            const a=loops[r],b=loops[r+1];
+            for(let i=0;i<sides;i++){
+                const j=(i+1)%sides;
+                faces.push([a[i],a[j],b[j]],[a[i],b[j],b[i]]);
+            }
+        }
+        return {vertices,faces,bottomLoop:loops[0],topLoop:loops[loops.length-1],loops};
+    },
+    assembleParts(parts){
+        const mesh={vertices:[],faces:[]},topology={};
+        for(const [name,p] of Object.entries(parts)){
+            const offset=mesh.vertices.length;
+            p.vertices.forEach(v=>mesh.vertices.push(v.slice()));
+            p.faces.forEach(f=>mesh.faces.push(f.map(i=>i+offset)));
+            const map=x=>x?x.map(i=>i+offset):null;
+            topology[name]={bottomLoop:map(p.bottomLoop),topLoop:map(p.topLoop),
+                loops:(p.loops||[]).map(map)};
+        }
+        return {mesh,topology};
+    },
+    toGeometry(simple){
+        const positions=[],indices=[];
+        simple.vertices.forEach(v=>positions.push(...v));
+        simple.faces.forEach(f=>{
+            for(let i=1;i<f.length-1;i++)indices.push(f[0],f[i],f[i+1]);
+        });
+        const geo=new THREE.BufferGeometry();
+        geo.setAttribute("position",new THREE.Float32BufferAttribute(positions,3));
+        geo.setIndex(indices);geo.computeVertexNormals();geo.computeBoundingSphere();
+        return geo;
+    },
+    chain(parent,rings,mat,sides=8,opts={}){
+        const parts=[];
+        for(let i=0;i<rings.length-1;i++)parts.push(this.loftPart([rings[i],rings[i+1]],sides));
+        let mesh=this.mergeMeshes(parts,{weldEpsilon:opts.weldEpsilon??1e-5});
+        if(opts.capStart){
+            const r=this.ring(rings[0],sides);
+            const ids=r.map(p=>nearestVertex(mesh,p));mesh.faces.push(ids.slice().reverse());
+        }
+        if(opts.capEnd){
+            const r=this.ring(rings.at(-1),sides);
+            const ids=r.map(p=>nearestVertex(mesh,p));mesh.faces.push(ids);
+        }
+        mesh=this.weldVertices(mesh,opts.weldEpsilon??1e-5);
+        const m=new THREE.Mesh(this.toGeometry(mesh),mat);
+        m.userData.welded=true;m.userData.weldedVertices=mesh.vertices.length;
+        parent.add(m);return m;
+    },
+    blend(parent,a,b,mat,sides=8,segments=5){
+        const rings=[];
+        for(let i=0;i<=segments;i++){
+            const u=i/segments,t=u*u*(3-2*u);
+            rings.push({
+                center:a.center.map((v,k)=>v+(b.center[k]-v)*t),
+                rx:a.rx+(b.rx-a.rx)*t,
+                rz:(a.rz??a.rx)+((b.rz??b.rx)-(a.rz??a.rx))*t,
+                twist:(a.twist||0)+((b.twist||0)-(a.twist||0))*t
+            });
+        }
+        return this.chain(parent,rings,mat,sides,{capStart:true,capEnd:true,weldEpsilon:1e-5});
+    }
+};
+function nearestVertex(mesh,p){
+    let best=0,bd=Infinity;
+    for(let i=0;i<mesh.vertices.length;i++){
+        const v=mesh.vertices[i],d=(v[0]-p[0])**2+(v[1]-p[1])**2+(v[2]-p[2])**2;
+        if(d<bd){bd=d;best=i}
+    }
+    return best;
+}
+
+/* =====================================================================
+   HALF-EDGE EDITOR CORE
+   The supplied Goblin editor uses HEVertex / HEEdge / HEFace and
+   faceMap-based picking. This version keeps that workflow but makes it
+   operate on generated character parts.
+   ===================================================================== */
+class HEVertex{
+    constructor(x,y,z){this.position=new THREE.Vector3(x,y,z);this.edge=null;
+        this.id=HEVertex._id++;this.mask=0;this.weights=new Map()}
+}
+HEVertex._id=0;
+class HEFace{constructor(){this.edge=null;this.id=HEFace._id++}}
+HEFace._id=0;
+class HEEdge{
+    constructor(){this.vertex=null;this.face=null;this.next=null;this.prev=null;this.twin=null;this.start=null}
+}
+class HalfEdgeMesh{
+    constructor(){this.vertices=[];this.faces=[];this.edges=[];this.edgeRegistry=new Map()}
+    key(a,b){return `${a.id}_${b.id}`}
+    rebuildEdgeRegistry(){
+        this.edgeRegistry.clear();this.edges.forEach(e=>e.twin=null);
+        this.edges.forEach(e=>{if(e.prev?.vertex!==e.vertex)this.edgeRegistry.set(this.key(e.prev.vertex,e.vertex),e)});
+        this.edges.forEach(e=>{
+            if(e.prev?.vertex===e.vertex)return;
+            const t=this.edgeRegistry.get(this.key(e.vertex,e.prev.vertex));
+            if(t){e.twin=t;t.twin=e}
+        });
+    }
+    createFaceFromVertices(vs){
+        const f=new HEFace(),es=[];
+        this.faces.push(f);
+        for(let i=0;i<vs.length;i++){
+            const e=new HEEdge(),s=vs[i],t=vs[(i+1)%vs.length];
+            e.vertex=t;e.start=s;e.face=f;if(!t.edge)t.edge=e;this.edges.push(e);es.push(e);
+        }
+        for(let i=0;i<es.length;i++){es[i].next=es[(i+1)%es.length];es[i].prev=es[(i-1+es.length)%es.length]}
+        f.edge=es[0];return f;
+    }
+    fromSimple(simple){
+        this.vertices=simple.vertices.map(v=>new HEVertex(...v));this.faces=[];this.edges=[];
+        for(const f of simple.faces)this.createFaceFromVertices(f.map(i=>this.vertices[i]));
+        this.rebuildEdgeRegistry();return this;
+    }
+    buildGeometry(){
+        const positions=[],faceMap=[];
+        for(const f of this.faces){
+            const vs=[];let e=f.edge;
+            if(!e)continue;
+            do{vs.push(e.vertex.position);e=e.next}while(e!==f.edge);
+            if(vs.length<3)continue;
+            for(let i=1;i<vs.length-1;i++){
+                positions.push(vs[0].x,vs[0].y,vs[0].z,
+                    vs[i].x,vs[i].y,vs[i].z,vs[i+1].x,vs[i+1].y,vs[i+1].z);
+                faceMap.push(f);
+            }
+        }
+        const geo=new THREE.BufferGeometry();
+        geo.setAttribute("position",new THREE.Float32BufferAttribute(positions,3));
+        geo.userData={faceMap};geo.computeVertexNormals();return geo;
+    }
+    weldCoincident(eps=1e-5){
+        const buckets=new Map(),keep=new Map();
+        const k=p=>`${Math.round(p.x/eps)}_${Math.round(p.y/eps)}_${Math.round(p.z/eps)}`;
+        for(const v of this.vertices){
+            const key=k(v.position);
+            if(!buckets.has(key))buckets.set(key,v);
+            keep.set(v,buckets.get(key));
+        }
+        for(const e of this.edges){e.vertex=keep.get(e.vertex);e.start=keep.get(e.start)}
+        this.vertices=[...new Set(keep.values())];
+        for(const f of this.faces){
+            let e=f.edge,guard=0;
+            do{e.vertex=keep.get(e.vertex);e.start=keep.get(e.start);e=e.next;guard++}while(e!==f.edge&&guard<1000)
+        }
+        this.rebuildEdgeRegistry();
+    }
+    translate(dx,dy,dz){this.vertices.forEach(v=>v.position.add(new THREE.Vector3(dx,dy,dz)));return this}
+    scale(sx,sy,sz){this.vertices.forEach(v=>v.position.multiply(new THREE.Vector3(sx,sy,sz)));return this}
+}
+
+/* =====================================================================
+   ANANTA CHARACTER PARAMETERS
+   ===================================================================== */
+const P={
+    headWidth:.94,headHeight:1.16,headDepth:.84,jaw:.82,chin:.82,
+    earSize:.27,earAngle:.08,
+    eyeSize:.16,eyeWidth:.30,eyeSpacing:.34,eyeTilt:.02,
+    browWidth:.24,browThickness:.045,browAngle:.10,
+    noseLength:.18,noseWidth:.11,noseDrop:.00,
+    mouthWidth:.25,mouthHeight:.035,mouthY:-.23,
+    hairVolume:1.0,hairLength:.78,hairSpikes:13,hairSweep:.12,
+    neckRadius:.22,neckLength:.36,
+    shoulderWidth:1.18,chestWidth:1.00,waistWidth:.76,torsoHeight:1.72,
+    armLength:.82,forearmLength:.74,upperRadius:.20,foreRadius:.17,
+    shoulderDrop:.03,elbowBend:.22,
+    skin:"#f0c5a9",hair:"#263040",hairHi:"#39465b",eye:"#7d8fff",
+    shirt:"#f1f1ed",jacket:"#252d38",tie:"#2c72c7",accent:"#76a8df",
+    eyeGloss:true,showWire:false,showSkeleton:false,showGrid:true
+};
+
+const viewport=document.getElementById("viewport"),stats=document.getElementById("stats");
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x15181d);
+const camera=new THREE.PerspectiveCamera(45,viewport.clientWidth/viewport.clientHeight,.05,100);
+camera.position.set(0,2.8,5.8);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(viewport.clientWidth,viewport.clientHeight);
+renderer.shadowMap.enabled=true;viewport.appendChild(renderer.domElement);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;controls.target.set(0,2.1,0);
+
+scene.add(new THREE.HemisphereLight(0xcddaff,0x20232b,1.8));
+const key=new THREE.DirectionalLight(0xffffff,3.2);key.position.set(4,7,6);key.castShadow=true;scene.add(key);
+const fill=new THREE.DirectionalLight(0x8eb5ff,1.2);fill.position.set(-4,4,2);scene.add(fill);
+
+const grid=new THREE.GridHelper(20,20,0x39404a,0x252a31);grid.position.y=-1.1;scene.add(grid);
+
+const character=new THREE.Group();character.name="Ananta_HeroicRTS_Character";scene.add(character);
+const topologyRoot=new THREE.Group();topologyRoot.visible=false;scene.add(topologyRoot);
+
+const mats={};
+function makeMaterials(){
+    mats.skin=new THREE.MeshStandardMaterial({color:P.skin,roughness:.78,flatShading:true});
+    mats.skinDark=new THREE.MeshStandardMaterial({color:0xc58f7a,roughness:.85,flatShading:true});
+    mats.hair=new THREE.MeshStandardMaterial({color:P.hair,roughness:.62,flatShading:true});
+    mats.hairHi=new THREE.MeshStandardMaterial({color:P.hairHi,roughness:.58,flatShading:true});
+    mats.eye=new THREE.MeshStandardMaterial({color:P.eye,roughness:.18,metalness:.05});
+    mats.eyeWhite=new THREE.MeshStandardMaterial({color:0xf8f9fb,roughness:.2});
+    mats.black=new THREE.MeshStandardMaterial({color:0x151821,roughness:.7});
+    mats.shirt=new THREE.MeshStandardMaterial({color:P.shirt,roughness:.9,flatShading:true});
+    mats.jacket=new THREE.MeshStandardMaterial({color:P.jacket,roughness:.82,flatShading:true});
+    mats.tie=new THREE.MeshStandardMaterial({color:P.tie,roughness:.72,flatShading:true});
+    mats.accent=new THREE.MeshStandardMaterial({color:P.accent,roughness:.6,flatShading:true});
+}
+makeMaterials();
+
+const rig={
+    root:character,head:null,face:null,torso:null,leftShoulder:null,rightShoulder:null,
+    leftElbow:null,rightElbow:null,headFeatures:[],topologyMeshes:[],
+    rebuild:null
+};
+
+/* =====================================================================
+   GEOMETRY HELPERS
+   ===================================================================== */
+function clearGroup(g){while(g.children.length){const c=g.children.pop();disposeObject(c)}}
+function disposeObject(o){
+    o.traverse?.(x=>{if(x.geometry)x.geometry.dispose()});
+}
+function box(w,h,d,mat){
+    return new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+}
+function tube(parent,rings,mat,sides=8,opts={}){
+    return HeroicRTSWeld.chain(parent,rings,mat,sides,{capStart:true,capEnd:true,...opts});
+}
+function capsule(parent,a,b,rA,rB,mat,sides=8){
+    const dir=new THREE.Vector3().subVectors(b,a),len=dir.length(),mid=new THREE.Vector3().addVectors(a,b).multiplyScalar(.5);
+    const m=new THREE.Mesh(new THREE.CylinderGeometry(rA,rB,len,sides,1,true),mat);
+    m.position.copy(mid);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.normalize());parent.add(m);return m;
+}
+function flatSpike(parent,pos,scale,rot,mat){
+    const m=new THREE.Mesh(new THREE.ConeGeometry(.11,.55,5),mat);
+    m.position.set(...pos);m.scale.set(scale[0],scale[1],scale[2]);m.rotation.set(...rot);parent.add(m);return m;
+}
+function addPlaneEye(parent,side){
+    const eye=new THREE.Group();eye.position.set(side*P.eyeSpacing,0,P.headDepth*.49+.018);
+    const scl=[P.eyeWidth,P.eyeSize,1];
+    const white=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),mats.eyeWhite);
+    white.scale.set(scl[0],scl[1],.045);eye.add(white);
+    const iris=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),mats.eye);
+    iris.position.z=.052;iris.scale.set(P.eyeSize*.63,P.eyeSize*.72,.025);eye.add(iris);
+    const pupil=new THREE.Mesh(new THREE.SphereGeometry(1,10,8),mats.black);
+    pupil.position.z=.075;pupil.scale.set(P.eyeSize*.27,P.eyeSize*.40,.018);eye.add(pupil);
+    if(P.eyeGloss){
+        const gl=new THREE.Mesh(new THREE.SphereGeometry(1,8,6),mats.eyeWhite);
+        gl.position.set(-.035,.035,.095);gl.scale.set(.025,.025,.012);eye.add(gl);
+    }
+    eye.rotation.z=side*P.eyeTilt;parent.add(eye);rig.headFeatures.push(eye);
+}
+function addEar(parent,side){
+    const ear=new THREE.Group();ear.position.set(side*(P.headWidth*.51+.02),.02,0);
+    ear.rotation.z=side*P.earAngle;
+    const outer=new THREE.Mesh(new THREE.ConeGeometry(P.earSize,.58,5),mats.skin);
+    outer.rotation.z=side*Math.PI/2;outer.scale.set(1,.72,.55);ear.add(outer);
+    const inner=new THREE.Mesh(new THREE.ConeGeometry(P.earSize*.58,.34,5),mats.skinDark);
+    inner.rotation.z=side*Math.PI/2;inner.position.z=.025;inner.scale.set(1,.72,.42);ear.add(inner);
+    parent.add(ear);
+}
+function addBrow(parent,side){
+    const brow=box(P.browWidth,P.browThickness,.055,mats.hair);
+    brow.position.set(side*P.eyeSpacing,.18,P.headDepth*.50+.025);
+    brow.rotation.z=side*P.browAngle;parent.add(brow);
+}
+function addMouth(parent){
+    const g=new THREE.Group();g.position.set(0,P.mouthY,P.headDepth*.50+.035);
+    const lip=box(P.mouthWidth,P.mouthHeight,.035,mats.skinDark);g.add(lip);
+    const lower=box(P.mouthWidth*.72,P.mouthHeight*.6,.025,mats.skin);lower.position.y=-.035;g.add(lower);
+    parent.add(g);
+}
+function addNose(parent){
+    const g=new THREE.Group();g.position.set(0,-.01,P.headDepth*.48+.05);
+    const bridge=new THREE.Mesh(new THREE.ConeGeometry(P.noseWidth*.65,P.noseLength*1.35,5),mats.skin);
+    bridge.rotation.x=Math.PI/2;bridge.position.y=-.02;g.add(bridge);
+    const tip=new THREE.Mesh(new THREE.IcosahedronGeometry(P.noseWidth*.78,1),mats.skin);
+    tip.scale.set(1,.72,.72);tip.position.set(0,-P.noseDrop,-.02);g.add(tip);
+    parent.add(g);
+}
+
+/* =====================================================================
+   WELDED HEAD
+   ===================================================================== */
+function buildHead(){
+    const head=new THREE.Group();head.name="Head_Welded_FacialShell";
+    const rings=[
+        {center:[0,-.52,0],rx:P.headWidth*.37,rz:P.headDepth*.36},
+        {center:[0,-.38,0],rx:P.headWidth*.48,rz:P.headDepth*.46},
+        {center:[0,-.08,0],rx:P.headWidth*.52,rz:P.headDepth*.50,twist:.03},
+        {center:[0,.25,0],rx:P.headWidth*.49,rz:P.headDepth*.48},
+        {center:[0,.51,0],rx:P.headWidth*.40,rz:P.headDepth*.39},
+        {center:[0,.62,0],rx:P.headWidth*.28,rz:P.headDepth*.28}
+    ];
+    const mesh=tube(head,rings,mats.skin,10);
+    mesh.scale.y=P.headHeight/1.14;
+    rig.head=head;head.position.y=4.45;
+    character.add(head);
+
+    rig.headFeatures=[];
+    addPlaneEye(head,-1);addPlaneEye(head,1);
+    addBrow(head,-1);addBrow(head,1);addNose(head);addMouth(head);
+    addEar(head,-1);addEar(head,1);
+
+    const hair=new THREE.Group();hair.name="Hair";
+    const cap=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),mats.hair);
+    cap.scale.set(P.headWidth*.57,P.headHeight*.57,P.headDepth*.54);
+    cap.position.set(0,.40,-.01);hair.add(cap);
+
+    const count=Math.max(7,Math.round(P.hairSpikes));
+    for(let i=0;i<count;i++){
+        const t=count===1?0:i/(count-1)*2-1;
+        const x=t*P.headWidth*.52;
+        const y=.73 + .11*(1-Math.abs(t));
+        const z=-.02+Math.abs(t)*.02;
+        const sp=flatSpike(hair,[x,y,z],[1.0,P.hairLength*(.78+.25*(1-Math.abs(t))),.8],
+            [0,0,t*-.22-P.hairSweep*.15],i%3?mats.hair:mats.hairHi);
+        sp.rotation.x=-.18-Math.abs(t)*.20;
+    }
+    const sideLockL=flatSpike(hair,[-P.headWidth*.49,.39,-.02],[.75,.95,.72],[0,.1,-.22],mats.hair);
+    const sideLockR=flatSpike(hair,[P.headWidth*.49,.39,-.02],[.75,.95,.72],[0,-.1,.22],mats.hair);
+    head.add(hair);
+    return head;
+}
+
+/* =====================================================================
+   WELDED TORSO + ARM TUBES
+   ===================================================================== */
+function buildTorso(){
+    const torso=new THREE.Group();torso.name="Torso_Welded_Heroic";
+    const pelvis=HeroicRTSWeld.loftPart([
+        {center:[0,0,0],rx:P.waistWidth*.48,rz:.30},
+        {center:[0,.22,0],rx:P.waistWidth*.56,rz:.34},
+        {center:[0,.42,0],rx:P.waistWidth*.52,rz:.32}
+    ],8);
+    const abdomen=HeroicRTSWeld.loftPart([
+        {center:[0,.42,0],rx:P.waistWidth*.52,rz:.32},
+        {center:[0,.72,.01],rx:P.waistWidth*.50,rz:.34},
+        {center:[0,1.03,.03],rx:P.chestWidth*.48,rz:.40}
+    ],8);
+    const chest=HeroicRTSWeld.loftPart([
+        {center:[0,1.03,.03],rx:P.chestWidth*.48,rz:.40},
+        {center:[0,1.34,.05],rx:P.chestWidth*.55,rz:.46},
+        {center:[0,1.63,.02],rx:P.shoulderWidth*.47,rz:.43},
+        {center:[0,1.82,0],rx:P.shoulderWidth*.22,rz:.25}
+    ],8);
+    const built=HeroicRTSWeld.assembleParts({pelvis,abdomen,chest});
+    HeroicRTSWeld.weldSeam(built.mesh,built.topology.pelvis.topLoop,built.topology.abdomen.bottomLoop,
+        {influenceA:.5,influenceB:.5,bridge:true});
+    HeroicRTSWeld.weldSeam(built.mesh,built.topology.abdomen.topLoop,built.topology.chest.bottomLoop,
+        {influenceA:.5,influenceB:.5,bridge:true});
+    const simple=HeroicRTSWeld.weldVertices(built.mesh,1e-5);
+    const body=new THREE.Mesh(HeroicRTSWeld.toGeometry(simple),mats.shirt);
+    body.userData.weldedSeams=["pelvis-abdomen","abdomen-chest"];torso.add(body);
+
+    const jacket=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),mats.jacket);
+    jacket.scale.set(P.shoulderWidth*.51,P.torsoHeight*.45,.46);
+    jacket.position.y=1.12;jacket.scale.x*=1.06;torso.add(jacket);
+
+    const tie=box(.12,.76,.055,mats.tie);tie.position.set(0,1.30,.48);torso.add(tie);
+    const collarL=box(.28,.36,.08,mats.shirt);collarL.position.set(-.18,1.63,.43);collarL.rotation.z=-.22;torso.add(collarL);
+    const collarR=collarL.clone();collarR.position.x=.18;collarR.rotation.z=.22;torso.add(collarR);
+    const belt=box(P.waistWidth,.10,.60,mats.black);belt.position.set(0,.43,.02);torso.add(belt);
+
+    torso.position.y=1.03;character.add(torso);rig.torso=torso;
+
+    const neck=new THREE.Group();neck.name="Neck";
+    tube(neck,[
+        {center:[0,0,0],rx:P.neckRadius,rz:P.neckRadius*.88},
+        {center:[0,.18,0],rx:P.neckRadius*1.05,rz:P.neckRadius*.92},
+        {center:[0,P.neckLength,0],rx:P.neckRadius*.88,rz:P.neckRadius*.80}
+    ],mats.skin,8);
+    neck.position.y=2.80;character.add(neck);
+
+    buildArm(-1);buildArm(1);
+}
+function buildArm(side){
+    const shoulder=new THREE.Group(),elbow=new THREE.Group(),wrist=new THREE.Group();
+    shoulder.name=side<0?"LeftShoulder":"RightShoulder";
+    shoulder.position.set(side*P.shoulderWidth*.52,2.50,0);
+    character.add(shoulder);shoulder.add(elbow);elbow.add(wrist);
+    tube(shoulder,[
+        {center:[0,0,0],rx:P.upperRadius*1.20,rz:P.upperRadius},
+        {center:[side*.015,-.22,.015],rx:P.upperRadius*1.12,rz:P.upperRadius*.95},
+        {center:[side*.02,-.48,.04],rx:P.upperRadius*.98,rz:P.upperRadius*.90},
+        {center:[side*.025,-P.armLength,.08],rx:P.upperRadius*.88,rz:P.upperRadius*.82}
+    ],mats.jacket,8);
+    const elbowCap=new THREE.Mesh(new THREE.IcosahedronGeometry(P.upperRadius*.92,1),mats.jacket);
+    elbowCap.position.set(side*.025,-P.armLength,.08);shoulder.add(elbowCap);
+    elbow.position.set(0,-P.armLength,.08);
+    tube(elbow,[
+        {center:[0,0,0],rx:P.foreRadius*1.08,rz:P.foreRadius},
+        {center:[side*.015,-.23,.08],rx:P.foreRadius,rz:P.foreRadius*.93},
+        {center:[side*.02,-.48,.13],rx:P.foreRadius*.90,rz:P.foreRadius*.87},
+        {center:[side*.02,-P.forearmLength,.16],rx:P.foreRadius*.80,rz:P.foreRadius*.78}
+    ],mats.jacket,8);
+    const hand=box(.28,.18,.28,mats.skin);hand.position.set(0,-P.forearmLength-.12,.17);elbow.add(hand);
+    const cuff=box(.34,.13,.34,mats.black);cuff.position.set(0,-P.forearmLength+.01,.16);elbow.add(cuff);
+    rig[side<0?"leftShoulder":"rightShoulder"]=shoulder;
+    rig[side<0?"leftElbow":"rightElbow"]=elbow;
+}
+
+/* =====================================================================
+   CHARACTER BUILD / TOPOLOGY MIRROR
+   ===================================================================== */
+function rebuildCharacter(){
+    clearGroup(character);clearGroup(topologyRoot);
+    rig.head=null;rig.torso=null;rig.headFeatures=[];
+    buildTorso();buildHead();
+    applyPose();
+    character.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
+    updateTopology();
+}
+function applyPose(){
+    if(!rig.head||!rig.leftShoulder)return;
+    rig.head.rotation.set(THREE.MathUtils.degToRad(P.headPitch||0),
+        THREE.MathUtils.degToRad(P.headYaw||0),THREE.MathUtils.degToRad(P.headRoll||0));
+    rig.leftShoulder.rotation.set(0,0,-P.elbowBend*.35);
+    rig.rightShoulder.rotation.set(0,0,P.elbowBend*.35);
+    rig.leftElbow.rotation.z=P.elbowBend*.25;
+    rig.rightElbow.rotation.z=-P.elbowBend*.25;
+}
+function simpleFromGeometry(geo){
+    const pos=geo.attributes.position.array,verts=[];
+    for(let i=0;i<pos.length;i+=3)verts.push([pos[i],pos[i+1],pos[i+2]]);
+    const faces=[];for(let i=0;i<verts.length;i+=3)faces.push([i,i+1,i+2]);
+    return {vertices:verts,faces};
+}
+function updateTopology(){
+    clearGroup(topologyRoot);
+    rig.topologyMeshes=[];
+    const targets=[];
+    character.traverse(o=>{if(o.isMesh&&o.userData.welded)targets.push(o)});
+    for(const src of targets){
+        const simple=simpleFromGeometry(src.geometry);
+        const he=new HalfEdgeMesh().fromSimple(simple);
+        const mesh=new THREE.Mesh(he.buildGeometry(),new THREE.MeshBasicMaterial({
+            color:0x62b7ff,wireframe:false,transparent:true,opacity:.20,side:THREE.DoubleSide
+        }));
+        mesh.position.copy(src.getWorldPosition(new THREE.Vector3()));
+        topologyRoot.add(mesh);rig.topologyMeshes.push({source:src,he,mesh});
+    }
+    topologyRoot.visible=P.showWire;
+    updateStats();
+}
+function updateStats(){
+    let v=0,e=0,f=0;
+    for(const t of rig.topologyMeshes){v+=t.he.vertices.length;e+=t.he.edges.length;f+=t.he.faces.length}
+    stats.innerHTML=`<b>HeroicRTSWeld</b><br>HE Vertices: ${v}<br>HE Edges: ${e}<br>HE Faces: ${f}<br>
+        <span style="color:#7fc5ff">Selection: ${editor.selection.mode}</span>`;
+}
+
+/* =====================================================================
+   SELECTION / EDITOR STATE — same interaction model as the Goblin editor
+   ===================================================================== */
+const editor={
+    selection:{mode:"face",face:null,edge:null,vertex:null,owner:null},
+    raycaster:new THREE.Raycaster(),mouse:new THREE.Vector2()
+};
+function pickVertex(ray){
+    let best=null,bd=Infinity;
+    for(const t of rig.topologyMeshes)for(const v of t.he.vertices){
+        const cp=ray.closestPointToPoint(v.position.clone().add(t.mesh.position),true,new THREE.Vector3());
+        const d=cp.distanceTo(v.position.clone().add(t.mesh.position));
+        if(d<.14&&d<bd){bd=d;best={v,t}}
+    }
+    return best;
+}
+function pickEdge(ray){
+    let best=null,bd=Infinity,ca=new THREE.Vector3(),cb=new THREE.Vector3();
+    for(const t of rig.topologyMeshes){
+        for(const e of t.he.edges){
+            const a=e.start.clone().add(t.mesh.position),b=e.vertex.position.clone().add(t.mesh.position);
+            ray.distanceSqToSegment(a,b,ca,cb);
+            const d=ca.distanceTo(cb);
+            if(d<.11&&d<bd){bd=d;best={e,t}}
+        }
+    }
+    return best;
+}
+renderer.domElement.addEventListener("pointerdown",e=>{
+    const r=renderer.domElement.getBoundingClientRect();
+    editor.mouse.x=(e.clientX-r.left)/r.width*2-1;
+    editor.mouse.y=-(e.clientY-r.top)/r.height*2+1;
+    editor.raycaster.setFromCamera(editor.mouse,camera);
+    if(editor.selection.mode==="vertex"){editor.selection.vertex=pickVertex(editor.raycaster.ray);editor.selection.edge=null;editor.selection.face=null}
+    else if(editor.selection.mode==="edge"){editor.selection.edge=pickEdge(editor.raycaster.ray);editor.selection.vertex=null;editor.selection.face=null}
+    else{
+        const hits=editor.raycaster.intersectObjects(character.children,true);
+        if(hits.length)editor.selection.face={object:hits[0].object,point:hits[0].point};
+        else editor.selection.face=null;
+        editor.selection.edge=null;editor.selection.vertex=null;
+    }
+    updateStats();
+});
+
+/* =====================================================================
+   UI
+   ===================================================================== */
+const panel=document.getElementById("panel");
+function fmt(v){return Number(v).toFixed(2)}
+function slider(key,label,min,max,step,group="character"){
+    return `<div class="row"><label>${label}</label><input data-key="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${P[key]}"><span class="value" id="v-${key}">${fmt(P[key])}</span></div>`;
+}
+function bindSliders(){
+    panel.querySelectorAll("[data-key]").forEach(el=>{
+        el.addEventListener("input",()=>{
+            const k=el.dataset.key;P[k]=parseFloat(el.value);
+            const out=document.getElementById("v-"+k);if(out)out.textContent=fmt(P[k]);
+            rebuildCharacter();
+        });
+    });
+}
+function renderCharacterPanel(){
+panel.innerHTML=`
+<div class="section"><h2>Body Proportions</h2><div class="sectionBody">
+${slider("shoulderWidth","Shoulders",.75,1.65,.01)}
+${slider("chestWidth","Chest",.70,1.35,.01)}
+${slider("waistWidth","Waist",.55,1.15,.01)}
+${slider("torsoHeight","Torso Height",1.25,2.10,.01)}
+${slider("neckRadius","Neck Radius",.14,.32,.005)}
+${slider("neckLength","Neck Length",.22,.52,.01)}
+</div></div>
+<div class="section"><h2>Arms — HeroicRTSWeld Tubes</h2><div class="sectionBody">
+${slider("armLength","Upper Arm",.55,1.10,.01)}
+${slider("forearmLength","Forearm",.52,1.00,.01)}
+${slider("upperRadius","Upper Radius",.12,.28,.005)}
+${slider("foreRadius","Fore Radius",.10,.24,.005)}
+${slider("elbowBend","Elbow Bend",-0.8,.8,.01)}
+</div></div>
+<div class="section"><h2>Head Volume</h2><div class="sectionBody">
+${slider("headWidth","Width",.70,1.25,.01)}
+${slider("headHeight","Height",.85,1.45,.01)}
+${slider("headDepth","Depth",.60,1.10,.01)}
+${slider("jaw","Jaw",.62,1.02,.01)}
+${slider("chin","Chin",.60,1.05,.01)}
+</div></div>
+<div class="section"><h2>Pose</h2><div class="sectionBody">
+${slider("headYaw","Head Yaw",-35,35,1)}
+${slider("headPitch","Head Pitch",-20,20,1)}
+${slider("headRoll","Head Roll",-15,15,1)}
+</div></div>
+<button id="resetBtn">Reset Character</button>
+`;
+bindSliders();document.getElementById("resetBtn").onclick=()=>{location.reload()};
+}
+function renderFacePanel(){
+panel.innerHTML=`
+<div class="section"><h2>Eyes</h2><div class="sectionBody">
+${slider("eyeSize","Eye Size",.11,.24,.005)}
+${slider("eyeWidth","Eye Width",.20,.42,.005)}
+${slider("eyeSpacing","Eye Spacing",.25,.48,.005)}
+${slider("eyeTilt","Eye Tilt",-0.18,.18,.005)}
+</div></div>
+<div class="section"><h2>Eyebrows</h2><div class="sectionBody">
+${slider("browWidth","Width",.15,.34,.005)}
+${slider("browThickness","Thickness",.025,.08,.005)}
+${slider("browAngle","Angle",-0.4,.4,.01)}
+</div></div>
+<div class="section"><h2>Nose / Mouth</h2><div class="sectionBody">
+${slider("noseLength","Nose Length",.10,.30,.005)}
+${slider("noseWidth","Nose Width",.06,.17,.005)}
+${slider("noseDrop","Nose Drop",-0.08,.08,.005)}
+${slider("mouthWidth","Mouth Width",.14,.40,.005)}
+${slider("mouthHeight","Lip Height",.02,.065,.002)}
+${slider("mouthY","Mouth Y",-0.34,-0.12,.005)}
+</div></div>
+<div class="section"><h2>Ears</h2><div class="sectionBody">
+${slider("earSize","Ear Size",.16,.38,.005)}
+${slider("earAngle","Ear Angle",-0.35,.35,.01)}
+</div></div>
+<div class="section"><h2>Hair</h2><div class="sectionBody">
+${slider("hairVolume","Volume",.75,1.35,.01)}
+${slider("hairLength","Spike Length",.45,1.25,.01)}
+${slider("hairSpikes","Spike Count",7,19,1)}
+${slider("hairSweep","Sweep",-0.35,.35,.01)}
+</div></div>`;
+bindSliders();
+}
+function renderTopologyPanel(){
+panel.innerHTML=`
+<div class="section"><h2>Selection</h2><div class="sectionBody">
+<div class="toolgrid">
+<button data-mode="face" class="sel active">Face</button>
+<button data-mode="edge" class="sel">Edge</button>
+<button data-mode="vertex" class="sel">Vertex</button>
+</div>
+<p class="small">Face mode uses the character render mesh. Edge and vertex modes use the Half-Edge mirror built from each welded HeroicRTSWeld shell.</p>
+</div></div>
+<div class="section"><h2>Topology Debug</h2><div class="sectionBody">
+<label class="checkbox"><input id="wire" type="checkbox" ${P.showWire?"checked":""}> Show welded topology overlay</label>
+<label class="checkbox"><input id="grid" type="checkbox" ${P.showGrid?"checked":""}> Show construction grid</label>
+<button id="repair" style="width:100%">Repair Twins / Rebuild HE Registry</button>
+<button id="weld" style="width:100%;margin-top:6px">Weld Coincident HE Vertices</button>
+</div></div>
+<div class="section"><h2>Selected Element</h2><div class="sectionBody" id="selInfo">
+Mode: ${editor.selection.mode}<br>Click a mesh element in the viewport.
+</div></div>
+<div class="section"><h2>Semantic Regions</h2><div class="sectionBody">
+<span class="badge">HEAD</span> <span class="badge">FACE</span>
+<span class="badge">LEFT_EAR</span> <span class="badge">RIGHT_EAR</span>
+<span class="badge">NECK</span> <span class="badge">CHEST</span>
+<span class="badge">LEFT_BICEP</span> <span class="badge">RIGHT_BICEP</span>
+</div></div>`;
+panel.querySelectorAll(".sel").forEach(b=>b.onclick=()=>{
+    panel.querySelectorAll(".sel").forEach(x=>x.classList.remove("active"));b.classList.add("active");
+    editor.selection.mode=b.dataset.mode;updateStats();
+});
+document.getElementById("wire").onchange=e=>{P.showWire=e.target.checked;topologyRoot.visible=P.showWire};
+document.getElementById("grid").onchange=e=>grid.visible=e.target.checked;
+document.getElementById("repair").onclick=()=>{
+    rig.topologyMeshes.forEach(t=>t.he.rebuildEdgeRegistry());toast("Half-edge twin registry repaired");
+    updateStats();
+};
+document.getElementById("weld").onclick=()=>{
+    rig.topologyMeshes.forEach(t=>t.he.weldCoincident(1e-5));toast("Coincident HE vertices welded");
+    updateTopology();
+};
+}
+function renderMaterialPanel(){
+panel.innerHTML=`
+<div class="section"><h2>Character Palette</h2><div class="sectionBody">
+<div class="colorRow"><label>Skin</label><input id="skin" type="color" value="${P.skin}"></div>
+<div class="colorRow"><label>Hair</label><input id="hair" type="color" value="${P.hair}"></div>
+<div class="colorRow"><label>Hair Highlight</label><input id="hairHi" type="color" value="${P.hairHi}"></div>
+<div class="colorRow"><label>Eyes</label><input id="eye" type="color" value="${P.eye}"></div>
+<div class="colorRow"><label>Jacket</label><input id="jacket" type="color" value="${P.jacket}"></div>
+<div class="colorRow"><label>Shirt</label><input id="shirt" type="color" value="${P.shirt}"></div>
+<div class="colorRow"><label>Tie</label><input id="tie" type="color" value="${P.tie}"></div>
+<div class="colorRow"><label>Accent</label><input id="accent" type="color" value="${P.accent}"></div>
+</div></div>
+<div class="section"><h2>Display</h2><div class="sectionBody">
+<label class="checkbox"><input id="gloss" type="checkbox" ${P.eyeGloss?"checked":""}> Eye catchlight</label>
+<label class="checkbox"><input id="wire2" type="checkbox" ${P.showWire?"checked":""}> Weld overlay</label>
+</div></div>
+<div class="section"><h2>Implementation</h2><div class="sectionBody small">
+The visible body is generated from faceted loft rings. Torso seams are aligned,
+snapped, bridged, then grid-welded. Arm tubes use the same chain builder.
+The editor maintains a Half-Edge representation for face/edge/vertex inspection.
+</div></div>`;
+["skin","hair","hairHi","eye","jacket","shirt","tie","accent"].forEach(k=>{
+    document.getElementById(k).oninput=e=>{P[k]=e.target.value;makeMaterials();rebuildCharacter()};
+});
+document.getElementById("gloss").onchange=e=>{P.eyeGloss=e.target.checked;rebuildCharacter()};
+document.getElementById("wire2").onchange=e=>{P.showWire=e.target.checked;topologyRoot.visible=P.showWire};
+}
+const tabRenderers={character:renderCharacterPanel,face:renderFacePanel,topology:renderTopologyPanel,material:renderMaterialPanel};
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));t.classList.add("active");
+    tabRenderers[t.dataset.tab]();
+});
+function toast(msg){const x=document.getElementById("toast");x.textContent=msg;x.classList.add("show");setTimeout(()=>x.classList.remove("show"),1200)}
+function updateSelectionInfo(){
+    const el=document.getElementById("selInfo");if(!el)return;
+    const s=editor.selection;
+    if(s.mode==="vertex"&&s.vertex)el.innerHTML=`Mode: vertex<br>Vertex ID: ${s.vertex.v.id}<br>
+        Position: ${s.vertex.v.position.toArray().map(n=>n.toFixed(3)).join(", ")}`;
+    else if(s.mode==="edge"&&s.edge)el.innerHTML=`Mode: edge<br>Edge: ${s.edge.e.id??"—"}<br>
+        Twin: ${s.edge.e.twin?"yes":"boundary"}`;
+    else if(s.mode==="face"&&s.face)el.innerHTML=`Mode: face<br>Object: ${s.face.object.name||"mesh"}<br>
+        Point: ${s.face.point.toArray().map(n=>n.toFixed(2)).join(", ")}`;
+}
+setInterval(updateSelectionInfo,120);
+
+/* =====================================================================
+   INITIAL BUILD / CAMERA / RENDER
+   ===================================================================== */
+renderCharacterPanel();
+rebuildCharacter();
+
+window.addEventListener("keydown",e=>{
+    if(e.key==="1"){editor.selection.mode="face";toast("Face select")}
+    if(e.key==="2"){editor.selection.mode="edge";toast("Edge select")}
+    if(e.key==="3"){editor.selection.mode="vertex";toast("Vertex select")}
+    if(e.key.toLowerCase()==="w"){P.showWire=!P.showWire;topologyRoot.visible=P.showWire;toast("Topology overlay "+(P.showWire?"on":"off"))}
+    if(e.key.toLowerCase()==="r"){rebuildCharacter();toast("Character rebuilt")}
+});
+window.addEventListener("resize",()=>{
+    camera.aspect=viewport.clientWidth/viewport.clientHeight;camera.updateProjectionMatrix();
+    renderer.setSize(viewport.clientWidth,viewport.clientHeight);
+});
+function animate(){
+    requestAnimationFrame(animate);controls.update();
+    renderer.render(scene,camera);updateStats();
+}
+animate();
+</script>
+</body>
+</html>
