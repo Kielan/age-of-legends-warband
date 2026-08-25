@@ -1,0 +1,1717 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ananta / Starpilot / Ven Denst Character Editor V6</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#080d14;color:#e7edf5;font:13px Inter,system-ui,sans-serif}
+button,input{font:inherit}
+.app{height:100%;display:grid;grid-template-rows:48px 1fr}
+.top{display:flex;align-items:center;gap:26px;padding:0 17px;background:#0d141d;border-bottom:1px solid #29394b}
+.brand{font-weight:800;letter-spacing:.2px}.brand b{color:#5ba2ff}
+.menu{display:flex;gap:25px;color:#91a1b5}.sp{flex:1}.window{color:#78899c}
+.main{min-height:0;display:grid;grid-template-columns:310px minmax(420px,1fr) 380px}
+.left,.right{background:#101720;min-height:0}.left{border-right:1px solid #2b3a4b}.right{border-left:1px solid #2b3a4b;overflow:auto;padding:10px}
+.title{height:45px;display:flex;align-items:center;padding:0 14px;font-size:15px;font-weight:750;border-bottom:1px solid #29394b}.close{margin-left:auto;color:#718197}
+.cards{padding:12px;display:grid;grid-template-columns:1fr;gap:10px}.card{background:#172230;border:1px solid #314258;border-radius:7px;overflow:hidden;cursor:pointer}.card.active{border-color:#4b9cff;box-shadow:0 0 0 1px #2b78df}.thumb{height:132px;background:#151f2c}.thumb canvas{display:block;width:100%;height:100%}.cardname{padding:9px;text-align:center;font-size:11px;color:#c7d2df}
+.files{margin:0 12px 12px;border:1px solid #2a394a;border-radius:7px;height:calc(100% - 470px);min-height:250px;display:flex;flex-direction:column}.path{margin:10px;padding:8px;background:#1c2836;border:1px solid #33465b;border-radius:4px;color:#aebdcd;font-size:11px}.fl{overflow:auto;padding:0 8px}.file{padding:9px;border-radius:4px;color:#9eafc1;cursor:pointer}.file:hover,.file.sel{background:#223248;color:#fff}.load{margin:auto 10px 10px;height:37px;border:0;border-radius:5px;background:#176fe5;color:#fff;font-weight:700;cursor:pointer}
+.center{position:relative;min-width:0;background:#080e16}.center canvas.maincanvas{display:block;width:100%;height:100%}
+.viewportTop{position:absolute;z-index:5;left:15px;top:14px;display:flex;gap:5px}.tool{height:32px;min-width:34px;border:1px solid #33475d;border-radius:5px;background:#14202d;color:#c7d4e3;cursor:pointer}.tool.active{border-color:#58a1ff;color:#fff;background:#1c2d42}
+.viewInfo{position:absolute;z-index:5;right:15px;top:14px;padding:7px 10px;border:1px solid #304256;border-radius:5px;background:#101b28dd;color:#93a4b7;font-size:10px}
+.hint{position:absolute;z-index:5;left:15px;bottom:14px;padding:9px 11px;border:1px solid #304256;border-radius:6px;background:#101b28e8;color:#9aabbe;font-size:10px;line-height:1.8}.hint kbd{display:inline-block;min-width:18px;padding:0 4px;text-align:center;border:1px solid #41546a;border-radius:3px;background:#1c2a3a;color:#dce6f1}
+.right>.title{margin:-10px -10px 10px}.tabs{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid #293a4c;border-radius:6px;overflow:hidden;margin-bottom:9px}.tab{border:0;background:#111a24;color:#8596a9;padding:9px 3px;cursor:pointer}.tab.active{color:#fff;background:#1d2c3e;box-shadow:inset 0 -2px #398df5}
+.sec{border:1px solid #29394a;border-radius:6px;background:#131d28;margin-bottom:9px;overflow:hidden}.sh{padding:9px 11px;border-bottom:1px solid #29394a;font-weight:700}.sb{padding:7px 10px}
+.row{display:grid;grid-template-columns:108px 1fr 45px;gap:7px;align-items:center;min-height:31px}.row label{font-size:10px;color:#aab8c8}.row output{font-size:10px;text-align:right;color:#d2dce7}.row input{width:100%;accent-color:#378ff4}
+.color{display:grid;grid-template-columns:108px 1fr 55px;gap:7px;align-items:center;margin:5px 0}.color input{width:100%;height:22px}.color output{font-size:10px;color:#aebdce}
+.actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}.actions button{height:37px;border:1px solid #3b4e63;border-radius:5px;background:#182432;color:#dbe5ef;cursor:pointer}.actions .apply{background:#176fe5;border-color:#176fe5;color:#fff}.status{padding:8px 2px;color:#718397;font-size:10px;line-height:1.5}
+.badge{display:inline-block;margin-left:7px;padding:2px 5px;border:1px solid #3c526a;border-radius:3px;color:#82baff;font-size:9px}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="top">
+  <div class="brand">◈ <b>HeroicRTS</b> Character Editor <span class="badge">V6</span></div>
+  <div class="menu"><span>File</span><span>Edit</span><span>View</span><span>Templates</span><span>Mesh</span></div>
+  <div class="sp"></div><span class="window">—</span><span class="window">□</span><span class="window">×</span>
+</header>
+
+<main class="main">
+<aside class="left">
+  <div class="title">Template Library <span class="close">×</span></div>
+  <div class="cards">
+    <div class="card" data-template="ananta">
+      <div class="thumb"><canvas id="thumbAnanta"></canvas></div>
+      <div class="cardname">Ananta · Simplified</div>
+    </div>
+    <div class="card" data-template="pilot">
+      <div class="thumb"><canvas id="thumbPilot"></canvas></div>
+      <div class="cardname">Starpilot · Red Hair</div>
+    </div>
+    <div class="card active" data-template="hunter">
+      <div class="thumb"><canvas id="thumbHunter"></canvas></div>
+      <div class="cardname">Ven Denst · Hunter</div>
+    </div>
+  </div>
+  <div class="files">
+    <div class="title">Preview / Files</div>
+    <div class="path">/assets/templates/characters/</div>
+    <div class="fl">
+      <div class="file" data-template="ananta">▤ ananta_simplified.json</div>
+      <div class="file" data-template="pilot">▤ starpilot_redhair.json</div>
+      <div class="file sel" data-template="hunter">▤ ven_denst_hunter.json</div>
+      <div class="file">▤ heroic_rts_character.schema</div>
+      <div class="file">▤ hair_profiles/</div>
+      <div class="file">▤ materials/</div>
+    </div>
+    <button class="load" id="loadTemplate">Load Template</button>
+  </div>
+</aside>
+
+<section class="center" id="viewport">
+  <div class="viewportTop">
+    <button class="tool active" id="selectTool">◉</button>
+    <button class="tool" id="frontTool">F</button>
+    <button class="tool" id="sideTool">S</button>
+    <button class="tool" id="wireTool">W</button>
+    <button class="tool" id="gridTool">G</button>
+  </div>
+  <div class="viewInfo" id="viewInfo">Perspective · Object Mode · V6 topology</div>
+  <div class="hint">
+    <div><kbd>1</kbd> Face &nbsp; <kbd>2</kbd> Edge &nbsp; <kbd>3</kbd> Vertex</div>
+    <div><kbd>W</kbd> Wireframe &nbsp; <kbd>G</kbd> Grid &nbsp; <kbd>R</kbd> Rebuild</div>
+    <div>Drag = Orbit &nbsp; Wheel = Zoom &nbsp; Shift+Drag = Pan</div>
+  </div>
+</section>
+
+<aside class="right">
+  <div class="title">Character Parameters</div>
+  <div class="tabs">
+    <button class="tab active" data-tab="body">Body</button>
+    <button class="tab" data-tab="face">Face</button>
+    <button class="tab" data-tab="hair">Hair</button>
+    <button class="tab" data-tab="outfit">Outfit</button>
+    <button class="tab" data-tab="boots">Boots</button>
+  </div>
+  <div id="controls"></div>
+  <div class="actions">
+    <button id="reset">Reset</button>
+    <button id="random">Randomize</button>
+    <button class="apply" id="apply">Apply</button>
+  </div>
+  <div class="status" id="status">Template: Ven Denst · Hunter · HeroicRTSWeld V6 · Loft topology live</div>
+</aside>
+</main>
+</div>
+
+<script type="module">
+import * as THREE from "https://esm.sh/three@0.165.0";
+import {OrbitControls} from "https://esm.sh/three@0.165.0/examples/jsm/controls/OrbitControls.js";
+
+/* ================================================================
+   HEROIC RTS WELD V2
+   ================================================================
+   V2 keeps the same core idea as the supplied HeroicRTSWeld framework,
+   but exposes the loft ring data as character parameters.
+
+   The torso, upper/lower arms, thighs and calves are generated from
+   continuous ring chains.  Adjacent rings share the same coordinate
+   system, are welded after construction, and are then converted to
+   indexed BufferGeometry.
+
+   The face is intentionally assembled from readable anime primitives:
+   ears, brows, eyeballs/irises, nose, mouth and a segmented hair cap.
+   ================================================================ */
+
+const HeroicRTSWeld = {
+  ring(spec, sides=8){
+    const c = spec.center || [0,0,0];
+    const rz = spec.rz ?? spec.rx;
+    const twist = spec.twist || 0;
+    const out = [];
+    for(let i=0;i<sides;i++){
+      const a = i/sides*Math.PI*2 + twist;
+      out.push([
+        c[0] + Math.cos(a)*spec.rx,
+        c[1],
+        c[2] + Math.sin(a)*rz
+      ]);
+    }
+    return out;
+  },
+
+  loftPart(rings, sides=8){
+    const vertices=[], loops=[];
+    for(const ringSpec of rings){
+      const loop=[];
+      for(const p of this.ring(ringSpec,sides)){
+        loop.push(vertices.length);
+        vertices.push(p);
+      }
+      loops.push(loop);
+    }
+
+    const faces=[];
+    for(let r=0;r<loops.length-1;r++){
+      const a=loops[r], b=loops[r+1];
+      for(let i=0;i<sides;i++){
+        const j=(i+1)%sides;
+        faces.push([a[i],a[j],b[j]],[a[i],b[j],b[i]]);
+      }
+    }
+    return {
+      vertices,faces,
+      bottomLoop:loops[0],
+      topLoop:loops[loops.length-1],
+      loops
+    };
+  },
+
+  weldVertices(mesh, epsilon=1e-5){
+    const buckets=new Map(), remap=[], vertices=[];
+    const key=v=>`${Math.round(v[0]/epsilon)}_${Math.round(v[1]/epsilon)}_${Math.round(v[2]/epsilon)}`;
+
+    mesh.vertices.forEach((v,i)=>{
+      const k=key(v);
+      if(buckets.has(k)) remap[i]=buckets.get(k);
+      else{
+        remap[i]=vertices.length;
+        vertices.push(v.slice());
+        buckets.set(k,remap[i]);
+      }
+    });
+
+    const faces=mesh.faces
+      .map(f=>f.map(i=>remap[i]))
+      .filter(f=>new Set(f).size===f.length);
+
+    return {vertices,faces};
+  },
+
+  assembleParts(parts){
+    const mesh={vertices:[],faces:[]};
+    const topology={};
+
+    for(const [name,part] of Object.entries(parts)){
+      const offset=mesh.vertices.length;
+      part.vertices.forEach(v=>mesh.vertices.push(v.slice()));
+      part.faces.forEach(f=>mesh.faces.push(f.map(i=>i+offset)));
+
+      const remap=loop=>loop.map(i=>i+offset);
+      topology[name]={
+        bottomLoop:remap(part.bottomLoop),
+        topLoop:remap(part.topLoop)
+      };
+    }
+    return {mesh,topology};
+  },
+
+  alignLoops(mesh,a,b){
+    let best=b.slice(),bestScore=Infinity;
+    for(const reverse of [false,true]){
+      const src=reverse?b.slice().reverse():b.slice();
+      for(let off=0;off<src.length;off++){
+        const test=src.map((_,i)=>src[(i+off)%src.length]);
+        let score=0;
+        for(let i=0;i<a.length;i++){
+          const p=mesh.vertices[a[i]],q=mesh.vertices[test[i]];
+          score+=(p[0]-q[0])**2+(p[1]-q[1])**2+(p[2]-q[2])**2;
+        }
+        if(score<bestScore){bestScore=score;best=test;}
+      }
+    }
+    return best;
+  },
+
+  weldSeam(mesh,loopA,loopB,{influenceA=.5,influenceB=.5,bridge=true}={}){
+    const b=this.alignLoops(mesh,loopA,loopB);
+    const d=Math.max(1e-8,influenceA+influenceB);
+
+    for(let i=0;i<loopA.length;i++){
+      const a=mesh.vertices[loopA[i]], q=mesh.vertices[b[i]];
+      const p=[
+        (a[0]*influenceA+q[0]*influenceB)/d,
+        (a[1]*influenceA+q[1]*influenceB)/d,
+        (a[2]*influenceA+q[2]*influenceB)/d
+      ];
+      mesh.vertices[loopA[i]]=p.slice();
+      mesh.vertices[b[i]]=p.slice();
+    }
+
+    if(bridge){
+      for(let i=0;i<loopA.length;i++){
+        const j=(i+1)%loopA.length;
+        mesh.faces.push(
+          [loopA[i],loopA[j],b[j]],
+          [loopA[i],b[j],b[i]]
+        );
+      }
+    }
+  },
+
+  toGeometry(simple){
+    const positions=[],indices=[];
+    simple.vertices.forEach(v=>positions.push(v[0],v[1],v[2]));
+    simple.faces.forEach(f=>{
+      for(let i=1;i<f.length-1;i++)
+        indices.push(f[0],f[i],f[i+1]);
+    });
+
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute("position",new THREE.Float32BufferAttribute(positions,3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    return geo;
+  },
+
+  weldedChain(parent,rings,material,sides=8){
+    const raw=this.loftPart(rings,sides);
+    const welded=this.weldVertices(raw,1e-5);
+    const mesh=new THREE.Mesh(this.toGeometry(welded),material);
+    mesh.userData.welded=true;
+    mesh.userData.vertexCount=welded.vertices.length;
+    parent.add(mesh);
+    return mesh;
+  },
+
+  weldedAssembly(parent,parts,material,sides=8){
+    const built=this.assembleParts(parts);
+
+    const names=Object.keys(parts);
+    for(let i=0;i<names.length-1;i++){
+      const A=names[i],B=names[i+1];
+      this.weldSeam(
+        built.mesh,
+        built.topology[A].topLoop,
+        built.topology[B].bottomLoop,
+        {influenceA:.5,influenceB:.5,bridge:true}
+      );
+    }
+
+    const simple=this.weldVertices(built.mesh,1e-5);
+    const mesh=new THREE.Mesh(this.toGeometry(simple),material);
+    mesh.userData.welded=true;
+    mesh.userData.weldedSeams=names;
+    parent.add(mesh);
+    return mesh;
+  }
+};
+
+/* ================================================================
+   STATE
+   ================================================================ */
+
+const state={
+  template:"hunter",
+  tab:"body",
+  wire:false,
+  grid:true,
+
+  body:{
+    height:1,
+    shoulder:1,
+    chest:1,
+    waist:.86,
+    hips:.96,
+    armLength:1,
+    armMuscle:1,
+    legLength:1,
+    legMuscle:1,
+    legCurve:.62,
+    thighCurve:1.0,
+    calfCurve:1.0,
+    kneeBulge:1.0,
+    ankleTaper:1.0,
+    neck:.9
+  },
+
+  face:{
+    headSize:1,
+    faceWidth:1,
+    jaw:.94,
+    ear:.9,
+    eyeSize:1,
+    eyeSpacing:1,
+    eyeHeight:1,
+    browAngle:.12,
+    nose:.9,
+    mouth:.9,
+    chin:.94
+  },
+
+  hair:{
+    volume:1,
+    length:1,
+    fringe:.9,
+    spikes:1,
+    back:1
+  },
+
+  outfit:{
+    jacketFit:1,
+    collar:1,
+    glove:.95,
+    boot:1,
+    belt:1
+  },
+
+  boots:{
+    length:1,
+    width:1,
+    toe:1,
+    sole:.12,
+    height:1,
+    cuff:1,
+    straps:2,
+    strapTight:.9,
+    heel:.95
+  },
+
+  colors:{
+    hair:"#302b32",
+    skin:"#d6a07d",
+    jacket:"#202936",
+    shirt:"#edf0ef",
+    accent:"#347ed4",
+    eye:"#88a8ff",
+    hairRed:"#b51e2c",
+    hunterHair:"#aaa8a2",
+    hunterCoat:"#3b3a2d",
+    hunterLeather:"#5a3d28",
+    hunterGold:"#b18a45",
+    hunterScarf:"#6d2624"
+  }
+};
+
+const defaults=JSON.parse(JSON.stringify(state));
+
+let scene,camera,renderer,controls;
+let character=null;
+let wireGroup=null;
+let gridObject=null;
+let selectionGroup=null;
+
+/* ================================================================
+   MATERIAL / UTILITY
+   ================================================================ */
+
+function mat(hex,rough=.82,metal=0){
+  return new THREE.MeshStandardMaterial({
+    color:new THREE.Color(hex),
+    roughness:rough,
+    metalness:metal,
+    flatShading:true
+  });
+}
+
+function box(parent,size,pos,material,rot=[0,0,0]){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(...size),material);
+  m.position.set(...pos);
+  m.rotation.set(...rot);
+  parent.add(m);
+  return m;
+}
+
+function sphere(parent,r,pos,material,scale=[1,1,1]){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(r,12,8),material);
+  m.position.set(...pos);
+  m.scale.set(...scale);
+  parent.add(m);
+  return m;
+}
+
+function tubeBetween(parent,a,b,r1,r2,material,segments=8){
+  const A=new THREE.Vector3(...a), B=new THREE.Vector3(...b);
+  const d=new THREE.Vector3().subVectors(B,A);
+  const m=new THREE.Mesh(
+    new THREE.CylinderGeometry(r1,r2,d.length(),segments,1,false),
+    material
+  );
+  m.position.copy(A).add(B).multiplyScalar(.5);
+  m.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0,1,0),
+    d.normalize()
+  );
+  parent.add(m);
+  return m;
+}
+
+function cone(parent,r,h,pos,material,rot=[0,0,0],segments=6){
+  const m=new THREE.Mesh(new THREE.ConeGeometry(r,h,segments),material);
+  m.position.set(...pos);
+  m.rotation.set(...rot);
+  parent.add(m);
+  return m;
+}
+
+/* ================================================================
+   HEAD
+   ================================================================ */
+
+function buildAnimeHead(parent,isPilot,isHunter=false){
+  const f=state.face;
+  const h=state.hair;
+
+  const skin=mat(state.colors.skin,.82);
+  const eyeWhite=mat("#f5f5f2",.45);
+  const iris=mat(state.colors.eye,.28);
+  const browMat=mat(isHunter?"#27251f":(isPilot?"#4b151c":state.colors.hair),.92);
+  const lipMat=mat("#833d49",.78);
+  const hairColor=isHunter?state.colors.hunterHair:(isPilot?state.colors.hairRed:state.colors.hair);
+  const hairMat=mat(hairColor,.9);
+
+  const head=new THREE.Group();
+
+  const skull=sphere(
+    head,
+    .79*f.headSize,
+    [0,6.62,0],
+    skin,
+    [.86*f.faceWidth,.98,.78]
+  );
+  skull.userData.region="head";
+
+  /* ears */
+  for(const s of [-1,1]){
+    const ear=new THREE.Mesh(
+      new THREE.CylinderGeometry(.16*f.ear,.12*f.ear,.09,8),
+      skin
+    );
+    ear.rotation.z=Math.PI/2;
+    ear.position.set(s*.69*f.faceWidth,6.62,.0);
+    ear.scale.y=1.25;
+    head.add(ear);
+  }
+
+  /* eyes: white sclera + iris + tiny highlight */
+  for(const s of [-1,1]){
+    const x=s*.285*f.eyeSpacing;
+
+    sphere(head,.205*f.eyeSize,[x,6.73,.665],eyeWhite,[1,.84,.34]);
+    sphere(head,.112*f.eyeSize,[x,6.73,.735],iris,[1,.95,.24]);
+    sphere(head,.035*f.eyeSize,[x-.035*s,6.77,.755],eyeWhite,[1,1,.3]);
+
+    /* anime eyebrow */
+    const brow=box(
+      head,
+      [.34,.055,.055],
+      [x,7.035,.67],
+      browMat,
+      [0,0,s*f.browAngle]
+    );
+    brow.scale.x=.95*f.faceWidth;
+  }
+
+  /* nose bridge + small tip */
+  const noseLen=.28*f.nose;
+  cone(
+    head,
+    .115*f.nose,
+    noseLen,
+    [0,6.55,.71],
+    skin,
+    [Math.PI/2,0,0],
+    5
+  );
+  sphere(head,.075*f.nose,[0,6.49,.775],skin,[1,.7,.75]);
+
+  /* mouth: upper lip, lower lip and tiny opening */
+  box(head,[.27*f.mouth,.035,.025],[0,6.31,.735],lipMat);
+  box(head,[.18*f.mouth,.018,.018],[0,6.285,.74],skin);
+
+  /* chin plane */
+  sphere(head,.30*f.chin,[0,6.18,.06],skin,[.72,.38,.5]);
+
+  /* ============================================================
+     FULL SCALP / HAIRLINE COVERAGE V2
+     The previous generator used ~30 isolated pieces (17 fringe +
+     8 rear locks + hunter crown locks).  V5 replaces that sparse
+     arrangement with a continuous low-poly scalp shell plus a
+     distributed set of clumps that follow the skull all the way
+     around the hairline, temples, sideburns and nape.
+     ============================================================ */
+
+  const hairScale=h.volume;
+
+  // Low-poly scalp shell.  It is intentionally a little larger than
+  // the head so there is no visible skin gap between hair pieces.
+  const scalp=sphere(
+    head,
+    .835*hairScale,
+    [0,6.98,-.055],
+    hairMat,
+    [.92,1.03,.82]
+  );
+  scalp.userData.region="hair";
+  scalp.userData.hairLayer="scalp";
+
+  // A thin hairline roll follows the forehead/temples instead of
+  // leaving the old cone-only fringe floating above the skull.
+  const hairlineMat=hairMat;
+  const hairlineSegments=14;
+  for(let i=0;i<hairlineSegments;i++){
+    const t=i/(hairlineSegments-1)-.5;
+    const x=t*1.34*hairScale;
+    const side=Math.abs(t)*2;
+    const y=6.84 + .08*(1-side*side);
+    const z=.55 - .035*Math.abs(t);
+    const clump=new THREE.Mesh(
+      new THREE.ConeGeometry(.115*hairScale,.34*h.length,5),
+      hairlineMat
+    );
+    clump.position.set(x,y,z);
+    clump.rotation.z=-.48+t*.82;
+    clump.rotation.x=.38;
+    clump.scale.x=1.05+.18*(1-side);
+    clump.userData.region="hair";
+    clump.userData.hairLayer="hairline";
+    head.add(clump);
+  }
+
+  // Distributed scalp clumps: 8 azimuth positions x 3 scalp rows.
+  // Each clump is oriented radially so the silhouette reads as one
+  // continuous hair mass rather than ~30 floating cones.
+  const scalpRows=[
+    {v:.22,r:.48,count:8,len:.46},   // upper crown
+    {v:.48,r:.67,count:10,len:.54},  // upper sides
+    {v:.72,r:.78,count:12,len:.60}   // temples / lower hairline / nape
+  ];
+
+  let scalpClumpCount=0;
+  for(const row of scalpRows){
+    for(let i=0;i<row.count;i++){
+      const a=(i/row.count)*Math.PI*2 + (row.v*1.7);
+      const x=Math.cos(a)*row.r*hairScale;
+      const z=Math.sin(a)*row.r*hairScale-.055;
+      const y=7.18-row.v*.60;
+
+      const clump=new THREE.Mesh(
+        new THREE.ConeGeometry(
+          (.13+.025*(1-row.v))*hairScale,
+          row.len*h.length*(.88+.12*Math.abs(Math.cos(a))),
+          5
+        ),
+        hairMat
+      );
+
+      clump.position.set(x,y,z);
+
+      // Point the clump outward from the skull, with a downward sweep
+      // at the side and nape so the hair hugs the scalp.
+      const radial=new THREE.Vector3(x, y-6.98, z+.055).normalize();
+      clump.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),radial);
+      clump.rotateX(.12 + .22*row.v);
+      clump.rotateZ(-.16*Math.sin(a));
+      clump.scale.z=.72+.20*(1-row.v);
+
+      clump.userData.region="hair";
+      clump.userData.hairLayer="scalpClump";
+      head.add(clump);
+      scalpClumpCount++;
+    }
+  }
+
+  // Forehead fringe: larger tapered wedges overlap the hairline roll,
+  // producing a readable anime silhouette without exposing the scalp.
+  const spikeCount=19;
+  for(let i=0;i<spikeCount;i++){
+    const t=i/(spikeCount-1)-.5;
+    const edge=Math.abs(t);
+    const width=.12+.07*(1-edge*1.8);
+    const length=(.48+.34*(1-edge))*h.length*h.fringe;
+    const spike=new THREE.Mesh(
+      new THREE.ConeGeometry(width*hairScale,length,5),
+      hairMat
+    );
+    spike.position.set(
+      t*1.48*hairScale,
+      7.28-.18*(1-Math.abs(t*2)),
+      .50-.14*Math.abs(t)
+    );
+    spike.rotation.z=-.56+t*.98;
+    spike.rotation.x=.25+.20*Math.abs(t);
+    spike.scale.z=.78;
+    spike.userData.region="hair";
+    spike.userData.hairLayer="fringe";
+    head.add(spike);
+  }
+
+  // Sideburn + nape locks close the remaining gaps around the ears and
+  // lower rear hairline. These are deliberately broader than the old
+  // four-per-side setup.
+  for(const s of [-1,1]){
+    for(let i=0;i<6;i++){
+      const lock=cone(
+        head,
+        (.115+.018*(i%2))*hairScale,
+        (.50+.11*i)*h.length,
+        [
+          s*(.47+.075*i)*hairScale,
+          6.86-.095*i,
+          -.25-.045*i
+        ],
+        hairMat,
+        [s*(.22+.035*i),0,s*.10],
+        5
+      );
+      lock.scale.z=.70;
+      lock.userData.region="hair";
+      lock.userData.hairLayer="sideNape";
+    }
+  }
+
+  if(isHunter){
+    /* Swept silver hunter silhouette layered over the complete scalp. */
+    for(let i=0;i<9;i++){
+      const t=i/8-.5;
+      const lock=cone(
+        head,
+        .145*hairScale,
+        (.64+.18*(1-Math.abs(t)))*h.length,
+        [t*1.22*hairScale,7.28+.10*(1-Math.abs(t)*2),.10],
+        hairMat,
+        [0,-.18,-t*.70],
+        6
+      );
+      lock.scale.z=.68;
+      lock.userData.region="hair";
+      lock.userData.hairLayer="hunterSweep";
+    }
+  }
+
+  head.userData.hairCoverage={
+    scalp:true,
+    hairline:true,
+    scalpClumps:scalpClumpCount,
+    fringe:spikeCount,
+    sideNape:12,
+    hunterSweep:isHunter?9:0,
+    // Non-hunter total = 14 + 30 + 19 + 12 = 75 hair pieces/layers
+    // including the continuous scalp shell; hunter = 84.
+    coverage:"full-scalp-and-hairline"
+  };
+
+  parent.add(head);
+  return head;
+}
+
+/* ================================================================
+   HEROIC ANATOMY / LOFT BODY KIT V6
+   ---------------------------------------------------------------
+   Reusable anatomical leg + torso primitives. The leg is one welded
+   lofted surface with explicit thigh, knee, calf and ankle curvature.
+   The same generator is used by Ananta, Starpilot and Ven Denst.
+   ================================================================ */
+const HeroicAnatomyKit={
+  leg(parent,{
+    side=1,x=0,material,bootBuilder=null,bootOptions=null,bootMaterials=null,
+    muscle=1,length=1,curve=0.62,thighCurve=1,calfCurve=1,kneeBulge=1,ankleTaper=1,
+    hip=1, yTop=2.70, footZ=.16, kneeMaterial=null
+  }={}){
+    const s=side, c=Math.max(0,curve), m=muscle;
+    const L=Math.max(.72,length);
+    const inKnee=.075*c;                 // knee moves slightly medially
+    const outerThigh=.055*c*thighCurve;  // lateral thigh sweep
+    const calfSweep=.045*c*calfCurve;
+    const posterior=.075*c*calfCurve;    // calf mass sits behind the tibia
+    const y=yTop;
+    const ring=(yy,xx,zz,rx,rz)=>({center:[xx,yy,zz],rx:rx*m,rz:rz*m});
+
+    const thigh=HeroicRTSWeld.loftPart([
+      ring(y, x, 0, .43*hip, .34),
+      ring(y-.26*L, x+s*outerThigh, .015, .46*thighCurve, .36),
+      ring(y-.58*L, x+s*outerThigh*.72, .005, .42, .34),
+      ring(y-.92*L, x-s*inKnee*.45, .015, .36, .30),
+      ring(y-1.18*L, x-s*inKnee, .035, .32*kneeBulge, .275*kneeBulge)
+    ],7);
+
+    const calf=HeroicRTSWeld.loftPart([
+      ring(y-1.18*L, x-s*inKnee, .035, .32*kneeBulge, .275*kneeBulge),
+      ring(y-1.35*L, x-s*inKnee*.82, .005, .31, .27),
+      ring(y-1.58*L, x-s*inKnee*.58, -posterior*.45, .33*calfCurve, .275*calfCurve),
+      ring(y-1.82*L, x-s*inKnee*.38, -posterior, .28*calfCurve, .235*calfCurve),
+      ring(y-2.08*L, x-s*inKnee*.18, -posterior*.62, .235, .205),
+      ring(y-2.30*L, x, -posterior*.20, .205*ankleTaper, .18*ankleTaper)
+    ],7);
+
+    const built=HeroicRTSWeld.assembleParts({thigh,calf});
+    HeroicRTSWeld.weldSeam(
+      built.mesh,built.topology.thigh.topLoop,built.topology.calf.bottomLoop,
+      {influenceA:.50,influenceB:.50,bridge:true}
+    );
+    const simple=HeroicRTSWeld.weldVertices(built.mesh,1e-5);
+    const mesh=new THREE.Mesh(HeroicRTSWeld.toGeometry(simple),material);
+    mesh.userData.welded=true;
+    mesh.userData.generator='HeroicAnatomyKit.leg';
+    mesh.userData.topology={thighRings:5,calfRings:6,sides:7,weldedKnee:true};
+    mesh.userData.parameters={curve,thighCurve,calfCurve,kneeBulge,ankleTaper};
+    parent.add(mesh);
+
+    // Small faceted patella volume makes the knee readable without
+    // disconnecting it from the welded leg surface.
+    if(kneeMaterial){
+      const knee=new THREE.Mesh(new THREE.IcosahedronGeometry(.255*m,1),kneeMaterial);
+      knee.scale.set(1.08,.72,.78);
+      knee.position.set(x-s*inKnee,y-1.20*L,.285*m);
+      parent.add(knee);
+    }
+
+    if(bootBuilder){
+      const bootRoot=new THREE.Group();
+      bootRoot.position.set(x, y-2.42*L, footZ);
+      bootRoot.scale.x=s;
+      parent.add(bootRoot);
+      bootBuilder(bootRoot,bootOptions||{},bootMaterials||{});
+      bootRoot.userData.generator='HeroicAnatomyKit.leg';
+    }
+    return {mesh,built,simple};
+  },
+
+  torso(parent,{material,waist=.86,hips=.96,chest=1,shoulder=1,neck=.9,variant='standard'}={}){
+    const pelvis=HeroicRTSWeld.loftPart([
+      {center:[0,2.72,0],rx:.66*waist,rz:.40*waist},
+      {center:[0,2.96,0],rx:.78*hips,rz:.46},
+      {center:[0,3.20,0],rx:.72*waist,rz:.43}
+    ],8);
+    const abdomen=HeroicRTSWeld.loftPart([
+      {center:[0,3.20,0],rx:.72*waist,rz:.43},
+      {center:[0,3.50,.01],rx:.72*waist,rz:.44},
+      {center:[0,3.82,.02],rx:.88*chest,rz:.51}
+    ],8);
+    const chestPart=HeroicRTSWeld.loftPart([
+      {center:[0,3.82,.02],rx:.88*chest,rz:.51},
+      {center:[0,4.18,.03],rx:1.02*shoulder,rz:.58},
+      {center:[0,4.48,.02],rx:1.08*shoulder,rz:.61},
+      {center:[0,4.72,0],rx:.48*neck,rz:.35}
+    ],8);
+    const mesh=HeroicRTSWeld.weldedAssembly(parent,{pelvis,abdomen,chest:chestPart},material,8);
+    mesh.userData.generator='HeroicAnatomyKit.torso';
+    mesh.userData.parameters={waist,hips,chest,shoulder,neck,variant};
+    return mesh;
+  }
+};
+
+/* ================================================================
+   BODY
+   ================================================================ */
+
+function buildBody(parent,isPilot){
+  const b=state.body;
+  const o=state.outfit;
+
+  const skin=mat(state.colors.skin,.82);
+  const jacket=mat(state.colors.jacket,.88);
+  const shirt=mat(state.colors.shirt,.68);
+  const accent=mat(state.colors.accent,.58,.08);
+  const white=mat("#e7ebec",.58);
+  const red=mat(state.colors.hairRed,.75);
+  const dark=mat("#141b23",.9);
+
+  /* reusable loft torso mound */
+  const torsoMat=isPilot?shirt:jacket;
+  HeroicAnatomyKit.torso(parent,{
+    material:torsoMat, waist:b.waist, hips:b.hips, chest:b.chest,
+    shoulder:b.shoulder, neck:b.neck, variant:isPilot?'starpilot':'ananta'
+  });
+
+  /* jacket panels / tie / collar */
+  if(isPilot){
+    box(parent,[1.55*o.jacketFit,.82,.08],[0,4.02,.62],jacket,[0,0,0]);
+    box(parent,[.12,1.05,.06],[0,4.03,.69],accent);
+    box(parent,[.42,.10,.08],[0,4.50,.68],red);
+    for(const s of [-1,1]){
+      box(parent,[.13,.95,.08],[s*.48,4.03,.63],white,[0,0,s*.10]);
+    }
+    box(parent,[1.30*o.jacketFit,.15,.12],[0,3.28,.49],dark);
+    box(parent,[.27,.26,.11],[0,3.28,.56],white);
+  }else{
+    box(parent,[1.45*o.jacketFit,.18,.09],[0,3.27,.48],dark);
+    box(parent,[1.35,.68,.07],[0,4.22,.63],jacket);
+    box(parent,[.24,.96,.07],[0,4.23,.69],accent);
+  }
+
+  /* neck */
+  tubeBetween(
+    parent,
+    [0,4.64,0],
+    [0,5.48,0],
+    .28*b.neck,
+    .30*b.neck,
+    skin,
+    8
+  );
+
+  /* shoulders and arms are separate articulated tubes, with editable
+     upper/lower ring radii rather than fixed primitive dimensions. */
+  for(const s of [-1,1]){
+    const shoulderX=s*1.02*b.shoulder;
+
+    const upper=HeroicRTSWeld.loftPart([
+      {center:[shoulderX,4.48,.01],rx:.35*b.armMuscle,rz:.31*b.armMuscle},
+      {center:[s*1.10*b.shoulder,4.18,.02],rx:.32*b.armMuscle,rz:.28*b.armMuscle},
+      {center:[s*1.18*b.shoulder,3.83,.05],rx:.29*b.armMuscle,rz:.25*b.armMuscle},
+      {center:[s*1.21*b.shoulder,3.57,.07],rx:.26*b.armMuscle,rz:.23*b.armMuscle}
+    ],7);
+
+    const upperMesh=HeroicRTSWeld.weldVertices(upper,1e-5);
+    const upperObj=new THREE.Mesh(
+      HeroicRTSWeld.toGeometry(upperMesh),
+      isPilot?skin:jacket
+    );
+    parent.add(upperObj);
+
+    sphere(
+      parent,
+      .27*b.armMuscle,
+      [s*1.21*b.shoulder,3.54,.08],
+      isPilot?skin:jacket,
+      [1,.85,.95]
+    );
+
+    const lowerEnd=3.54-.76*b.armLength;
+    const fore=HeroicRTSWeld.loftPart([
+      {center:[s*1.21*b.shoulder,3.50,.08],rx:.25*b.armMuscle,rz:.23*b.armMuscle},
+      {center:[s*1.24*b.shoulder,3.22,.11],rx:.23*b.armMuscle,rz:.21*b.armMuscle},
+      {center:[s*1.26*b.shoulder,lowerEnd+.25,.15],rx:.21*b.armMuscle,rz:.19*b.armMuscle},
+      {center:[s*1.27*b.shoulder,lowerEnd,.18],rx:.19*b.armMuscle,rz:.18*b.armMuscle}
+    ],7);
+
+    const foreMesh=HeroicRTSWeld.weldVertices(fore,1e-5);
+    parent.add(new THREE.Mesh(
+      HeroicRTSWeld.toGeometry(foreMesh),
+      isPilot?skin:jacket
+    ));
+
+    const handMat=isPilot?white:skin;
+    sphere(
+      parent,
+      .24*o.glove,
+      [s*1.27*b.shoulder,lowerEnd-.14,.20],
+      handMat,
+      [1,.85,.9]
+    );
+
+    if(isPilot){
+      box(
+        parent,
+        [.42,.18,.36],
+        [s*1.27*b.shoulder,lowerEnd+.03,.22],
+        accent
+      );
+    }
+  }
+
+  /* anatomical loft legs: same generator as Hunter and Starpilot */
+  for(const s of [-1,1]){
+    HeroicAnatomyKit.leg(parent,{
+      side:s, x:s*.48*b.hips, material:jacket, kneeMaterial:dark,
+      muscle:b.legMuscle, length:b.legLength, curve:b.legCurve,
+      thighCurve:b.thighCurve, calfCurve:b.calfCurve,
+      kneeBulge:b.kneeBulge, ankleTaper:b.ankleTaper, hip:b.hips,
+      bootBuilder:(root,opts,mats)=>HeroicBootKit.build(root,opts,mats),
+      bootOptions:{...state.boots,width:state.boots.width*o.boot,length:state.boots.length*o.boot},
+      bootMaterials:{
+        upper:isPilot?white:accent, sole:dark,
+        strap:isPilot?accent:dark, buckle:isPilot?white:gold, trim:isPilot?red:gold
+      }
+    });
+  }
+
+/* ================================================================
+   MODULAR LOW-POLY BOOT KIT
+   ---------------------------------------------------------------
+   The shoe shell is a deliberately compact 60-triangle mesh:
+   4 perimeter rings x 8 vertices -> 48 side triangles +
+   6-triangle heel cap + 6-triangle toe cap = 60 triangles.
+   Sole, heel, cuff, straps and buckles are separate modules so
+   templates can swap boot construction without changing the leg.
+   ================================================================ */
+const HeroicBootKit={
+  shoeShell(parent,opts,material){
+    const L=.62*(opts.length||1), W=.29*(opts.width||1), H=.40*(opts.height||1);
+    const toe=opts.toe||1;
+    const rings=[
+      {z:-L, w:W*.78, h:H*.78, y:.08},
+      {z:-L*.68,w:W,      h:H*.92, y:.08},
+      {z:L*.05, w:W*1.04, h:H,    y:.08},
+      {z:L*.82, w:W*.92*toe,h:H*.82, y:.08}
+    ];
+    const verts=[];
+    const ringIds=[];
+    for(const r of rings){
+      const w=r.w, h=r.h, y=r.y;
+      const pts=[
+        [-w*.72,y, r.z],[-w,y+h*.24,r.z],[-w*.98,y+h*.68,r.z],
+        [-w*.46,y+h,r.z],[w*.46,y+h,r.z],[w*.98,y+h*.68,r.z],
+        [w,y+h*.24,r.z],[w*.72,y,r.z]
+      ];
+      ringIds.push(pts.map(pt=>{verts.push(pt);return verts.length-1;}));
+    }
+    const faces=[];
+    for(let r=0;r<ringIds.length-1;r++){
+      const a=ringIds[r],b=ringIds[r+1];
+      for(let i=0;i<8;i++){
+        const j=(i+1)%8;
+        faces.push([a[i],a[j],b[j]],[a[i],b[j],b[i]]);
+      }
+    }
+    faces.push([0,7,6],[0,6,5],[0,5,4],[0,4,3],[0,3,2],[0,2,1]);
+    const e=ringIds[3];
+    faces.push([e[0],e[1],e[2]],[e[0],e[2],e[3]],[e[0],e[3],e[4]],[e[0],e[4],e[5]],[e[0],e[5],e[6]],[e[0],e[6],e[7]]);
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(verts.flat(),3));
+    geo.setIndex(faces.flat());
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    const mesh=new THREE.Mesh(geo,material);
+    mesh.userData.module='shoeShell';
+    mesh.userData.triangles=60;
+    parent.add(mesh);
+    return mesh;
+  },
+
+  sole(parent,opts,material){
+    const L=.66*(opts.length||1), W=.32*(opts.width||1), T=opts.sole||.12;
+    const verts=[
+      -W,-T,-L, W,-T,-L, -W,-T,L, W,-T,L,
+      -W*.92,0,-L*.96, W*.92,0,-L*.96, -W*.96,0,L*.90, W*.96,0,L*.90
+    ];
+    const idx=[0,1,3,0,3,2,4,6,7,4,7,5,0,4,5,0,5,1,1,5,7,1,7,3,3,7,6,3,6,2,2,6,4,2,4,0];
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+    geo.setIndex(idx); geo.computeVertexNormals();
+    const mesh=new THREE.Mesh(geo,material);
+    mesh.userData.module='sole'; mesh.userData.triangles=12;
+    parent.add(mesh); return mesh;
+  },
+
+  heel(parent,opts,material){
+    const L=.18, W=.26*(opts.width||1), H=.20*(opts.heel||1);
+    const heel=box(parent,[W,H,L],[0,H/2,-.56*(opts.length||1)],material);
+    heel.userData.module='heel'; heel.userData.triangles=12;
+    return heel;
+  },
+
+  cuff(parent,opts,material,trim){
+    const h=.26*(opts.cuff||1);
+    const g=new THREE.Group(); g.position.y=.40*(opts.height||1); parent.add(g);
+    const c=new THREE.Mesh(new THREE.CylinderGeometry(.25*(opts.width||1),.27*(opts.width||1),h,8),material);
+    g.add(c); c.userData.module='ankleCuff'; c.userData.triangles=28;
+    const rim=new THREE.Mesh(new THREE.TorusGeometry(.255*(opts.width||1),.025,4,8),trim);
+    rim.rotation.x=0; rim.position.y=h*.47; g.add(rim);
+    rim.userData.module='cuffTrim'; rim.userData.triangles=16;
+    return g;
+  },
+
+  straps(parent,opts,material,buckle){
+    const count=Math.max(0,Math.min(3,Math.round(opts.straps||0)));
+    const arr=[];
+    for(let i=0;i<count;i++){
+      const z=-.18+i*.22;
+      const strap=box(parent,[.62*(opts.width||1),.055,.095],[0,.38,z],material,[0,(1-(opts.strapTight||1))*.18,0]);
+      strap.userData.module='strap'; strap.userData.triangles=12; arr.push(strap);
+      const b=box(parent,[.10,.075,.13],[.22*(opts.width||1),.415,z],buckle);
+      b.userData.module='buckle'; b.userData.triangles=12; arr.push(b);
+    }
+    return arr;
+  },
+
+  build(parent,opts,materials){
+    const g=new THREE.Group();
+    parent.add(g);
+    this.sole(g,opts,materials.sole);
+    this.heel(g,opts,materials.sole);
+    this.shoeShell(g,opts,materials.upper);
+    this.cuff(g,opts,materials.upper,materials.trim);
+    this.straps(g,opts,materials.strap,materials.buckle);
+    g.userData.bootTemplate='HeroicBoot_60T_Modular';
+    g.userData.shoeShellTriangles=60;
+    g.userData.modules=['sole','heel','shoeShell','ankleCuff','cuffTrim','strap','buckle'];
+    return g;
+  }
+};
+
+/* ================================================================
+   VEN DENST / WANDERING HUNTER
+   A HeroicRTSWeld-compatible stylized hunter built from the same
+   lofted torso and articulated tube principles as the first two
+   templates, but with coat panels, scarf, belts, pouches and sword.
+   ================================================================ */
+
+function hunterMaterial(hex,rough=.82,metal=0){
+  return new THREE.MeshStandardMaterial({
+    color:new THREE.Color(hex),roughness:rough,metalness:metal,flatShading:true
+  });
+}
+
+function buildHunterBody(parent){
+  const b=state.body, o=state.outfit;
+  const skin=hunterMaterial(state.colors.skin,.84);
+  const coat=hunterMaterial(state.colors.hunterCoat,.94);
+  const leather=hunterMaterial(state.colors.hunterLeather,.88);
+  const dark=hunterMaterial("#25231f",.92);
+  const gold=hunterMaterial(state.colors.hunterGold,.42,.48);
+  const scarf=hunterMaterial(state.colors.hunterScarf,.88);
+  const steel=hunterMaterial("#73706a",.42,.64);
+
+  // reusable loft torso mound
+  HeroicAnatomyKit.torso(parent,{
+    material:coat, waist:b.waist, hips:b.hips, chest:b.chest,
+    shoulder:b.shoulder, neck:b.neck, variant:'ven-denst-hunter'
+  });
+
+  // high collar and scarf
+  tubeBetween(parent,[0,4.67,0],[0,5.38,0],.27*b.neck,.31*b.neck,skin,8);
+  const scarfWrap=new THREE.Mesh(
+    new THREE.CylinderGeometry(.44*o.collar,.50*o.collar,.40,8,1,false),scarf
+  );
+  scarfWrap.position.set(0,5.22,.02); parent.add(scarfWrap);
+  scarfWrap.scale.z=.82;
+  const scarfTail=box(parent,[.30,.86,.10],[-.18,4.75,-.18],scarf,[.12,.08,-.15]);
+  scarfTail.scale.x=1.2;
+
+  // long coat skirt panels
+  const panelMat=coat;
+  const panelCount=7;
+  for(let i=0;i<panelCount;i++){
+    const t=i/(panelCount-1)-.5;
+    const w=.42+.12*(1-Math.abs(t)*1.8);
+    const panel=new THREE.Mesh(
+      new THREE.BoxGeometry(w,.96,.11),panelMat
+    );
+    panel.position.set(t*1.65,3.08,-.02+Math.abs(t)*.08);
+    panel.rotation.z=t*.13;
+    panel.rotation.x=.04;
+    parent.add(panel);
+    const trim=new THREE.Mesh(
+      new THREE.BoxGeometry(.055,.90,.035),gold
+    );
+    trim.position.set(t*1.65+w*.34,3.08,.065);
+    trim.rotation.z=t*.13;
+    parent.add(trim);
+  }
+
+  // waist belt, buckle and hanging pouches
+  box(parent,[1.72*o.belt,.20,.30], [0,3.30,.48], leather);
+  box(parent,[.34,.30,.09],[0,3.30,.66],gold);
+  for(const s of [-1,1]){
+    for(let i=0;i<2;i++){
+      const pouch=box(parent,[.38,.34,.32],[s*(.72+i*.22),3.17,.51],leather,[0,0,s*.10]);
+      pouch.scale.y=1+o.belt*.05;
+      box(parent,[.26,.07,.035],[s*(.72+i*.22),3.34,.68],gold);
+    }
+  }
+
+  // diagonal chest harness
+  const strap=box(parent,[.15,1.65,.10],[-.20,4.18,.62],leather,[0,0,-.48]);
+  const strap2=box(parent,[.15,1.42,.10],[.32,4.16,.60],leather,[0,0,.44]);
+  for(let i=0;i<4;i++){
+    const riv=new THREE.Mesh(new THREE.IcosahedronGeometry(.055,0),gold);
+    riv.position.set(-.20+i*.13,4.03+i*.16,.69); parent.add(riv);
+  }
+
+  // shoulders, sleeves, gloves
+  for(const s of [-1,1]){
+    const shoulderX=s*1.03*b.shoulder;
+    const upper=HeroicRTSWeld.loftPart([
+      {center:[shoulderX,4.48,.01],rx:.35*b.armMuscle,rz:.31*b.armMuscle},
+      {center:[s*1.10*b.shoulder,4.16,.02],rx:.33*b.armMuscle,rz:.29*b.armMuscle},
+      {center:[s*1.17*b.shoulder,3.82,.04],rx:.29*b.armMuscle,rz:.25*b.armMuscle},
+      {center:[s*1.20*b.shoulder,3.54,.07],rx:.26*b.armMuscle,rz:.23*b.armMuscle}
+    ],7);
+    parent.add(new THREE.Mesh(HeroicRTSWeld.toGeometry(HeroicRTSWeld.weldVertices(upper,1e-5)),coat));
+
+    // bracer
+    const bracer=new THREE.Mesh(new THREE.CylinderGeometry(.27,.22,.55,7),dark);
+    bracer.position.set(s*1.24*b.shoulder,3.17,.11);
+    bracer.rotation.z=s*.06; parent.add(bracer);
+    const fore=HeroicRTSWeld.loftPart([
+      {center:[s*1.20*b.shoulder,3.50,.07],rx:.25*b.armMuscle,rz:.23*b.armMuscle},
+      {center:[s*1.23*b.shoulder,3.28,.10],rx:.23*b.armMuscle,rz:.21*b.armMuscle},
+      {center:[s*1.25*b.shoulder,2.92,.14],rx:.20*b.armMuscle,rz:.18*b.armMuscle}
+    ],7);
+    parent.add(new THREE.Mesh(HeroicRTSWeld.toGeometry(HeroicRTSWeld.weldVertices(fore,1e-5)),leather));
+    sphere(parent,.23*o.glove,[s*1.25*b.shoulder,2.78,.17],dark,[1,.9,.9]);
+    for(let i=0;i<3;i++){
+      const band=new THREE.Mesh(new THREE.TorusGeometry(.235,.025,5,8),gold);
+      band.rotation.x=Math.PI/2; band.position.set(s*1.24*b.shoulder,3.00+i*.10,.14); parent.add(band);
+    }
+  }
+
+  // anatomical loft legs — shared with all three character templates
+  for(const s of [-1,1]){
+    HeroicAnatomyKit.leg(parent,{
+      side:s, x:s*.48*b.hips, material:dark, kneeMaterial:steel,
+      muscle:b.legMuscle, length:b.legLength, curve:b.legCurve,
+      thighCurve:b.thighCurve, calfCurve:b.calfCurve,
+      kneeBulge:b.kneeBulge, ankleTaper:b.ankleTaper, hip:b.hips,
+      bootBuilder:(root,opts,mats)=>HeroicBootKit.build(root,opts,mats),
+      bootOptions:{...state.boots,length:state.boots.length*o.boot,width:state.boots.width*o.boot},
+      bootMaterials:{upper:dark,sole:hunterMaterial('#171716',.94),strap:leather,buckle:gold,trim:gold}
+    });
+  }
+
+  // shoulder plates
+  for(const s of [-1,1]){
+    const pad=new THREE.Mesh(new THREE.CylinderGeometry(.34,.48,.16,6),steel);
+    pad.rotation.z=Math.PI/2; pad.position.set(s*1.04*b.shoulder,4.50,.03); parent.add(pad);
+    const riv=new THREE.Mesh(new THREE.IcosahedronGeometry(.06,0),gold);
+    riv.position.set(s*1.25*b.shoulder,4.53,.17); parent.add(riv);
+  }
+
+  // backpack + rolled bedroll
+  box(parent,[1.00,1.15,.42], [0,4.02,-.63], leather);
+  const roll=new THREE.Mesh(new THREE.CylinderGeometry(.25,.25,.92,8),leather);
+  roll.rotation.z=Math.PI/2; roll.position.set(0,4.67,-.68); parent.add(roll);
+  for(const s of [-1,1]){
+    const strap=box(parent,[.11,1.05,.06],[s*.28,4.03,-.88],gold,[0,0,s*.06]); parent.add(strap);
+  }
+
+  // sword sheath on back
+  const sheath=box(parent,[.17,1.95,.20],[.48,4.20,-.64],dark,[0,0,-.20]);
+  box(parent,[.23,.14,.24],[.43,5.16,-.55],gold,[0,0,-.20]);
+  const grip=box(parent,[.18,.72,.18],[.34,5.73,-.50],leather,[0,0,-.20]);
+  const pom=new THREE.Mesh(new THREE.CylinderGeometry(.16,.13,.16,8),gold);
+  pom.rotation.z=-.20; pom.position.set(.30,6.10,-.47); parent.add(pom);
+
+  // sidearm / flintlock
+  const gunRoot=new THREE.Group(); gunRoot.position.set(-.72,3.12,.56); parent.add(gunRoot);
+  box(gunRoot,[.18,.20,.72],[0,0,0],dark,[.0,0,.05]);
+  box(gunRoot,[.25,.15,.28],[0,-.22,.06],leather,[0,0,.02]);
+  const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.055,.075,.70,8),steel);
+  barrel.rotation.x=Math.PI/2; barrel.position.set(0,.12,.38); gunRoot.add(barrel);
+  const muzzle=new THREE.Mesh(new THREE.CylinderGeometry(.09,.09,.12,8),gold);
+  muzzle.rotation.x=Math.PI/2; muzzle.position.set(0,.12,.74); gunRoot.add(muzzle);
+}
+
+function buildHunterCharacter(parent){
+  buildHunterBody(parent);
+  buildAnimeHead(parent,false,true);
+  // neck scarf overlap
+  const scarf=hunterMaterial(state.colors.hunterScarf,.88);
+  const hood=new THREE.Mesh(new THREE.CylinderGeometry(.48,.52,.28,8),scarf);
+  hood.position.set(0,5.08,.02); parent.add(hood);
+}
+
+/* ================================================================
+   CHARACTER ROOT
+   ================================================================ */
+
+function buildCharacter(template){
+  const isPilot=template==="pilot";
+  const isHunter=template==="hunter";
+  const root=new THREE.Group();
+
+  root.name=isHunter?"Ven_Denst_Hunter_V6":
+            isPilot?"Starpilot_RedHair_V2":"Ananta_Simplified_V2";
+
+  if(isHunter) buildHunterCharacter(root);
+  else {
+    buildBody(root,isPilot);
+    buildAnimeHead(root,isPilot,false);
+  }
+
+  root.scale.setScalar(.95*state.body.height);
+
+  root.traverse(o=>{
+    if(o.isMesh){
+      o.castShadow=true;
+      o.receiveShadow=true;
+    }
+  });
+
+  root.userData.template=template;
+  root.userData.framework="HeroicRTSWeld V6";
+  root.userData.parameterized=true;
+  root.userData.anatomicalLegGenerator="HeroicAnatomyKit.leg";
+  root.userData.torsoGenerator="HeroicAnatomyKit.torso";
+  return root;
+}
+
+/* ================================================================
+   VIEWPORT / DEBUG
+   ================================================================ */
+
+function rebuild(){
+  if(character)scene.remove(character);
+  if(wireGroup)scene.remove(wireGroup);
+
+  character=buildCharacter(state.template);
+  scene.add(character);
+
+  wireGroup=null;
+  if(state.wire)toggleWire(true);
+  updateStatus();
+}
+
+function toggleWire(force){
+  state.wire=force===undefined?!state.wire:force;
+  if(wireGroup)scene.remove(wireGroup);
+  wireGroup=null;
+
+  if(state.wire){
+    wireGroup=new THREE.Group();
+
+    character.traverse(o=>{
+      if(!o.isMesh) return;
+      const lines=new THREE.LineSegments(
+        new THREE.WireframeGeometry(o.geometry),
+        new THREE.LineBasicMaterial({
+          color:0x5b98dc,
+          transparent:true,
+          opacity:.28
+        })
+      );
+      lines.position.copy(o.position);
+      lines.quaternion.copy(o.quaternion);
+      lines.scale.copy(o.scale);
+      wireGroup.add(lines);
+    });
+
+    scene.add(wireGroup);
+  }
+
+  document.getElementById("wireTool").classList.toggle("active",state.wire);
+  updateStatus();
+}
+
+function toggleGrid(){
+  state.grid=!state.grid;
+  gridObject.visible=state.grid;
+  document.getElementById("gridTool").classList.toggle("active",state.grid);
+}
+
+function frontView(){
+  camera.position.set(0,4.2,11);
+  controls.target.set(0,3.65,0);
+  controls.update();
+}
+
+function sideView(){
+  camera.position.set(10,4.2,0);
+  controls.target.set(0,3.65,0);
+  controls.update();
+}
+
+function updateStatus(){
+  const n=state.template==="hunter"?"Ven Denst · Hunter":
+          state.template==="pilot"?"Starpilot · Red Hair":"Ananta · Simplified";
+  document.getElementById("status").textContent=
+    `Template: ${n} · HeroicRTSWeld V6 · `+
+    `${state.wire?"Wireframe ON":"Loft topology live"} · `+
+    `Loft legs 7-sided · Anatomical curvature · Boot shell 60 tris · ${Math.round(state.boots.straps)} straps · `+
+    `${state.grid?"Grid ON":"Grid OFF"}`;
+}
+
+/* ================================================================
+   UI SCHEMA
+   ================================================================ */
+
+const schema={
+  body:[
+    ["Silhouette",[
+      ["Height","height",.78,1.24],
+      ["Shoulder Width","shoulder",.72,1.32],
+      ["Chest Width","chest",.72,1.28],
+      ["Waist Width","waist",.62,1.12],
+      ["Hip Width","hips",.72,1.24]
+    ]],
+    ["Limb Construction",[
+      ["Arm Length","armLength",.72,1.30],
+      ["Arm Muscle","armMuscle",.68,1.45],
+      ["Leg Length","legLength",.75,1.28],
+      ["Leg Muscle","legMuscle",.70,1.40],
+      ["Leg Curvature","legCurve",.00,1.35],
+      ["Thigh Shape","thighCurve",.70,1.35],
+      ["Calf Shape","calfCurve",.70,1.35],
+      ["Knee Bulge","kneeBulge",.70,1.35],
+      ["Ankle Taper","ankleTaper",.70,1.30],
+      ["Neck Width","neck",.72,1.18]
+    ]]
+  ],
+
+  face:[
+    ["Head Shape",[
+      ["Head Size","headSize",.78,1.18],
+      ["Face Width","faceWidth",.74,1.18],
+      ["Jaw","jaw",.70,1.20],
+      ["Chin","chin",.70,1.20],
+      ["Ear Size","ear",.65,1.25]
+    ]],
+    ["Features",[
+      ["Eye Size","eyeSize",.70,1.32],
+      ["Eye Spacing","eyeSpacing",.72,1.30],
+      ["Eye Height","eyeHeight",.88,1.12],
+      ["Brow Angle","browAngle",-0.30,.42],
+      ["Nose","nose",.65,1.30],
+      ["Mouth","mouth",.65,1.30]
+    ]]
+  ],
+
+  hair:[
+    ["Hair Mass",[
+      ["Volume","volume",.60,1.45],
+      ["Length","length",.55,1.50],
+      ["Fringe","fringe",.55,1.45],
+      ["Spike Size","spikes",.60,1.45],
+      ["Back Locks","back",.55,1.45]
+    ]]
+  ],
+
+  boots:[
+    ["Shoe Shape",[
+      ["Length","length",.82,1.20],
+      ["Width","width",.78,1.22],
+      ["Toe Volume","toe",.78,1.22],
+      ["Upper Height","height",.80,1.22],
+      ["Heel Height","heel",.78,1.18]
+    ]],
+    ["Sole / Hardware",[
+      ["Sole Thickness","sole",.06,.22],
+      ["Ankle Cuff","cuff",.78,1.25],
+      ["Strap Count","straps",0,3],
+      ["Strap Tightness","strapTight",.65,1.20]
+    ]]
+  ],
+
+  outfit:[
+    ["Fit / Equipment",[
+      ["Jacket Fit","jacketFit",.75,1.25],
+      ["Collar","collar",.70,1.30],
+      ["Glove Size","glove",.70,1.30],
+      ["Boot Size","boot",.72,1.32],
+      ["Belt","belt",.70,1.30]
+    ]],
+    ["Material Colors",[
+      ["Hair","hair","color"],
+      ["Skin","skin","color"],
+      ["Jacket","jacket","color"],
+      ["Shirt","shirt","color"],
+      ["Accent","accent","color"],
+      ["Eye","eye","color"],
+      ["Red Hair","hairRed","color"],
+      ["Hunter Hair","hunterHair","color"],
+      ["Hunter Coat","hunterCoat","color"],
+      ["Hunter Leather","hunterLeather","color"],
+      ["Hunter Gold","hunterGold","color"],
+      ["Hunter Scarf","hunterScarf","color"]
+    ]]
+  ]
+};
+
+function renderControls(){
+  const host=document.getElementById("controls");
+  host.innerHTML="";
+
+  for(const [section,rows] of schema[state.tab]){
+    const sec=document.createElement("div");
+    sec.className="sec";
+
+    const head=document.createElement("div");
+    head.className="sh";
+    head.textContent=section;
+    sec.appendChild(head);
+
+    const body=document.createElement("div");
+    body.className="sb";
+
+    for(const row of rows){
+      const [label,key,min,max,type]=row;
+
+      if(type==="color"){
+        const wrap=document.createElement("div");
+        wrap.className="color";
+        wrap.innerHTML=
+          `<label>${label}</label>`+
+          `<input type="color" value="${state.colors[key]}">`+
+          `<output>${state.colors[key]}</output>`;
+
+        wrap.querySelector("input").addEventListener("input",e=>{
+          state.colors[key]=e.target.value;
+          wrap.querySelector("output").textContent=e.target.value;
+          rebuild();
+        });
+
+        body.appendChild(wrap);
+      }else{
+        const wrap=document.createElement("div");
+        wrap.className="row";
+        wrap.innerHTML=
+          `<label>${label}</label>`+
+          `<input type="range" min="${min}" max="${max}" step="${key==="straps"?1:".01"}" value="${state[state.tab][key]}">`+
+          `<output>${Number(state[state.tab][key]).toFixed(2)}</output>`;
+
+        wrap.querySelector("input").addEventListener("input",e=>{
+          state[state.tab][key]=Number(e.target.value);
+          wrap.querySelector("output").textContent=Number(e.target.value).toFixed(2);
+          rebuild();
+        });
+
+        body.appendChild(wrap);
+      }
+    }
+
+    sec.appendChild(body);
+    host.appendChild(sec);
+  }
+}
+
+function chooseTemplate(t){
+  state.template=t;
+
+  document.querySelectorAll("[data-template]").forEach(el=>{
+    el.classList.toggle(
+      "active",
+      el.dataset.template===t && el.classList.contains("card")
+    );
+    if(el.classList.contains("file")){
+      el.classList.toggle("sel",el.dataset.template===t);
+    }
+  });
+
+  rebuild();
+}
+
+/* ================================================================
+   RANDOMIZER
+   ================================================================ */
+
+function randomize(){
+  const ranges={
+    height:[.88,1.15],
+    shoulder:[.84,1.20],
+    chest:[.82,1.18],
+    waist:[.72,1.04],
+    hips:[.86,1.12],
+    armLength:[.84,1.16],
+    armMuscle:[.82,1.28],
+    legLength:[.88,1.16],
+    legMuscle:[.82,1.25],
+    neck:[.82,1.10],
+
+    headSize:[.90,1.08],
+    faceWidth:[.88,1.10],
+    jaw:[.82,1.10],
+    chin:[.85,1.12],
+    ear:[.85,1.12],
+    eyeSize:[.86,1.16],
+    eyeSpacing:[.88,1.14],
+    eyeHeight:[.94,1.06],
+    browAngle:[-.08,.24],
+    nose:[.82,1.12],
+    mouth:[.82,1.14],
+
+    volume:[.82,1.25],
+    length:[.75,1.28],
+    fringe:[.80,1.22],
+    spikes:[.82,1.22],
+    back:[.78,1.25],
+
+    jacketFit:[.86,1.14],
+    collar:[.86,1.16],
+    glove:[.86,1.14],
+    boot:[.86,1.14],
+    belt:[.86,1.14],
+
+    length:[.88,1.16],
+    width:[.86,1.16],
+    toe:[.86,1.18],
+    sole:[.07,.20],
+    height:[.86,1.18],
+    cuff:[.82,1.20],
+    straps:[1,3],
+    strapTight:[.72,1.12],
+    heel:[.82,1.12]
+  };
+
+  for(const group of ["body","face","hair","outfit","boots"]){
+    for(const key in state[group]){
+      if(ranges[key]){
+        const [a,b]=ranges[key];
+        state[group][key]=a+Math.random()*(b-a);
+      }
+    }
+  }
+
+  renderControls();
+  rebuild();
+}
+
+/* ================================================================
+   INIT
+   ================================================================ */
+
+function init(){
+  const viewport=document.getElementById("viewport");
+
+  scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x080e16);
+
+  camera=new THREE.PerspectiveCamera(34,1,.1,100);
+  camera.position.set(0,4.2,10.5);
+
+  renderer=new THREE.WebGLRenderer({antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setSize(viewport.clientWidth,viewport.clientHeight,false);
+  renderer.shadowMap.enabled=true;
+  renderer.outputColorSpace=THREE.SRGBColorSpace;
+  renderer.domElement.className="maincanvas";
+  viewport.appendChild(renderer.domElement);
+
+  controls=new OrbitControls(camera,renderer.domElement);
+  controls.enableDamping=true;
+  controls.dampingFactor=.075;
+  controls.minDistance=5;
+  controls.maxDistance=17;
+  controls.target.set(0,3.7,0);
+
+  scene.add(new THREE.HemisphereLight(0xbcd3ee,0x151b23,2.1));
+
+  const key=new THREE.DirectionalLight(0xffffff,3.2);
+  key.position.set(4,9,7);
+  key.castShadow=true;
+  scene.add(key);
+
+  const fill=new THREE.DirectionalLight(0x668fff,1.8);
+  fill.position.set(-5,5,-6);
+  scene.add(fill);
+
+  const rim=new THREE.DirectionalLight(0xff7890,1.15);
+  rim.position.set(4,5,-7);
+  scene.add(rim);
+
+  gridObject=new THREE.GridHelper(20,40,0x314255,0x192634);
+  gridObject.position.y=0;
+  scene.add(gridObject);
+
+  rebuild();
+  renderControls();
+  window.addEventListener("resize",resize);
+  animate();
+}
+
+function resize(){
+  const v=document.getElementById("viewport");
+  const w=v.clientWidth,h=v.clientHeight;
+  camera.aspect=w/h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w,h,false);
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene,camera);
+}
+
+/* ================================================================
+   TEMPLATE PREVIEW RENDERERS
+   ================================================================ */
+
+function makeThumb(canvas,template){
+  const s=new THREE.Scene();
+  s.background=new THREE.Color(0x172230);
+
+  const c=new THREE.PerspectiveCamera(31,2,.1,30);
+  c.position.set(0,4.1,9.2);
+  c.lookAt(0,3.65,0);
+
+  const r=new THREE.WebGLRenderer({
+    canvas,
+    antialias:true,
+    alpha:false
+  });
+
+  r.setPixelRatio(1);
+  r.setSize(270,148,false);
+
+  s.add(new THREE.HemisphereLight(0xffffff,0x25364a,2.3));
+
+  const d=new THREE.DirectionalLight(0xffffff,3);
+  d.position.set(3,7,5);
+  s.add(d);
+
+  const old=state.template;
+  state.template=template;
+  const oldWire=state.wire;
+  state.wire=false;
+  const g=buildCharacter(template);
+  state.template=old;
+  state.wire=oldWire;
+
+  s.add(g);
+
+  function draw(){
+    r.render(s,c);
+    requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+/* ================================================================
+   EVENTS
+   ================================================================ */
+
+document.querySelectorAll(".card,.file[data-template]").forEach(el=>{
+  el.addEventListener("click",()=>{
+    chooseTemplate(el.dataset.template);
+  });
+});
+
+document.getElementById("loadTemplate").addEventListener("click",rebuild);
+document.getElementById("wireTool").addEventListener("click",()=>toggleWire());
+document.getElementById("gridTool").addEventListener("click",toggleGrid);
+document.getElementById("frontTool").addEventListener("click",frontView);
+document.getElementById("sideTool").addEventListener("click",sideView);
+
+document.getElementById("reset").addEventListener("click",()=>{
+  const snapshot=JSON.parse(JSON.stringify(defaults));
+  for(const group of ["body","face","hair","outfit","boots","colors"])
+    Object.assign(state[group],snapshot[group]);
+
+  renderControls();
+  rebuild();
+});
+
+document.getElementById("random").addEventListener("click",randomize);
+document.getElementById("apply").addEventListener("click",rebuild);
+
+document.querySelectorAll(".tab").forEach(tab=>{
+  tab.addEventListener("click",()=>{
+    state.tab=tab.dataset.tab;
+    document.querySelectorAll(".tab").forEach(t=>
+      t.classList.toggle("active",t===tab)
+    );
+    renderControls();
+  });
+});
+
+window.addEventListener("keydown",e=>{
+  const k=e.key.toLowerCase();
+
+  if(k==="w")toggleWire();
+  if(k==="g")toggleGrid();
+  if(k==="r")rebuild();
+  if(k==="f")frontView();
+  if(k==="s")sideView();
+
+  if(k==="1")document.getElementById("viewInfo").textContent=
+    "Perspective · Face Select · V6 topology";
+  if(k==="2")document.getElementById("viewInfo").textContent=
+    "Perspective · Edge Select · V6 topology";
+  if(k==="3")document.getElementById("viewInfo").textContent=
+    "Perspective · Vertex Select · V6 topology";
+});
+
+/* Initial UI */
+renderControls();
+init();
+
+makeThumb(document.getElementById("thumbAnanta"),"ananta");
+makeThumb(document.getElementById("thumbPilot"),"pilot");
+makeThumb(document.getElementById("thumbHunter"),"hunter");
+</script>
+</body>
+</html>
