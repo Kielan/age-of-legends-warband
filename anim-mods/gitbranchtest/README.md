@@ -69,3 +69,12 @@ ClothProfile {
   anchorPoints,
   symmetry
 }
+
+
+The intended dock stack is:
+ENTITY / TRANSFORM
+ARM RINGS
+ARM ANATOMY
+RIG TEST
+ARM DEBUG
+RUNTIME DEBUG
