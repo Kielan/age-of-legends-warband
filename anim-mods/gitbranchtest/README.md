@@ -35,3 +35,37 @@ V11.00.26 — Torso Silhouette + Hands / Rifle Sockets
 Only after shoulders, cape, skirt, legs, and boots exist should we finalize the torso silhouette. Broaden the upper chest, compress the waist, and clean the transitions into the shoulder sockets. Then revisit the hands: right-hand trigger socket, left-hand barrel-support socket, wrist orientation, palm scale, finger-block placement, and rifle attachment points. This keeps us from designing hands around a torso/arm pose that later changes.
 V11.00.27 — Arm Profile Saving + Final Proportion Pass
 Convert the successful manual edits into reusable data. Add a RiflemanArmProfile containing ring centers, widths, depths, local rotations, falloff values, and pose offsets. Include Save Arm Profile / Load Arm Profile / Mirror Profile / Reset to Generated. Then do the final whole-character comparison against image 1: hood height, shoulder width, cape spread, chest-to-waist ratio, arm mass, skirt length, knee position, boot size, rifle placement, and overall RTS readability.
+
+The important dependency chain is:
+
+Arm editing tools
+   ↓
+Arm anatomy parameters
+   ↓
+Weighted sculpt / relax
+   ↓
+Topology creation tools
+   ↓
+Arm pose
+   ↓
+Pauldron fit
+   ↓
+Hood + cape
+   ↓
+Skirt / legs / boots
+   ↓
+Torso + hands / rifle
+   ↓
+Saved profile + final proportions
+
+ClothProfile {
+  segmentCount,
+  width,
+  length,
+  flare,
+  stiffness,
+  foldDepth,
+  edgeCurl,
+  anchorPoints,
+  symmetry
+}
