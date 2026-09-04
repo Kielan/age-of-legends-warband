@@ -78,3 +78,17 @@ ARM ANATOMY
 RIG TEST
 ARM DEBUG
 RUNTIME DEBUG
+
+regression check
+
+Before testing anatomy, confirm nothing from V18 broke.
+
+Click right arm once.
+Confirm arm entity selection.
+Click right arm again.
+Confirm Edit Mode.
+Confirm black vertex points and black edges appear.
+Alt-click a ring.
+Confirm whole ring becomes yellow.
+Drag XYZ.
+Confirm selected ring moves.
