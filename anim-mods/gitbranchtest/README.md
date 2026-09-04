@@ -14,21 +14,21 @@ V11.00.21 — Blender-Style Face/Edge Construction
 
 Expand Edit Mode beyond manipulation. Selected compatible vertices or edges + F should create a face, matching the Blender mental model. Support closing an open edge boundary, filling selected loops where valid, creating triangles/quads, and rejecting non-manifold/invalid fills rather than silently making broken geometry. Also add edge creation between two selected vertices and basic dissolve/delete operations. This becomes the first genuinely useful manual topology-repair version.
 
-V11.00.22 — Arm Pose + Rifle Relationship
-
-Now use the new ring tools to match the second reference's cross-body pose. Work shoulder → bicep → elbow → forearm while keeping the anatomy profile from V19/V20 intact. The elbow should become compressed and broad rather than pointed; the forearm should flare again after the elbow; wrist and bracer socket should line up with the rifle grip. This is the version where we should finally judge the arm visually against the rifleman reference rather than judging topology in isolation.
-
-V11.00.23 — Shoulder Pauldrons
+V11.00.22 — Shoulder Pauldrons
 
 Use image 1 as the authority, not image 2. Build the broad layered pauldrons over the finished anatomical shoulder instead of reshaping the arm around armor. Give each pauldron a clean shoulder anchor, controlled clearance from the deltoid, layered outer plates/cloth sections, and independent transform/fit parameters. The shoulder socket should remain slightly buried beneath this structure so the character reads as broad and armored without exposing a mechanical arm joint.
 
-V11.00.24 — Hood / Cape Connection + Cloth Parameters
+V11.00.23 — Hood / Cape Connection + Cloth Parameters
 
 Connect hood → upper back → shoulder cape cleanly. This is also where I would introduce the first parameterized cloth system, but not a full node editor yet. Useful parameters would be drop, flare, stiffness, foldDepth, segmentCount, shoulderSpread, backLength, and edgeCurl. Once that system is proven, a later node editor can expose those same parameters visually rather than inventing a separate cloth architecture.
 
-V11.00.25 — Cloth Skirt Panels + Legs + Boots
+V11.00.24 — Cloth Skirt Panels + Legs + Boots
 
 Build the lower-body hierarchy from the first concept image. Start with discrete front/side/back skirt panels instead of one continuous shell. Then adjust the legs to the stockier heroic RTS proportions and enlarge the boots into strong planted forms. The priority is readable low-poly masses at game-camera distance: separated skirt panels, visible knees, short sturdy lower legs, and oversized boots.
+
+V11.00.25 — Arm Pose + Rifle Relationship
+
+Now use the new ring tools to match the second reference's cross-body pose. Work shoulder → bicep → elbow → forearm while keeping the anatomy profile from V19/V20 intact. The elbow should become compressed and broad rather than pointed; the forearm should flare again after the elbow; wrist and bracer socket should line up with the rifle grip. This is the version where we should finally judge the arm visually against the rifleman reference rather than judging topology in isolation.
 
 V11.00.26 — Torso Silhouette + Hands / Rifle Sockets
 
