@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HeroicRTS Character Editor V11.00.13e - V11 Topology Routing Authority Hotfix</title>
+<title>HeroicRTS Character Editor V11.00.19 - Arm Anatomy Parameter Pass</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#080d14;color:#e7edf5;font:13px Inter,system-ui,sans-serif}
@@ -838,7 +838,7 @@ body.window2-collapsed-v1081i .center{
 <body>
 <div class="app">
 <header class="top">
-  <div class="brand">◈ <b>HeroicRTS</b> Character Editor <span class="badge">V11.00.13e</span></div>
+  <div class="brand">◈ <b>HeroicRTS</b> Character Editor <span class="badge">V11.00.19</span></div>
   <div class="menu">
     <span>File</span><span>Edit</span><span>View</span><span>Templates</span><span>Mesh</span>
     <span class="modeSep"></span>
@@ -6305,8 +6305,15 @@ function restoreSelectionSnapshotV1033(snapshot){
       renderEntitySummary?.();
       renderMeshElementList?.();
 
-      if(snapshot.meshOnlyEdit){
+      if(snapshot.meshOnlyEdit || manualTopo?.enabled){
         clearEntityBBox?.();
+        try{
+          entityTransformControls?.detach?.();
+          if(entityTransformControls){
+            entityTransformControls.visible=false;
+            entityTransformControls.enabled=false;
+          }
+        }catch{}
       }else if(topologyInspectorState.selectedEntity){
         showEntityBBox?.(topologyInspectorState.selectedEntity);
       }else{
@@ -6828,22 +6835,10 @@ function topoCreateAxisHandleV1029(axis,color){
 }
 
 function topoEnsureDraggableXYZGizmoV1029(){
-  let root=topologyInspectorState.xyzRoot;
-  if(root?.name==="TopoXYZGizmo_V1029")return root;
-
-  if(root)root.parent?.remove(root);
-
-  root=new THREE.Group();
-  root.name="TopoXYZGizmo_V1029";
-  root.visible=false;
-  root.add(
-    topoCreateAxisHandleV1029("X",0xff3344),
-    topoCreateAxisHandleV1029("Y",0x33ff66),
-    topoCreateAxisHandleV1029("Z",0x3399ff)
-  );
-  scene.add(root);
-  topologyInspectorState.xyzRoot=root;
-  return root;
+  if(!TopologyXYZDragV1055?.root){
+    createTopologyXYZDragV1055?.();
+  }
+  return TopologyXYZDragV1055?.root || null;
 }
 
 function topoPositionGizmoV1029(ref){
@@ -6920,113 +6915,44 @@ function topoDragPlaneV1029(axis,origin){
 }
 
 function topoBeginGizmoDragV1029(event){
-  if(state.mode!=="topology" || manualTopo.mode!=="vertex")return false;
+  // V11.00.15b compatibility bridge.
+  // The old V1029 component gizmo no longer owns any rendered handles.
+  // All drag authority belongs to TopologyXYZDragV1055.
+  if(
+    state?.mode!=="topology" ||
+    !manualTopo?.enabled ||
+    !manualTopo?.editMesh
+  ){
+    return false;
+  }
 
-  const root=topoEnsureDraggableXYZGizmoV1029();
-  if(!root.visible)return false;
-
-  topoPointerRayV1029(event);
-  const hits=ray.intersectObjects(root.children,true);
-  if(!hits.length)return false;
-
-  const axis=topoAxisFromHitV1029(hits[0].object);
-  const ref=topoGetActiveVertexRefV1029();
-  if(!axis || !ref?.mesh)return false;
-
-  const startWorld=topoVertexWorldPositionV1028(
-    ref.mesh,ref.vertexIndex,new THREE.Vector3()
-  );
-  if(!startWorld)return false;
-
-  ref.mesh.updateWorldMatrix(true,false);
-  const startLocal=ref.mesh.worldToLocal(startWorld.clone());
-  const plane=topoDragPlaneV1029(axis,startWorld);
-  const planeHitStart=new THREE.Vector3();
-
-  if(!ray.ray.intersectPlane(plane,planeHitStart))return false;
-
-  Object.assign(manualTopo.gizmoDrag,{
-    active:true,
-    axis,
-    mesh:ref.mesh,
-    vertexIndex:ref.vertexIndex,
-    startWorld:startWorld.clone(),
-    startLocal:startLocal.clone(),
-    dragPlane:plane,
-    planeHitStart:planeHitStart.clone(),
-    axisWorld:topoAxisVectorV1029(axis)
-  });
-
-  controls.enabled=false;
-  event.preventDefault();
-  event.stopPropagation();
-  return true;
+  try{
+    return !!beginTopologyXYZDragV1055?.(event);
+  }catch(err){
+    console.error("[V11.00.15b] topology gizmo drag bridge failed",err);
+    return false;
+  }
 }
 
 function topoMoveGizmoDragV1029(event){
-  const d=manualTopo.gizmoDrag;
-  if(!d.active)return false;
-
-  topoPointerRayV1029(event);
-  const hit=new THREE.Vector3();
-  if(!ray.ray.intersectPlane(d.dragPlane,hit))return true;
-
-  const amount=hit.clone().sub(d.planeHitStart).dot(d.axisWorld);
-  const nextWorld=d.startWorld.clone().addScaledVector(d.axisWorld,amount);
-
-  d.mesh.updateWorldMatrix(true,false);
-  const local=d.mesh.worldToLocal(nextWorld.clone());
-  const p=d.mesh.geometry.attributes.position;
-
-  p.setXYZ(d.vertexIndex,local.x,local.y,local.z);
-  p.needsUpdate=true;
-  d.mesh.geometry.computeVertexNormals?.();
-
+  if(!TopologyXYZDragV1055?.active)return false;
   try{
-    safeComputeGeometryBoundsV127c(
-      d.mesh.geometry,d.mesh.name||"vertex gizmo drag"
-    );
-  }catch{}
-
-  if(d.mesh===manualTopo.editMesh){
-    topoRebuildHandles();
-    manualTopo.selectedVertices.clear();
-    manualTopo.selectedVertices.add(d.vertexIndex);
-    topoRefreshOverlayMaterials();
+    return !!moveTopologyXYZDragV1055?.(event);
+  }catch(err){
+    console.error("[V11.00.15b] topology gizmo move bridge failed",err);
+    return false;
   }
-
-  topoPositionGizmoV1029({
-    mesh:d.mesh,vertexIndex:d.vertexIndex
-  });
-  topoRefreshCrossMergePreviewV1028();
-
-  event.preventDefault();
-  event.stopPropagation();
-  return true;
 }
 
 function topoEndGizmoDragV1029(event){
-  const d=manualTopo.gizmoDrag;
-  if(!d.active)return false;
-
-  d.active=false;
-  controls.enabled=true;
-
-  topoRebuildHandles();
-  topoRefreshOverlayMaterials();
-  updateTopologyXYZGizmo();
-  topoRefreshCrossMergePreviewV1028();
-  refreshTorsoLegVertexWorkspaceV1055();
-
-  Object.assign(d,{
-    axis:null,mesh:null,vertexIndex:-1,
-    startWorld:null,startLocal:null,dragPlane:null,
-    planeHitStart:null,axisWorld:null
-  });
-
-  event?.preventDefault?.();
-  event?.stopPropagation?.();
-  return true;
+  if(!TopologyXYZDragV1055?.active)return false;
+  try{
+    endTopologyXYZDragV1055?.(event);
+    return true;
+  }catch(err){
+    console.error("[V11.00.15b] topology gizmo end bridge failed",err);
+    return false;
+  }
 }
 
 function installTopologyGizmoDragV1029(){
@@ -7061,33 +6987,26 @@ function installTopologyGizmoDragV1029(){
 const TopologyXYZDragV1055={
   root:null,
   handles:[],
+  translateVisuals:[],
+  translateHandles:[],
+  rotateVisuals:[],
+  rotateHandles:[],
+  ctrl:false,
   active:false,
+  mode:"translate",
   axis:null,
   pointerId:null,
   startWorld:new THREE.Vector3(),
+  startClientX:0,
+  startClientY:0,
   plane:new THREE.Plane(),
-  originalVertices:new Map()
+  originalVertices:new Map(),
+  // V11.00.18 per-vertex proportional-edit weights.
+  vertexWeights:new Map()
 };
 
 function topologySelectedVertexIndicesV1074(){
-  const data=topoGeometryArrays?.();
-  if(!data)return [];
-  const {faces}=data;
-  const ids=new Set();
-
-  if(manualTopo.mode==="vertex"){
-    for(const i of manualTopo.selectedVertices||[])ids.add(i);
-  }else if(manualTopo.mode==="edge"){
-    const edges=topoBuildEdgeList(faces);
-    for(const ei of manualTopo.selectedEdges||[]){
-      const e=edges[ei]; if(e){ids.add(e.a);ids.add(e.b);}
-    }
-  }else if(manualTopo.mode==="face"){
-    for(const fi of manualTopo.selectedFaces||[]){
-      const f=faces[fi]; if(f)for(const vi of f)ids.add(vi);
-    }
-  }
-  return [...ids];
+  return v110017SelectedMeshVertices();
 }
 
 function topologySelectedCentroidWorldV1055(){
@@ -7114,9 +7033,28 @@ function disposeTopologyXYZDragV1055(){
 
   d.root=null;
   d.handles.length=0;
+  d.translateVisuals.length=0;
+  d.translateHandles.length=0;
+  d.rotateVisuals.length=0;
+  d.rotateHandles.length=0;
 }
 
 function createTopologyXYZDragV1055(){
+  // V11.00.15a: there must be exactly one component gizmo root.
+  const stale=[];
+  scene?.traverse?.(o=>{
+    if(
+      o!==TopologyXYZDragV1055.root &&
+      (
+        o.name==="TopologyXYZDrag_V1055" ||
+        o.name==="TopologyXYZDrag_V110015" ||
+        o.userData?.topologyComponentGizmoV110015a
+      )
+    )stale.push(o);
+  });
+  for(const o of stale)o.parent?.remove(o);
+
+
   disposeTopologyXYZDragV1055();
 
   if(
@@ -7130,6 +7068,7 @@ function createTopologyXYZDragV1055(){
 
   const root=new THREE.Group();
   root.name="TopologyXYZDrag_V1055";
+  root.userData.topologyComponentGizmoV110015a=true;
 
   // V10.55: offset the gizmo slightly toward the camera so its shafts
   // do not begin directly inside the selected vertex dot.
@@ -7164,6 +7103,7 @@ function createTopologyXYZDragV1055(){
     shaft.position.copy(spec.dir).multiplyScalar(.17);
     shaft.renderOrder=981;
     root.add(shaft);
+    TopologyXYZDragV1055.translateVisuals.push(shaft);
 
     const arrow=new THREE.Mesh(
       new THREE.ConeGeometry(.040,.095,8),
@@ -7178,16 +7118,21 @@ function createTopologyXYZDragV1055(){
     arrow.position.copy(spec.dir).multiplyScalar(.39);
     arrow.renderOrder=981;
     root.add(arrow);
+    TopologyXYZDragV1055.translateVisuals.push(arrow);
 
     // Wide transparent cylinder = easy mouse target.
+    const hitMat=new THREE.MeshBasicMaterial({
+      transparent:true,
+      opacity:0,
+      depthTest:false,
+      depthWrite:false,
+      colorWrite:false
+    });
+    hitMat.visible=false;
+
     const hit=new THREE.Mesh(
       new THREE.CylinderGeometry(.060,.060,.52,8),
-      new THREE.MeshBasicMaterial({
-        transparent:true,
-        opacity:0,
-        depthTest:false,
-        depthWrite:false
-      })
+      hitMat
     );
 
     hit.quaternion.setFromUnitVectors(
@@ -7197,15 +7142,73 @@ function createTopologyXYZDragV1055(){
 
     hit.position.copy(spec.dir).multiplyScalar(.23);
     hit.userData.topologyXYZHandleV1055=true;
+    hit.userData.mode="translate";
     hit.userData.axis=spec.axis;
     hit.renderOrder=982;
 
     root.add(hit);
     TopologyXYZDragV1055.handles.push(hit);
+    TopologyXYZDragV1055.translateHandles.push(hit);
+  }
+
+  const ringSpecs=[
+    {axis:"x",color:0xff3333,rot:new THREE.Euler(0,Math.PI/2,0)},
+    {axis:"y",color:0x35dc63,rot:new THREE.Euler(Math.PI/2,0,0)},
+    {axis:"z",color:0x3a8cff,rot:new THREE.Euler(0,0,0)}
+  ];
+
+  for(const spec of ringSpecs){
+    const ring=new THREE.Mesh(
+      new THREE.TorusGeometry(.31,.009,6,64),
+      new THREE.MeshBasicMaterial({
+        color:spec.color,
+        depthTest:false,
+        depthWrite:false
+      })
+    );
+    ring.rotation.copy(spec.rot);
+    ring.renderOrder=985;
+    ring.userData.topologyRotationVisualV110015=true;
+    root.add(ring);
+    TopologyXYZDragV1055.rotateVisuals.push(ring);
+
+    const hitRingMat=new THREE.MeshBasicMaterial({
+      transparent:true,
+      opacity:0,
+      depthTest:false,
+      depthWrite:false,
+      colorWrite:false
+    });
+    hitRingMat.visible=false;
+
+    const hitRing=new THREE.Mesh(
+      new THREE.TorusGeometry(.31,.045,6,64),
+      hitRingMat
+    );
+    hitRing.rotation.copy(spec.rot);
+    hitRing.userData.topologyXYZHandleV1055=true;
+    hitRing.userData.mode="rotate";
+    hitRing.userData.axis=spec.axis;
+    root.add(hitRing);
+
+    TopologyXYZDragV1055.handles.push(hitRing);
+    TopologyXYZDragV1055.rotateHandles.push(hitRing);
   }
 
   scene.add(root);
   TopologyXYZDragV1055.root=root;
+  refreshTopologyXYZGizmoModeV110015();
+}
+
+
+function refreshTopologyXYZGizmoModeV110015(){
+  const d=TopologyXYZDragV1055;
+  const rotate=!!d.ctrl;
+
+  for(const o of d.translateVisuals)o.visible=!rotate;
+  for(const o of d.translateHandles)o.visible=!rotate;
+  for(const o of d.rotateVisuals)o.visible=rotate;
+  for(const o of d.rotateHandles)o.visible=rotate;
 }
 
 function refreshTopologyXYZDragV1055(){
@@ -7230,6 +7233,8 @@ function refreshTopologyXYZDragV1055(){
       .copy(center)
       .addScaledVector(cameraToCenter,-0.055);
   }
+
+  refreshTopologyXYZGizmoModeV110015();
 }
 
 function topologyPointerRayV1055(event){
@@ -7272,11 +7277,20 @@ function beginTopologyXYZDragV1055(event){
   const pos=mesh.geometry.attributes.position;
 
   d.active=true;
+  d.mode=hit.object.userData.mode || (d.ctrl?"rotate":"translate");
   d.axis=hit.object.userData.axis;
   d.pointerId=event.pointerId;
+  d.startClientX=event.clientX;
+  d.startClientY=event.clientY;
   d.originalVertices.clear();
+  d.vertexWeights.clear();
 
-  for(const i of topologySelectedVertexIndicesV1074()){
+  const weighted=
+    typeof v110018WeightedVertexMap==="function"
+      ? v110018WeightedVertexMap()
+      : new Map(topologySelectedVertexIndicesV1074().map(i=>[i,1]));
+
+  for(const [i,weight] of weighted){
     d.originalVertices.set(
       i,
       new THREE.Vector3(
@@ -7285,6 +7299,7 @@ function beginTopologyXYZDragV1055(event){
         pos.getZ(i)
       )
     );
+    d.vertexWeights.set(i,weight);
   }
 
   const center=topologySelectedCentroidWorldV1055();
@@ -7315,6 +7330,52 @@ function beginTopologyXYZDragV1055(event){
   return true;
 }
 
+
+function syncTopologyVisualGeometryV110015a(){
+  const mesh=manualTopo?.editMesh;
+  const pos=mesh?.geometry?.attributes?.position;
+  if(!mesh||!pos)return;
+
+  const pts=manualTopo?.vertexHandles?.isPoints
+    ? manualTopo.vertexHandles
+    : null;
+
+  const pAttr=pts?.geometry?.getAttribute?.("position");
+
+  if(pAttr && pAttr.count===pos.count){
+    for(let i=0;i<pos.count;i++){
+      pAttr.setXYZ(i,pos.getX(i),pos.getY(i),pos.getZ(i));
+    }
+
+    pAttr.needsUpdate=true;
+    pts.geometry.computeBoundingSphere?.();
+  }
+
+  const data=topoGeometryArrays?.();
+
+  if(data && manualTopo?.wireOverlay){
+    const edgeList=topoBuildEdgeList(data.faces);
+    const arr=[];
+
+    for(const e of edgeList){
+      const a=data.vertices[e.a];
+      const b=data.vertices[e.b];
+      arr.push(a.x,a.y,a.z,b.x,b.y,b.z);
+    }
+
+    manualTopo.wireOverlay.geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(arr,3)
+    );
+
+    manualTopo.wireOverlay.geometry.attributes.position.needsUpdate=true;
+    manualTopo.wireOverlay.geometry.computeBoundingSphere?.();
+  }
+
+  v110017EnsureComponents();
+  v110017ApplyComponentColors();
+}
+
 function moveTopologyXYZDragV1055(event){
   const d=TopologyXYZDragV1055;
 
@@ -7327,6 +7388,47 @@ function moveTopologyXYZDragV1055(event){
   const pos=mesh?.geometry?.attributes?.position;
   if(!mesh||!pos)return false;
 
+  const axisWorld=axisVectorWorldV1055(d.axis);
+
+  if(d.mode==="rotate"){
+    const dx=event.clientX-d.startClientX;
+    const dy=event.clientY-d.startClientY;
+    const angle=(dx-dy)*0.0105;
+
+    const centerWorld=d.startWorld.clone();
+    const q=new THREE.Quaternion().setFromAxisAngle(axisWorld,angle);
+
+    mesh.updateWorldMatrix(true,false);
+
+    for(const [i,startLocal] of d.originalVertices){
+      const weight=d.vertexWeights.get(i)??1;
+      const weightedQ=
+        weight>=.999
+          ? q
+          : new THREE.Quaternion().setFromAxisAngle(axisWorld,angle*weight);
+
+      const world=mesh.localToWorld(startLocal.clone());
+      const rotated=world
+        .sub(centerWorld)
+        .applyQuaternion(weightedQ)
+        .add(centerWorld);
+      const local=mesh.worldToLocal(rotated);
+      pos.setXYZ(i,local.x,local.y,local.z);
+    }
+
+    pos.needsUpdate=true;
+    mesh.geometry.computeVertexNormals?.();
+    safeTopologyBoundsV1055(mesh.geometry,"XYZ vertex rotate");
+
+    syncTopologyVisualGeometryV110015a();
+    topoRefreshOverlayMaterials?.();
+    refreshTopologyXYZDragV1055?.();
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return true;
+  }
+
   const ray=topologyPointerRayV1055(event);
   const worldHit=new THREE.Vector3();
 
@@ -7334,7 +7436,7 @@ function moveTopologyXYZDragV1055(event){
     return false;
   }
 
-  const axisWorld=axisVectorWorldV1055(d.axis);
+
 
   const signedDistance=
     worldHit.clone()
@@ -7358,11 +7460,12 @@ function moveTopologyXYZDragV1055(event){
     endpointLocal.sub(originLocal);
 
   for(const [i,start] of d.originalVertices){
+    const weight=d.vertexWeights.get(i)??1;
     pos.setXYZ(
       i,
-      start.x+localOffset.x,
-      start.y+localOffset.y,
-      start.z+localOffset.z
+      start.x+localOffset.x*weight,
+      start.y+localOffset.y*weight,
+      start.z+localOffset.z*weight
     );
   }
 
@@ -7371,7 +7474,7 @@ function moveTopologyXYZDragV1055(event){
   mesh.geometry.computeVertexNormals?.();
   safeTopologyBoundsV1055(mesh.geometry,"XYZ vertex drag");
 
-  topoRefreshOverlayGeometry?.();
+  syncTopologyVisualGeometryV110015a();
   refreshTorsoLegVertexWorkspaceV1055?.();
   updateTopologyXYZGizmo?.();
   refreshTopologyXYZDragV1055();
@@ -7403,7 +7506,9 @@ function endTopologyXYZDragV1055(event){
   controls.update();
 
   pushSelectionHistoryV1033?.(
-    `Move vertices ${d.axis.toUpperCase()}`
+    d.mode==="rotate"
+      ? `Rotate vertices ${d.axis.toUpperCase()}`
+      : `Move vertices ${d.axis.toUpperCase()}`
   );
 
   debugLog?.("TOPO","V10.55 XYZ drag end",{
@@ -7416,7 +7521,117 @@ function endTopologyXYZDragV1055(event){
   return true;
 }
 
+
+
+// V11.00.18 ARM RING EDITING SHORTCUTS
+window.addEventListener("keydown",e=>{
+  if(!v110018IsArmEdit())return;
+
+  if(!e.ctrlKey && !e.metaKey && !e.altKey){
+    const anatomyKeyMap={
+      "1":"shoulderSocket",
+      "2":"deltoidOuter",
+      "3":"bicepPeak",
+      "4":"preElbow"
+    };
+    if(anatomyKeyMap[e.key]){
+      v110018SelectSemanticRing(anatomyKeyMap[e.key]);
+      e.preventDefault();
+      return;
+    }
+  }
+
+  if(e.key==="[" || e.key==="]"){
+    ArmRingEditorV110018.falloffRadius=THREE.MathUtils.clamp(
+      ArmRingEditorV110018.falloffRadius + (e.key==="]"?1:-1),
+      0,4
+    );
+    if(ArmRingEditorV110018.falloffInput){
+      ArmRingEditorV110018.falloffInput.value=String(
+        ArmRingEditorV110018.falloffRadius
+      );
+    }
+    v110018RefreshPanel();
+    topoUpdateStatus?.(
+      `Ring proportional falloff: ±${ArmRingEditorV110018.falloffRadius} rows`
+    );
+    e.preventDefault();
+    return;
+  }
+
+  if(
+    e.shiftKey &&
+    (e.key==="+" || e.key==="=" || e.key==="-") &&
+    ArmRingEditorV110018.activeRingIndex!==null
+  ){
+    const grow=e.key!=="-";
+    v110018ScaleActiveRing(
+      grow?1.04:.96,
+      grow?1.04:.96
+    );
+    e.preventDefault();
+  }
+},true);
+
+// V11.00.16b Blender-like Escape:
+// first Escape clears vertex/edge/face selection while mesh edit stays open.
+window.addEventListener("keydown",e=>{
+  if(
+    e.key==="Escape" &&
+    state?.mode==="topology" &&
+    manualTopo?.enabled &&
+    manualTopo?.editMesh &&
+    (
+      manualTopo.selectedVertices?.size ||
+      manualTopo.selectedEdges?.size ||
+      manualTopo.selectedFaces?.size
+    )
+  ){
+    v110017ClearComponents();
+
+    topologyInspectorState.selectedEntity=null;
+
+    v110017ApplyComponentColors?.();
+    updateTopologyXYZGizmo?.();
+
+    try{ clearEntityBBox?.(); }catch{}
+    try{
+      entityTransformControls?.detach?.();
+      if(entityTransformControls){
+        entityTransformControls.visible=false;
+        entityTransformControls.enabled=false;
+      }
+    }catch{}
+
+    topoUpdateStatus?.("component selection cleared · mesh edit remains active");
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation?.();
+  }
+},true);
+
 function installTopologyXYZDragV1055(){
+  window.addEventListener("keydown",e=>{
+    if(e.key==="Control"){
+      TopologyXYZDragV1055.ctrl=true;
+      refreshTopologyXYZGizmoModeV110015?.();
+    }
+  },true);
+
+  window.addEventListener("keyup",e=>{
+    if(e.key==="Control"){
+      TopologyXYZDragV1055.ctrl=false;
+      refreshTopologyXYZGizmoModeV110015?.();
+    }
+  },true);
+
+  window.addEventListener("blur",()=>{
+    TopologyXYZDragV1055.ctrl=false;
+    refreshTopologyXYZGizmoModeV110015?.();
+  });
+
+
   const canvas=renderer.domElement;
 
   canvas.addEventListener("pointerdown",event=>{
@@ -7443,30 +7658,28 @@ function installTopologyXYZDragV1055(){
 }
 
 function updateTopologyXYZGizmo(){
-  const root=topoEnsureDraggableXYZGizmoV1029();
+  try{ clearEntityBBox?.(); }catch{}
+  try{
+    entityTransformControls?.detach?.();
+    if(entityTransformControls){
+      entityTransformControls.visible=false;
+      entityTransformControls.enabled=false;
+    }
+  }catch{}
 
   if(state.mode!=="topology" || !manualTopo?.enabled){
-    root.visible=false;
-    refreshTopologyXYZDragV1055?.();
+    disposeTopologyXYZDragV1055?.();
     return;
   }
 
-  const center=topologySelectedCentroidWorldV1055();
-  if(!center){
-    root.visible=false;
-    refreshTopologyXYZDragV1055?.();
+  if(!topologySelectedVertexIndicesV1074().length){
+    disposeTopologyXYZDragV1055?.();
     return;
   }
 
-  // V10.75: vertex, edge and face selections all manipulate from the
-  // selection centroid rather than an arbitrary mesh/object origin.
-  root.position.copy(center);
-  root.quaternion.identity();
-  root.scale.setScalar(.72);
-  root.visible=true;
-
+  // Single authoritative component gizmo.
   refreshTopologyXYZDragV1055();
-  updateTransformHudV1055();
+  updateTransformHudV1055?.();
 }
 
 function getUniqueGeometryData(mesh){
@@ -7912,76 +8125,46 @@ function selectSemanticTopologyEntityV1042(owner,{beginEdit=true,preferredMesh=n
    Selected vertices/edges remain orange in either mode.
    ================================================================ */
 const TopologyOverlaySettingsV1055={
-  mode:"blue",
+  // V11.00.14c: Blender-style topology is the editor default.
+  mode:"black",
   palettes:{
     blue:{
-      vertex:0x45b8ff,
-      edge:0x42c4ff
-    },
-    black:{
+      // Retained only for backward compatibility with saved UI state.
+      // Rifleman topology is forced back to black below.
       vertex:0x111111,
       edge:0x111111
+    },
+    black:{
+      vertex:0x080808,
+      edge:0x080808
     }
   },
-  selected:0xff8a20
+  selected:0xffc400
 };
 
 function topologyOverlayPaletteV1055(){
   return TopologyOverlaySettingsV1055.palettes[
     TopologyOverlaySettingsV1055.mode
-  ] || TopologyOverlaySettingsV1055.palettes.blue;
+  ] || TopologyOverlaySettingsV1055.palettes.black;
 }
 
 function refreshTopologyOverlayColorsV1055(){
-  const palette=topologyOverlayPaletteV1055();
-
-  if(manualTopo?.vertexHandles){
-    const data=topoGeometryArrays?.();
-
-    if(data){
-      const handles=manualTopo.vertexHandles;
-      const c=new THREE.Color();
-
-      if(handles.material?.color){
-        handles.material.color.setHex(0xffffff);
-      }
-
-      if(!handles.instanceColor && data.vertices.length){
-        handles.setColorAt(0,new THREE.Color(palette.vertex));
-      }
-
-      for(let i=0;i<data.vertices.length;i++){
-        c.setHex(
-          manualTopo.selectedVertices.has(i)
-            ? TopologyOverlaySettingsV1055.selected
-            : palette.vertex
-        );
-        handles.setColorAt(i,c);
-      }
-
-      if(handles.instanceColor){
-        handles.instanceColor.needsUpdate=true;
-      }
-    }
-  }
-
-  if(manualTopo?.wireOverlay?.material?.color){
-    manualTopo.wireOverlay.material.color.setHex(palette.edge);
-  }
+  v110017ApplyComponentColors?.();
 
   if(typeof TorsoLegVertexWorkspaceV1055!=="undefined"){
+    const palette=topologyOverlayPaletteV1055();
     TorsoLegVertexWorkspaceV1055.normalColor=palette.vertex;
     TorsoLegVertexWorkspaceV1055.selectedColor=
       TopologyOverlaySettingsV1055.selected;
   }
 
   refreshTorsoLegWorkspaceSelectionColorsV1055?.();
-  updateTopologySelectionOverlays?.();
 }
 
 function setTopologyOverlayModeV1055(mode){
+  // V11.00.14c: keep the Rifleman modeling workflow Blender-black.
   TopologyOverlaySettingsV1055.mode=
-    mode==="black" ? "black" : "blue";
+    state?.template==="rifleman" ? "black" : (mode==="black" ? "black" : "blue");
 
   refreshTopologyOverlayColorsV1055();
 
@@ -8031,7 +8214,7 @@ function installTopologyOverlaySettingV1055(){
     select.appendChild(option);
   }
 
-  select.value="blue";
+  select.value="black";
   select.addEventListener("change",()=>{
     setTopologyOverlayModeV1055(select.value);
   });
@@ -8039,15 +8222,15 @@ function installTopologyOverlaySettingV1055(){
   wrap.append(label,select);
   host.appendChild(wrap);
 
-  setTopologyOverlayModeV1055("blue");
+  setTopologyOverlayModeV1055("black");
 }
 
 const TopologyVisualStyleV1044={
-  vertexScale:0.20,
-  selectedVertexScale:0.31,
-  selectedColor:0xffd400,
-  normalVertexColor:0x45b8ff,
-  normalEdgeColor:0x42c4ff
+  vertexScale:0.14,
+  selectedVertexScale:0.20,
+  selectedColor:0xffc400,
+  normalVertexColor:0x080808,
+  normalEdgeColor:0x080808
 };
 
 function isTopologyVertexVisualV1044(o){
@@ -8055,6 +8238,21 @@ function isTopologyVertexVisualV1044(o){
     o?.userData?.topologyWorkspacePoints ||
     o?.userData?.topologyWorkspacePointsV1055
   )return false;
+
+  // V11.00.17g:
+  // The V10.44 visual scaler was written for ONE-OBJECT-PER-VERTEX helpers.
+  // It must never scale a whole modern component buffer or InstancedMesh.
+  // Scaling those objects moves every contained vertex toward the mesh origin.
+  if(
+    o?.userData?.excludeLegacyTopologyVisualScale===true ||
+    o?.userData?.topologyComponentRenderer===true ||
+    o?.userData?.vertexAuthorityV110015a===true ||
+    o===manualTopo?.vertexHandles ||
+    o===manualTopo?.vertexDotRendererV110017d
+  ){
+    return false;
+  }
+
   const n=(o?.name||"").toLowerCase();
   return !!(
     o?.userData?.topologyVertex ||
@@ -8444,10 +8642,10 @@ function topoBuildInactiveMeshOverlayV1032(mesh){
   const wire=new THREE.LineSegments(
     edges,
     new THREE.LineBasicMaterial({
-      color:0x55c9ff,
+      color:0x080808,
       transparent:true,
-      opacity:.86,
-      depthTest:false,
+      opacity:.55,
+      depthTest:true,
       depthWrite:false
     })
   );
@@ -8472,10 +8670,10 @@ function topoBuildInactiveMeshOverlayV1032(mesh){
   const points=new THREE.Points(
     pgeo,
     new THREE.PointsMaterial({
-      color:0x8edcff,
-      size:.065,
-      sizeAttenuation:true,
-      depthTest:false,
+      color:0x080808,
+      size:4.5,
+      sizeAttenuation:false,
+      depthTest:true,
       depthWrite:false
     })
   );
@@ -8937,14 +9135,27 @@ function clearEntityBBox(){
 
 function showEntityBBox(entity){
   clearEntityBBox();
+
+  // V11.00.14f: vertex/edge/face component editing never uses an object bbox.
+  if(
+    state?.mode==="topology" &&
+    manualTopo?.enabled &&
+    manualTopo?.editMesh
+  ){
+    return;
+  }
+
   if(!entity)return;
 
   const box=new THREE.Box3().setFromObject(entity);
   if(box.isEmpty())return;
 
-  const helper=new THREE.Box3Helper(box,0x57b8ff);
+  const helper=new THREE.Box3Helper(box,0x080808);
   helper.name="TopologyEntityBBox_V1025";
   helper.material.depthTest=false;
+  helper.material.depthWrite=false;
+  helper.material.transparent=false;
+  if(helper.material.color)helper.material.color.setHex(0x080808);
   helper.renderOrder=180;
   scene.add(helper);
   topologyInspectorState.bboxHelper=helper;
@@ -9294,17 +9505,13 @@ function topoClearSelection({record=true,label="Clear topology selection"}={}){
     manualTopo.selectedFaces.size
   );
 
-  manualTopo.selectedVertices.clear();
-  manualTopo.selectedEdges.clear();
-  manualTopo.selectedFaces.clear();
-  topoRefreshOverlayMaterials();
+  v110017ClearComponents();
+  v110017ApplyComponentColors?.();
+
   topoUpdateStatus();
   updateTopologyXYZGizmo();
   renderMeshElementList();
 
-  // V10.68: internal edit lifecycle calls clear selections constantly. Those
-  // clears are implementation details and must not pollute the user's undo
-  // history. Only an actual user-visible clear records an entry.
   if(record && hadSelection){
     pushSelectionHistoryV1033(label);
   }
@@ -9345,6 +9552,24 @@ function topoFindEditableMesh(){
 
 function topoCloneGeometryNonIndexed(mesh){
   const g=mesh.geometry.clone();
+
+  // V11.00.18 ARM RING FOUNDATION:
+  // The generated rifleman arm is already a clean indexed 8-sided ring mesh.
+  // Keep those logical vertices and its armTopology metadata intact in Edit
+  // Mode.  Converting it to triangle soup destroys the 9 x 8 ring identity.
+  if(
+    g.index &&
+    (
+      g.userData?.armTopologyV110011 ||
+      /^Rifleman_LowPolyArm_[LR]_V110011$/.test(mesh?.name||"")
+    )
+  ){
+    g.computeVertexNormals();
+    g.userData=g.userData||{};
+    g.userData.preserveIndexedArmRingsV110018=true;
+    return g;
+  }
+
   const non=g.index ? g.toNonIndexed() : g.clone();
   non.computeVertexNormals();
   return non;
@@ -9429,6 +9654,7 @@ function resolveAuthoritativeTopologyMeshV1081d(mesh){
   // V11.00.13e: V1060 is now a hidden compatibility/deformation source only.
   // Topology editing must route to the V11 arm surface.
   if(mesh?.name==="Rifleman_SkinnedArm_L_V1060"){
+    window.armSelectEntity?.("L",true);
     return (
       window.RiflemanArmModelerV110011?.sides?.L?.mesh ||
       currentCharacter?.getObjectByName?.("Rifleman_LowPolyArm_L_V110011") ||
@@ -9436,6 +9662,7 @@ function resolveAuthoritativeTopologyMeshV1081d(mesh){
     );
   }
   if(mesh?.name==="Rifleman_SkinnedArm_R_V1060"){
+    window.armSelectEntity?.("R",true);
     return (
       window.RiflemanArmModelerV110011?.sides?.R?.mesh ||
       currentCharacter?.getObjectByName?.("Rifleman_LowPolyArm_R_V110011") ||
@@ -9575,7 +9802,14 @@ function topoBeginEdit(mesh=topoFindEditableMesh()){
   if(mesh){
     topologyInspectorState.selectedEntity=mesh;
     refreshEntityTreeSelection();
-    showEntityBBox(mesh);
+
+    // V11.00.14b: Blender-style component editing does not draw the
+    // editor's cyan object bounding box around authoritative V11 arms.
+    if(mesh.userData?.authoritativeTopologyV110013e){
+      try{ clearEntityBBox(); }catch{}
+    }else{
+      showEntityBBox(mesh);
+    }
   }
 
   if(scene && manualTopo.overlayRoot.parent!==scene){
@@ -9658,12 +9892,22 @@ function topoBeginEdit(mesh=topoFindEditableMesh()){
   topoRebuildHandles();
   topoClearSelection({record:false});
 
+  // V11.00.18/19 structured ring + anatomy panels.
+  ArmRingEditorV110018.activeRingIndex=null;
+  v110018RefreshPanel?.();
+
+  if(v110018IsArmEdit()){
+    v110019EnsureBaseline?.();
+    v110019RefreshAnatomyPanel?.();
+  }
+
   if(state?.template==="rifleman"){
     rebuildTorsoLegVertexWorkspaceV1055();
   }
 }
 
 function topoEndEdit(restoreSource=true){
+  resetTopologyClickStageV110015f?.();
   if(manualTopo.sourceMesh && restoreSource){
     const source=manualTopo.sourceMesh;
     const prior=manualTopo.sourceVisibilityBeforeEditV1081h;
@@ -9688,6 +9932,9 @@ function topoEndEdit(restoreSource=true){
   manualTopo.sourceMesh=null;
   manualTopo.sourceVisibilityBeforeEditV1081h=undefined;
   manualTopo.enabled=false;
+  ArmRingEditorV110018.activeRingIndex=null;
+  v110018RefreshPanel?.();
+  v110019RefreshAnatomyPanel?.();
 
   topoClearOverlay();
   topoClearSelection({record:false});
@@ -9701,6 +9948,8 @@ function topoEndEdit(restoreSource=true){
 function topoClearOverlay(){
   if(manualTopo.editMesh){
     for(const name of [
+      "TopoVertexPoints_V110015",
+      "TopoVertexVisualPointsV110014g",
       "TopoVertexHandles",
       "TopoEdgeHandles",
       "TopoFaceHandles",
@@ -9743,10 +9992,19 @@ function topoGeometryArrays(){
     ));
   }
 
-  // Non-indexed triangles.
   const faces=[];
-  for(let i=0;i<vertices.length;i+=3){
-    if(i+2<vertices.length)faces.push([i,i+1,i+2]);
+
+  // V11.00.18: structured arm edit meshes stay indexed so a ring is eight
+  // logical vertices rather than many duplicated triangle corners.
+  if(g.index){
+    const ix=g.index.array;
+    for(let i=0;i+2<ix.length;i+=3){
+      faces.push([ix[i],ix[i+1],ix[i+2]]);
+    }
+  }else{
+    for(let i=0;i<vertices.length;i+=3){
+      if(i+2<vertices.length)faces.push([i,i+1,i+2]);
+    }
   }
 
   return {vertices,faces};
@@ -9771,7 +10029,1675 @@ function topoBuildEdgeList(faces){
   return [...map.values()];
 }
 
+
+
+/* ================================================================
+   V11.00.18 ARM RING EDITING FOUNDATION
+   ---------------------------------------------------------------
+   Blender-like structured-loop workflow for the generated rifleman arm:
+
+   Alt + click ring edge  -> select the whole circumferential ring
+   Ring panel button      -> select named ring directly
+   XYZ component gizmo    -> weighted translate / Ctrl weighted rotate
+   Scale U / V / Uniform  -> weighted radial ring scaling
+   + Row                  -> insert topology row next to selected ring
+   - Row                  -> remove a V11.00.18-created row only
+
+   The original nine semantic rings are protected:
+     shoulderSocket
+     deltoidOuter
+     bicepPeak
+     preElbow
+     elbowUpper
+     elbowApex
+     elbowLower
+     elbowToForearm
+     bracerSocket
+   ================================================================ */
+
+const ArmRingEditorV110018 = {
+  activeRingIndex:null,
+  falloffEnabled:true,
+  falloffRadius:2,
+  panel:null,
+  ringList:null,
+  status:null,
+  falloffInput:null
+};
+
+function v110018ArmTopology(){
+  const g=manualTopo?.editMesh?.geometry;
+  const topo=g?.userData?.armTopologyV110011;
+  if(!topo?.rings?.length)return null;
+
+  // Normalize metadata from older V11 arm builds.
+  topo.ringNames=topo.ringNames||topo.rings.map((_,i)=>`ring_${i}`);
+  topo.ringKinds=topo.ringKinds||topo.rings.map(()=>"semantic");
+  topo.ringParams=topo.ringParams||topo.rings.map((_,i)=>i);
+  topo.semanticRingNames=topo.semanticRingNames||[
+    "shoulderSocket",
+    "deltoidOuter",
+    "bicepPeak",
+    "preElbow",
+    "elbowUpper",
+    "elbowApex",
+    "elbowLower",
+    "elbowToForearm",
+    "bracerSocket"
+  ];
+  return topo;
+}
+
+function v110018IsArmEdit(){
+  return !!(
+    state?.mode==="topology" &&
+    manualTopo?.enabled &&
+    manualTopo?.editMesh &&
+    v110018ArmTopology()
+  );
+}
+
+function v110018RingName(index){
+  const topo=v110018ArmTopology();
+  return topo?.ringNames?.[index] || `ring_${index}`;
+}
+
+function v110018RingVertices(index){
+  const topo=v110018ArmTopology();
+  return topo?.rings?.[index] ? [...topo.rings[index]] : [];
+}
+
+function v110018RingCentroid(index){
+  const ids=v110018RingVertices(index);
+  const pos=manualTopo?.editMesh?.geometry?.attributes?.position;
+  if(!ids.length||!pos)return null;
+
+  const c=new THREE.Vector3();
+  for(const i of ids){
+    c.x+=pos.getX(i);
+    c.y+=pos.getY(i);
+    c.z+=pos.getZ(i);
+  }
+  return c.multiplyScalar(1/ids.length);
+}
+
+function v110018ClearActiveRing(){
+  ArmRingEditorV110018.activeRingIndex=null;
+  v110018RefreshPanel();
+}
+window.v110018ClearActiveRing=v110018ClearActiveRing;
+
+function v110018SelectRing(index,{append=false}={}){
+  const topo=v110018ArmTopology();
+  if(!topo)return false;
+
+  index=THREE.MathUtils.clamp(index|0,0,topo.rings.length-1);
+  const ids=topo.rings[index]||[];
+  const c=manualTopo.components||v110017EnsureComponents();
+  if(!c?.vertices?.length)return false;
+
+  if(!append)v110017ClearComponents();
+
+  for(const vi of ids){
+    if(c.vertices[vi])c.vertices[vi].selected=true;
+  }
+
+  manualTopo.mode="vertex";
+  ArmRingEditorV110018.activeRingIndex=index;
+
+  v110017SyncSetsFromComponents();
+  v110017ApplyComponentColors();
+  updateTopologyXYZGizmo?.();
+  v110018RefreshPanel();
+
+  topoUpdateStatus?.(
+    `Ring ${index+1}/${topo.rings.length}: ${v110018RingName(index)} selected`
+  );
+
+  return true;
+}
+window.armSelectEditRingV110018=v110018SelectRing;
+
+function v110018SelectSemanticRing(name){
+  const topo=v110018ArmTopology();
+  if(!topo)return false;
+  const i=topo.ringNames.indexOf(name);
+  return i>=0 ? v110018SelectRing(i) : false;
+}
+window.armSelectSemanticRingV110018=v110018SelectSemanticRing;
+
+function v110018SelectRegion(region){
+  const topo=v110018ArmTopology();
+  if(!topo)return false;
+
+  const groups={
+    deltoid:["shoulderSocket","deltoidOuter"],
+    bicep:["deltoidOuter","bicepPeak","preElbow"],
+    elbow:["elbowUpper","elbowApex","elbowLower"],
+    forearm:["elbowLower","elbowToForearm","bracerSocket"]
+  };
+
+  const names=groups[String(region).toLowerCase()];
+  if(!names)return false;
+
+  const c=manualTopo.components||v110017EnsureComponents();
+  v110017ClearComponents();
+
+  let firstIndex=null;
+  for(const name of names){
+    const ri=topo.ringNames.indexOf(name);
+    if(ri<0)continue;
+    if(firstIndex===null)firstIndex=ri;
+    for(const vi of topo.rings[ri]){
+      if(c.vertices[vi])c.vertices[vi].selected=true;
+    }
+  }
+
+  if(firstIndex===null)return false;
+
+  // Multi-ring region selection intentionally disables single-ring weighted
+  // behavior.  The normal component gizmo operates on exactly those rings.
+  ArmRingEditorV110018.activeRingIndex=null;
+  manualTopo.mode="vertex";
+  v110017SyncSetsFromComponents();
+  v110017ApplyComponentColors();
+  updateTopologyXYZGizmo?.();
+  v110018RefreshPanel();
+  topoUpdateStatus?.(`${region} ring group selected`);
+  return true;
+}
+window.armSelectRegionV110018=v110018SelectRegion;
+
+function v110018ProjectLocalToPixels(local){
+  const mesh=manualTopo.editMesh;
+  const rect=renderer.domElement.getBoundingClientRect();
+  const q=local.clone();
+  mesh.localToWorld(q);
+  q.project(camera);
+  return {
+    x:(q.x*.5+.5)*rect.width,
+    y:(-.5*q.y+.5)*rect.height,
+    z:q.z
+  };
+}
+
+function v110018PointSegmentDistanceSq(px,py,ax,ay,bx,by){
+  const vx=bx-ax, vy=by-ay;
+  const wx=px-ax, wy=py-ay;
+  const vv=vx*vx+vy*vy;
+  const t=vv>1e-9 ? THREE.MathUtils.clamp((wx*vx+wy*vy)/vv,0,1) : 0;
+  const dx=px-(ax+t*vx);
+  const dy=py-(ay+t*vy);
+  return dx*dx+dy*dy;
+}
+
+function v110018NearestRingFromPointer(event,maxPixels=13){
+  const topo=v110018ArmTopology();
+  const pos=manualTopo?.editMesh?.geometry?.attributes?.position;
+  if(!topo||!pos)return -1;
+
+  const rect=renderer.domElement.getBoundingClientRect();
+  const px=event.clientX-rect.left;
+  const py=event.clientY-rect.top;
+  let best=-1;
+  let bestD=maxPixels*maxPixels;
+
+  for(let r=0;r<topo.rings.length;r++){
+    const ring=topo.rings[r];
+    for(let j=0;j<ring.length;j++){
+      const ia=ring[j];
+      const ib=ring[(j+1)%ring.length];
+      const a=v110018ProjectLocalToPixels(
+        new THREE.Vector3(pos.getX(ia),pos.getY(ia),pos.getZ(ia))
+      );
+      const b=v110018ProjectLocalToPixels(
+        new THREE.Vector3(pos.getX(ib),pos.getY(ib),pos.getZ(ib))
+      );
+
+      // Do not select a ring segment completely outside clip depth.
+      if((a.z<-1||a.z>1)&&(b.z<-1||b.z>1))continue;
+
+      const d=v110018PointSegmentDistanceSq(px,py,a.x,a.y,b.x,b.y);
+      if(d<bestD){
+        bestD=d;
+        best=r;
+      }
+    }
+  }
+
+  return best;
+}
+
+function v110018TryAltRingSelect(event){
+  if(!v110018IsArmEdit() || !event.altKey || event.button!==0)return false;
+  const ring=v110018NearestRingFromPointer(event,14);
+  if(ring<0)return false;
+
+  v110018SelectRing(ring,{append:!!event.shiftKey});
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation?.();
+  return true;
+}
+window.armAltRingSelectV110018=v110018TryAltRingSelect;
+
+function v110018FalloffWeight(distance){
+  if(!ArmRingEditorV110018.falloffEnabled)return distance===0?1:0;
+  const radius=Math.max(0,ArmRingEditorV110018.falloffRadius|0);
+  if(distance===0)return 1;
+  if(radius<=0 || distance>radius)return 0;
+
+  const t=1-distance/(radius+1);
+  // Smoothstep-shaped influence: softer than linear, still predictable.
+  return t*t*(3-2*t);
+}
+
+function v110018WeightedVertexMap(){
+  const topo=v110018ArmTopology();
+  const active=ArmRingEditorV110018.activeRingIndex;
+
+  // Normal component editing when a structured ring is not active.
+  if(!topo || active===null || active<0){
+    return new Map(
+      topologySelectedVertexIndicesV1074().map(i=>[i,1])
+    );
+  }
+
+  const out=new Map();
+  for(let r=0;r<topo.rings.length;r++){
+    const w=v110018FalloffWeight(Math.abs(r-active));
+    if(w<=0)continue;
+    for(const vi of topo.rings[r]){
+      out.set(vi,Math.max(out.get(vi)||0,w));
+    }
+  }
+  return out;
+}
+window.armWeightedVertexMapV110018=v110018WeightedVertexMap;
+
+function v110018RingFrame(index){
+  const topo=v110018ArmTopology();
+  if(!topo)return null;
+
+  const c=v110018RingCentroid(index);
+  if(!c)return null;
+
+  const prev=v110018RingCentroid(Math.max(0,index-1))||c.clone();
+  const next=v110018RingCentroid(Math.min(topo.rings.length-1,index+1))||c.clone();
+
+  let tangent=next.clone().sub(prev);
+  if(tangent.lengthSq()<1e-8)tangent.set(0,1,0);
+  tangent.normalize();
+
+  const ref=Math.abs(tangent.y)<.88
+    ? new THREE.Vector3(0,1,0)
+    : new THREE.Vector3(0,0,1);
+
+  const u=new THREE.Vector3().crossVectors(tangent,ref).normalize();
+  const v=new THREE.Vector3().crossVectors(tangent,u).normalize();
+  return {center:c,tangent,u,v};
+}
+
+function v110018ScaleActiveRing(uFactor=1,vFactor=uFactor){
+  const topo=v110018ArmTopology();
+  const active=ArmRingEditorV110018.activeRingIndex;
+  const pos=manualTopo?.editMesh?.geometry?.attributes?.position;
+  if(!topo || active===null || !pos)return false;
+
+  for(let r=0;r<topo.rings.length;r++){
+    const w=v110018FalloffWeight(Math.abs(r-active));
+    if(w<=0)continue;
+
+    const frame=v110018RingFrame(r);
+    if(!frame)continue;
+
+    const fu=1+(uFactor-1)*w;
+    const fv=1+(vFactor-1)*w;
+
+    for(const vi of topo.rings[r]){
+      const p=new THREE.Vector3(pos.getX(vi),pos.getY(vi),pos.getZ(vi));
+      const d=p.clone().sub(frame.center);
+
+      const du=d.dot(frame.u);
+      const dv=d.dot(frame.v);
+      const dt=d.dot(frame.tangent);
+
+      p.copy(frame.center)
+        .addScaledVector(frame.u,du*fu)
+        .addScaledVector(frame.v,dv*fv)
+        .addScaledVector(frame.tangent,dt);
+
+      pos.setXYZ(vi,p.x,p.y,p.z);
+    }
+  }
+
+  pos.needsUpdate=true;
+  manualTopo.editMesh.geometry.computeVertexNormals?.();
+  syncTopologyVisualGeometryV110015a();
+  refreshTopologyXYZDragV1055?.();
+  v110018RefreshPanel();
+
+  pushSelectionHistoryV1033?.(
+    `Scale ring ${v110018RingName(active)} U ${uFactor.toFixed(3)} V ${vFactor.toFixed(3)}`
+  );
+  return true;
+}
+window.armScaleActiveRingV110018=v110018ScaleActiveRing;
+
+function v110018ExtractRingPoints(){
+  const topo=v110018ArmTopology();
+  const pos=manualTopo?.editMesh?.geometry?.attributes?.position;
+  if(!topo||!pos)return null;
+
+  return topo.rings.map(ring=>
+    ring.map(i=>new THREE.Vector3(pos.getX(i),pos.getY(i),pos.getZ(i)))
+  );
+}
+
+function v110018WriteRingMesh(ringPoints,meta){
+  const old=manualTopo?.editMesh?.geometry;
+  if(!old || !ringPoints?.length)return false;
+
+  const sides=ringPoints[0]?.length||0;
+  if(sides<3 || ringPoints.some(r=>r.length!==sides))return false;
+
+  const verts=[];
+  const rings=[];
+
+  for(const row of ringPoints){
+    const ring=[];
+    for(const p of row){
+      ring.push(verts.length/3);
+      verts.push(p.x,p.y,p.z);
+    }
+    rings.push(ring);
+  }
+
+  const ix=[];
+  for(let r=0;r<rings.length-1;r++){
+    for(let j=0;j<sides;j++){
+      const a=rings[r][j];
+      const b=rings[r][(j+1)%sides];
+      const c=rings[r+1][(j+1)%sides];
+      const d=rings[r+1][j];
+      ix.push(a,b,c,a,c,d);
+    }
+  }
+
+  const g=new THREE.BufferGeometry();
+  g.setAttribute("position",new THREE.Float32BufferAttribute(verts,3));
+  g.setIndex(ix);
+  g.computeVertexNormals();
+
+  const ringNames=[...meta.ringNames];
+  const ringKinds=[...meta.ringKinds];
+  const ringParams=[...meta.ringParams];
+
+  const edges=[];
+  const faces=[];
+  for(let r=0;r<rings.length;r++){
+    for(let j=0;j<sides;j++){
+      edges.push({
+        a:rings[r][j],
+        b:rings[r][(j+1)%sides],
+        type:"circumferential",
+        ring:r,
+        slot:j
+      });
+    }
+  }
+  for(let r=0;r<rings.length-1;r++){
+    for(let j=0;j<sides;j++){
+      edges.push({
+        a:rings[r][j],
+        b:rings[r+1][j],
+        type:"longitudinal",
+        ring:r,
+        slot:j
+      });
+      faces.push({
+        ring:r,
+        slot:j,
+        verts:[
+          rings[r][j],
+          rings[r][(j+1)%sides],
+          rings[r+1][(j+1)%sides],
+          rings[r+1][j]
+        ]
+      });
+    }
+  }
+
+  g.userData={
+    ...old.userData,
+    preserveIndexedArmRingsV110018:true,
+    armTopologyV110011:{
+      ...(old.userData?.armTopologyV110011||{}),
+      side:old.userData?.armTopologyV110011?.side,
+      rings,
+      ringNames,
+      ringKinds,
+      ringParams,
+      semanticRingNames:
+        old.userData?.armTopologyV110011?.semanticRingNames || [
+          "shoulderSocket","deltoidOuter","bicepPeak","preElbow",
+          "elbowUpper","elbowApex","elbowLower",
+          "elbowToForearm","bracerSocket"
+        ],
+      edges,
+      faces,
+      sharedShoulderRing:rings[0].slice()
+    }
+  };
+
+  manualTopo.editMesh.geometry=g;
+  old.dispose?.();
+
+  // Rebuild all generic visual/component buffers against the new vertex count.
+  topoRebuildHandles();
+  v110017EnsureComponents();
+  v110017ClearComponents();
+  v110017ApplyComponentColors();
+  updateTopologyXYZGizmo?.();
+  return true;
+}
+
+function v110018InsertRow(){
+  const topo=v110018ArmTopology();
+  const active=ArmRingEditorV110018.activeRingIndex;
+  if(!topo || active===null)return false;
+
+  const points=v110018ExtractRingPoints();
+  if(!points)return false;
+
+  // Add after the selected ring, except the terminal bracer ring where we add
+  // immediately before it.
+  let a=active;
+  let b=active+1;
+  if(b>=points.length){
+    b=active;
+    a=active-1;
+  }
+  if(a<0 || b<0 || a===b)return false;
+
+  const newRow=points[a].map((p,j)=>
+    p.clone().lerp(points[b][j],.5)
+  );
+
+  const insertIndex=b;
+  points.splice(insertIndex,0,newRow);
+
+  const names=[...topo.ringNames];
+  const kinds=[...topo.ringKinds];
+  const params=[...topo.ringParams];
+
+  const pa=Number.isFinite(params[a])?params[a]:a;
+  const pb=Number.isFinite(params[b])?params[b]:b;
+  const newParam=(pa+pb)*.5;
+  const rowName=`row_${newParam.toFixed(3)}`;
+
+  names.splice(insertIndex,0,rowName);
+  kinds.splice(insertIndex,0,"custom");
+  params.splice(insertIndex,0,newParam);
+
+  if(!v110018WriteRingMesh(points,{
+    ringNames:names,
+    ringKinds:kinds,
+    ringParams:params
+  }))return false;
+
+  v110018SelectRing(insertIndex);
+  v110018RefreshPanel();
+  topoUpdateStatus?.(`Inserted arm row: ${rowName}`);
+  pushSelectionHistoryV1033?.("Insert arm ring row");
+  return true;
+}
+window.armInsertRowV110018=v110018InsertRow;
+
+function v110018RemoveRow(){
+  const topo=v110018ArmTopology();
+  const active=ArmRingEditorV110018.activeRingIndex;
+  if(!topo || active===null)return false;
+
+  if(topo.ringKinds?.[active]!=="custom"){
+    topoUpdateStatus?.(
+      `${v110018RingName(active)} is a protected semantic ring; remove only V11.00.18-added rows`
+    );
+    return false;
+  }
+
+  const points=v110018ExtractRingPoints();
+  if(!points || points.length<=3)return false;
+
+  const names=[...topo.ringNames];
+  const kinds=[...topo.ringKinds];
+  const params=[...topo.ringParams];
+
+  points.splice(active,1);
+  names.splice(active,1);
+  kinds.splice(active,1);
+  params.splice(active,1);
+
+  if(!v110018WriteRingMesh(points,{
+    ringNames:names,
+    ringKinds:kinds,
+    ringParams:params
+  }))return false;
+
+  const next=Math.max(0,Math.min(active-1,points.length-1));
+  v110018SelectRing(next);
+  v110018RefreshPanel();
+  topoUpdateStatus?.("Removed custom arm ring row");
+  pushSelectionHistoryV1033?.("Remove arm ring row");
+  return true;
+}
+window.armRemoveRowV110018=v110018RemoveRow;
+
+function v110018CreateButton(label,onClick,title=""){
+  const b=document.createElement("button");
+  b.textContent=label;
+  b.title=title;
+  Object.assign(b.style,{
+    background:"#142436",
+    color:"#dcecff",
+    border:"1px solid #35536f",
+    borderRadius:"3px",
+    padding:"4px 7px",
+    font:"11px monospace",
+    cursor:"pointer"
+  });
+  b.addEventListener("click",e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    onClick();
+  });
+  return b;
+}
+
+function v110018EnsurePanel(){
+  if(ArmRingEditorV110018.panel?.isConnected)return ArmRingEditorV110018.panel;
+
+  const panel=document.createElement("div");
+  panel.id="armRingEditorV110018";
+  Object.assign(panel.style,{
+    position:"absolute",
+    left:"188px",
+    top:"132px",
+    width:"244px",
+    maxHeight:"calc(100vh - 180px)",
+    overflowY:"auto",
+    zIndex:"55",
+    background:"rgba(7,17,27,.96)",
+    border:"1px solid #31516b",
+    borderRadius:"5px",
+    boxShadow:"0 6px 20px rgba(0,0,0,.38)",
+    color:"#dcecff",
+    padding:"8px",
+    font:"11px monospace",
+    display:"none"
+  });
+
+  const title=document.createElement("div");
+  title.innerHTML="<b>ARM RINGS · V11.00.19</b><br><span style='color:#88a6bd'>Alt-click loop · XYZ weighted move · Ctrl rotate</span>";
+  title.style.marginBottom="7px";
+  panel.appendChild(title);
+
+  const regionRow=document.createElement("div");
+  Object.assign(regionRow.style,{display:"flex",gap:"4px",flexWrap:"wrap",marginBottom:"7px"});
+  for(const [label,key] of [
+    ["Deltoid","deltoid"],
+    ["Bicep","bicep"],
+    ["Elbow","elbow"],
+    ["Forearm","forearm"]
+  ]){
+    regionRow.appendChild(v110018CreateButton(label,()=>v110018SelectRegion(key)));
+  }
+  panel.appendChild(regionRow);
+
+  const ringList=document.createElement("div");
+  ringList.style.display="grid";
+  ringList.style.gridTemplateColumns="1fr";
+  ringList.style.gap="3px";
+  panel.appendChild(ringList);
+  ArmRingEditorV110018.ringList=ringList;
+
+  const sep=document.createElement("div");
+  sep.style.borderTop="1px solid #294257";
+  sep.style.margin="8px 0";
+  panel.appendChild(sep);
+
+  const falloffRow=document.createElement("div");
+  falloffRow.style.display="grid";
+  falloffRow.style.gridTemplateColumns="auto 1fr 28px";
+  falloffRow.style.alignItems="center";
+  falloffRow.style.gap="6px";
+
+  const falloffToggle=document.createElement("input");
+  falloffToggle.type="checkbox";
+  falloffToggle.checked=true;
+  falloffToggle.title="Weighted neighboring-ring influence";
+  falloffToggle.addEventListener("change",()=>{
+    ArmRingEditorV110018.falloffEnabled=falloffToggle.checked;
+  });
+
+  const falloffInput=document.createElement("input");
+  falloffInput.type="range";
+  falloffInput.min="0";
+  falloffInput.max="4";
+  falloffInput.step="1";
+  falloffInput.value=String(ArmRingEditorV110018.falloffRadius);
+  falloffInput.addEventListener("input",()=>{
+    ArmRingEditorV110018.falloffRadius=Number(falloffInput.value);
+    v110018RefreshPanel();
+  });
+  ArmRingEditorV110018.falloffInput=falloffInput;
+
+  const falloffValue=document.createElement("span");
+  falloffValue.id="armRingFalloffValueV110018";
+
+  falloffRow.appendChild(falloffToggle);
+  falloffRow.appendChild(falloffInput);
+  falloffRow.appendChild(falloffValue);
+  panel.appendChild(falloffRow);
+
+  const scaleLabel=document.createElement("div");
+  scaleLabel.textContent="Ring diameter";
+  scaleLabel.style.color="#88a6bd";
+  scaleLabel.style.margin="8px 0 4px";
+  panel.appendChild(scaleLabel);
+
+  const scaleRow=document.createElement("div");
+  Object.assign(scaleRow.style,{display:"flex",gap:"4px",flexWrap:"wrap"});
+  scaleRow.appendChild(v110018CreateButton("U −",()=>v110018ScaleActiveRing(.96,1),"Shrink ring U diameter"));
+  scaleRow.appendChild(v110018CreateButton("U +",()=>v110018ScaleActiveRing(1.04,1),"Expand ring U diameter"));
+  scaleRow.appendChild(v110018CreateButton("V −",()=>v110018ScaleActiveRing(1,.96),"Shrink ring V diameter"));
+  scaleRow.appendChild(v110018CreateButton("V +",()=>v110018ScaleActiveRing(1,1.04),"Expand ring V diameter"));
+  scaleRow.appendChild(v110018CreateButton("All −",()=>v110018ScaleActiveRing(.96,.96)));
+  scaleRow.appendChild(v110018CreateButton("All +",()=>v110018ScaleActiveRing(1.04,1.04)));
+  panel.appendChild(scaleRow);
+
+  const rowLabel=document.createElement("div");
+  rowLabel.textContent="Topology rows";
+  rowLabel.style.color="#88a6bd";
+  rowLabel.style.margin="8px 0 4px";
+  panel.appendChild(rowLabel);
+
+  const rowButtons=document.createElement("div");
+  Object.assign(rowButtons.style,{display:"flex",gap:"5px"});
+  rowButtons.appendChild(v110018CreateButton("+ Row",v110018InsertRow,"Insert a circumferential row next to selected ring"));
+  rowButtons.appendChild(v110018CreateButton("− Row",v110018RemoveRow,"Remove selected V11.00.18 custom row"));
+  panel.appendChild(rowButtons);
+
+  const status=document.createElement("div");
+  status.style.marginTop="8px";
+  status.style.paddingTop="6px";
+  status.style.borderTop="1px solid #294257";
+  status.style.color="#9fc0d8";
+  panel.appendChild(status);
+  ArmRingEditorV110018.status=status;
+
+  document.body.appendChild(panel);
+  ArmRingEditorV110018.panel=panel;
+  return panel;
+}
+
+function v110018RefreshPanel(){
+  const panel=v110018EnsurePanel();
+  const topo=v110018ArmTopology();
+
+  if(!v110018IsArmEdit() || !topo){
+    panel.style.display="none";
+    return;
+  }
+
+  panel.style.display="block";
+  const list=ArmRingEditorV110018.ringList;
+  list.replaceChildren();
+
+  for(let i=0;i<topo.rings.length;i++){
+    const name=topo.ringNames[i]||`ring_${i}`;
+    const custom=topo.ringKinds?.[i]==="custom";
+    const active=i===ArmRingEditorV110018.activeRingIndex;
+
+    const b=v110018CreateButton(
+      `${String(i+1).padStart(2,"0")}  ${name}${custom?"  [row]":""}`,
+      ()=>v110018SelectRing(i)
+    );
+    b.style.textAlign="left";
+    if(active){
+      b.style.background="#795f05";
+      b.style.borderColor="#ffd21f";
+      b.style.color="#fff5ad";
+    }
+    list.appendChild(b);
+  }
+
+  const fv=document.getElementById("armRingFalloffValueV110018");
+  if(fv)fv.textContent=String(ArmRingEditorV110018.falloffRadius);
+
+  if(ArmRingEditorV110018.status){
+    const active=ArmRingEditorV110018.activeRingIndex;
+    ArmRingEditorV110018.status.textContent=
+      active===null
+        ? `Rows: ${topo.rings.length} · choose one ring for weighted manipulation`
+        : `Active: ${v110018RingName(active)} · falloff ±${ArmRingEditorV110018.falloffRadius} rows`;
+  }
+}
+window.refreshArmRingEditorV110018=v110018RefreshPanel;
+
+
+/* ================================================================
+   V11.00.19 ARM ANATOMY PARAMETER PASS
+   ================================================================ */
+
+const ArmAnatomyProfileV110019 = {
+  shoulderSocket:{ depth:-0.035, width:1.02, height:1.00 },
+  deltoidOuter:{ width:1.12, depth:1.07, drop:0.035, outerBulge:0.045 },
+  bicepPeak:{ width:1.14, depth:1.08, verticalScale:1.04, outerBulge:0.055 },
+  preElbow:{ width:0.92, depth:0.94, verticalScale:0.98, taperBias:0.18 }
+};
+
+const ArmAnatomyStateV110019={
+  baselineByEditUUID:new Map(),
+  panel:null,
+  controls:new Map()
+};
+
+function v110019CloneProfile(profile=ArmAnatomyProfileV110019){
+  return JSON.parse(JSON.stringify(profile));
+}
+
+function v110019CaptureBaseline(){
+  const mesh=manualTopo?.editMesh;
+  const topo=v110018ArmTopology();
+  if(!mesh||!topo)return false;
+  const rows=v110018ExtractRingPoints();
+  if(!rows)return false;
+
+  ArmAnatomyStateV110019.baselineByEditUUID.set(mesh.uuid,{
+    rows:rows.map(r=>r.map(v=>v.clone())),
+    ringNames:[...topo.ringNames],
+    ringKinds:[...topo.ringKinds],
+    ringParams:[...topo.ringParams]
+  });
+  return true;
+}
+
+function v110019EnsureBaseline(){
+  const mesh=manualTopo?.editMesh;
+  if(!mesh)return null;
+  if(!ArmAnatomyStateV110019.baselineByEditUUID.has(mesh.uuid)){
+    v110019CaptureBaseline();
+  }
+  return ArmAnatomyStateV110019.baselineByEditUUID.get(mesh.uuid)||null;
+}
+
+function v110019RingFrameFromRows(rows,index){
+  const ring=rows[index];
+  if(!ring?.length)return null;
+
+  const center=new THREE.Vector3();
+  for(const p of ring)center.add(p);
+  center.multiplyScalar(1/ring.length);
+
+  const prev=rows[Math.max(0,index-1)];
+  const next=rows[Math.min(rows.length-1,index+1)];
+  const pc=new THREE.Vector3();
+  const nc=new THREE.Vector3();
+  for(const p of prev)pc.add(p);
+  for(const p of next)nc.add(p);
+  pc.multiplyScalar(1/prev.length);
+  nc.multiplyScalar(1/next.length);
+
+  const tangent=nc.clone().sub(pc);
+  if(tangent.lengthSq()<1e-8)tangent.set(0,1,0);
+  tangent.normalize();
+
+  const ref=Math.abs(tangent.y)<.9
+    ? new THREE.Vector3(0,1,0)
+    : new THREE.Vector3(0,0,1);
+
+  const u=new THREE.Vector3().crossVectors(tangent,ref).normalize();
+  const v=new THREE.Vector3().crossVectors(tangent,u).normalize();
+  return {center,tangent,u,v};
+}
+
+function v110019OutwardDirection(frame){
+  const outward=frame.center.clone();
+  outward.y=0;
+  if(outward.lengthSq()<1e-8)outward.copy(frame.u);
+  return outward.normalize();
+}
+
+function v110019ApplyRadialScale(rows,index,{
+  width=1,
+  depth=1,
+  verticalScale=1,
+  centerOffset=null,
+  outerBulge=0
+}={}){
+  const frame=v110019RingFrameFromRows(rows,index);
+  if(!frame)return;
+  const outward=v110019OutwardDirection(frame);
+
+  for(const p of rows[index]){
+    const d=p.clone().sub(frame.center);
+    const du=d.dot(frame.u);
+    const dv=d.dot(frame.v);
+    const dt=d.dot(frame.tangent);
+
+    const uAlign=Math.abs(frame.u.dot(outward));
+    const vAlign=Math.abs(frame.v.dot(outward));
+    let su=1, sv=1;
+    if(uAlign>=vAlign){
+      su=width;
+      sv=depth*verticalScale;
+    }else{
+      su=depth*verticalScale;
+      sv=width;
+    }
+
+    const rebuilt=frame.center.clone()
+      .addScaledVector(frame.u,du*su)
+      .addScaledVector(frame.v,dv*sv)
+      .addScaledVector(frame.tangent,dt);
+
+    if(outerBulge!==0){
+      const radial=rebuilt.clone().sub(frame.center);
+      const len=Math.max(1e-5,radial.length());
+      const n=THREE.MathUtils.clamp(radial.dot(outward)/len,-1,1);
+      const influence=THREE.MathUtils.smoothstep(n,-.25,1);
+      rebuilt.addScaledVector(outward,outerBulge*influence);
+    }
+
+    if(centerOffset)rebuilt.add(centerOffset);
+    p.copy(rebuilt);
+  }
+}
+
+function v110019ApplyPreElbowTaper(rows,index,amount){
+  if(amount<=0)return;
+  const frame=v110019RingFrameFromRows(rows,index);
+  if(!frame)return;
+  const outward=v110019OutwardDirection(frame);
+
+  for(const p of rows[index]){
+    const d=p.clone().sub(frame.center);
+    const len=Math.max(1e-5,d.length());
+    const n=THREE.MathUtils.clamp(d.dot(outward)/len,-1,1);
+    const factor=THREE.MathUtils.lerp(
+      1-amount*.45,
+      1-amount*.12,
+      (n+1)*.5
+    );
+    p.copy(frame.center).add(d.multiplyScalar(factor));
+  }
+}
+
+function v110019ApplyProfile({preserveManual=false,recordHistory=true}={}){
+  const mesh=manualTopo?.editMesh;
+  const topo=v110018ArmTopology();
+  if(!mesh||!topo)return false;
+
+  const baseline=v110019EnsureBaseline();
+  if(!baseline)return false;
+
+  const rows=preserveManual
+    ? v110018ExtractRingPoints()
+    : baseline.rows.map(r=>r.map(v=>v.clone()));
+
+  const p=ArmAnatomyProfileV110019;
+  const shoulderI=topo.ringNames.indexOf("shoulderSocket");
+  const deltoidI=topo.ringNames.indexOf("deltoidOuter");
+  const bicepI=topo.ringNames.indexOf("bicepPeak");
+  const preElbowI=topo.ringNames.indexOf("preElbow");
+
+  if(shoulderI>=0){
+    const frame=v110019RingFrameFromRows(rows,shoulderI);
+    const offset=frame
+      ? frame.tangent.clone().multiplyScalar(p.shoulderSocket.depth)
+      : new THREE.Vector3();
+
+    v110019ApplyRadialScale(rows,shoulderI,{
+      width:p.shoulderSocket.width,
+      depth:p.shoulderSocket.height,
+      centerOffset:offset
+    });
+  }
+
+  if(deltoidI>=0){
+    v110019ApplyRadialScale(rows,deltoidI,{
+      width:p.deltoidOuter.width,
+      depth:p.deltoidOuter.depth,
+      centerOffset:new THREE.Vector3(0,-p.deltoidOuter.drop,0),
+      outerBulge:p.deltoidOuter.outerBulge
+    });
+  }
+
+  if(bicepI>=0){
+    v110019ApplyRadialScale(rows,bicepI,{
+      width:p.bicepPeak.width,
+      depth:p.bicepPeak.depth,
+      verticalScale:p.bicepPeak.verticalScale,
+      outerBulge:p.bicepPeak.outerBulge
+    });
+  }
+
+  if(preElbowI>=0){
+    v110019ApplyRadialScale(rows,preElbowI,{
+      width:p.preElbow.width,
+      depth:p.preElbow.depth,
+      verticalScale:p.preElbow.verticalScale
+    });
+    v110019ApplyPreElbowTaper(rows,preElbowI,p.preElbow.taperBias);
+  }
+
+  if(!v110018WriteRingMesh(rows,{
+    ringNames:[...topo.ringNames],
+    ringKinds:[...topo.ringKinds],
+    ringParams:[...topo.ringParams]
+  }))return false;
+
+  const newTopo=v110018ArmTopology();
+  const b=newTopo?.ringNames?.indexOf("bicepPeak")??-1;
+  if(b>=0)v110018SelectRing(b);
+
+  v110019RefreshAnatomyPanel();
+  v110018RefreshPanel();
+  if(recordHistory)pushSelectionHistoryV1033?.("Apply V11.00.19 arm anatomy profile");
+  topoUpdateStatus?.("V11.00.19 anatomy applied · inspect shoulder, deltoid, bicep, pre-elbow");
+  return true;
+}
+window.applyArmAnatomyProfileV110019=v110019ApplyProfile;
+
+function v110019ResetBaseline(){
+  const baseline=v110019EnsureBaseline();
+  if(!baseline)return false;
+
+  const ok=v110018WriteRingMesh(
+    baseline.rows.map(r=>r.map(v=>v.clone())),
+    {
+      ringNames:[...baseline.ringNames],
+      ringKinds:[...baseline.ringKinds],
+      ringParams:[...baseline.ringParams]
+    }
+  );
+  if(!ok)return false;
+
+  ArmRingEditorV110018.activeRingIndex=null;
+  v110017ClearComponents();
+  v110017ApplyComponentColors();
+  v110018RefreshPanel();
+  v110019RefreshAnatomyPanel();
+  topoUpdateStatus?.("Arm restored to captured V11.00.18 baseline");
+  pushSelectionHistoryV1033?.("Reset arm anatomy baseline");
+  return true;
+}
+window.resetArmAnatomyBaselineV110019=v110019ResetBaseline;
+
+function v110019CreateRange(label,path,min,max,step){
+  const wrap=document.createElement("div");
+  wrap.style.display="grid";
+  wrap.style.gridTemplateColumns="92px 1fr 44px";
+  wrap.style.gap="5px";
+  wrap.style.alignItems="center";
+  wrap.style.margin="3px 0";
+
+  const name=document.createElement("span");
+  name.textContent=label;
+  name.style.color="#b7cde0";
+
+  const input=document.createElement("input");
+  input.type="range";
+  input.min=String(min);
+  input.max=String(max);
+  input.step=String(step);
+
+  const out=document.createElement("span");
+  out.style.textAlign="right";
+  out.style.color="#ffd66b";
+
+  const [group,key]=path.split(".");
+  input.value=String(ArmAnatomyProfileV110019[group][key]);
+  out.textContent=Number(input.value).toFixed(3);
+
+  input.addEventListener("input",()=>{
+    const v=Number(input.value);
+    ArmAnatomyProfileV110019[group][key]=v;
+    out.textContent=v.toFixed(3);
+    v110019ApplyProfile({recordHistory:false});
+  });
+
+  ArmAnatomyStateV110019.controls.set(path,{input,out});
+  wrap.append(name,input,out);
+  return wrap;
+}
+
+function v110019EnsureAnatomyPanel(){
+  if(ArmAnatomyStateV110019.panel?.isConnected)
+    return ArmAnatomyStateV110019.panel;
+
+  const panel=document.createElement("div");
+  panel.id="armAnatomyPanelV110019";
+  Object.assign(panel.style,{
+    position:"absolute",
+    left:"442px",
+    top:"132px",
+    width:"278px",
+    maxHeight:"calc(100vh - 180px)",
+    overflowY:"auto",
+    zIndex:"55",
+    background:"rgba(7,17,27,.96)",
+    border:"1px solid #31516b",
+    borderRadius:"5px",
+    boxShadow:"0 6px 20px rgba(0,0,0,.38)",
+    color:"#dcecff",
+    padding:"8px",
+    font:"11px monospace",
+    display:"none"
+  });
+
+  const title=document.createElement("div");
+  title.innerHTML=
+    "<b>ARM ANATOMY · V11.00.19</b><br>"+
+    "<span style='color:#88a6bd'>Baseline parameters · ring diameter first</span>";
+  title.style.marginBottom="8px";
+  panel.appendChild(title);
+
+  const section=(name)=>{
+    const h=document.createElement("div");
+    h.textContent=name;
+    h.style.color="#6fc5ff";
+    h.style.borderTop="1px solid #294257";
+    h.style.paddingTop="6px";
+    h.style.marginTop="7px";
+    h.style.marginBottom="4px";
+    panel.appendChild(h);
+  };
+
+  section("SHOULDER SOCKET");
+  panel.appendChild(v110019CreateRange("Depth","shoulderSocket.depth",-0.10,0.05,0.005));
+  panel.appendChild(v110019CreateRange("Width","shoulderSocket.width",0.85,1.25,0.01));
+
+  section("DELTOID");
+  panel.appendChild(v110019CreateRange("Width","deltoidOuter.width",0.90,1.35,0.01));
+  panel.appendChild(v110019CreateRange("Depth","deltoidOuter.depth",0.90,1.30,0.01));
+  panel.appendChild(v110019CreateRange("Drop","deltoidOuter.drop",-0.04,0.10,0.005));
+  panel.appendChild(v110019CreateRange("Outer bulge","deltoidOuter.outerBulge",0.00,0.12,0.005));
+
+  section("BICEP");
+  panel.appendChild(v110019CreateRange("Width","bicepPeak.width",0.90,1.40,0.01));
+  panel.appendChild(v110019CreateRange("Depth","bicepPeak.depth",0.90,1.35,0.01));
+  panel.appendChild(v110019CreateRange("Vert scale","bicepPeak.verticalScale",0.85,1.20,0.01));
+  panel.appendChild(v110019CreateRange("Outer bulge","bicepPeak.outerBulge",0.00,0.14,0.005));
+
+  section("PRE-ELBOW");
+  panel.appendChild(v110019CreateRange("Width","preElbow.width",0.75,1.10,0.01));
+  panel.appendChild(v110019CreateRange("Depth","preElbow.depth",0.75,1.10,0.01));
+  panel.appendChild(v110019CreateRange("Vert scale","preElbow.verticalScale",0.80,1.10,0.01));
+  panel.appendChild(v110019CreateRange("Taper bias","preElbow.taperBias",0.00,0.45,0.01));
+
+  const buttons=document.createElement("div");
+  buttons.style.display="flex";
+  buttons.style.gap="5px";
+  buttons.style.flexWrap="wrap";
+  buttons.style.marginTop="9px";
+
+  const add=(label,fn)=>buttons.appendChild(v110018CreateButton(label,fn));
+  add("Apply Baseline",()=>v110019ApplyProfile({recordHistory:true}));
+  add("Reset V18",()=>v110019ResetBaseline());
+  add("Select Shoulder",()=>v110018SelectSemanticRing("shoulderSocket"));
+  add("Select Deltoid",()=>v110018SelectSemanticRing("deltoidOuter"));
+  add("Select Bicep",()=>v110018SelectSemanticRing("bicepPeak"));
+  add("Select Pre-Elbow",()=>v110018SelectSemanticRing("preElbow"));
+
+  panel.appendChild(buttons);
+
+  const note=document.createElement("div");
+  note.style.marginTop="8px";
+  note.style.color="#86a4bb";
+  note.textContent=
+    "Visual order: shoulder depth → deltoid width/drop → bicep width/depth → pre-elbow taper.";
+  panel.appendChild(note);
+
+  document.body.appendChild(panel);
+  ArmAnatomyStateV110019.panel=panel;
+  return panel;
+}
+
+function v110019RefreshAnatomyPanel(){
+  const panel=v110019EnsureAnatomyPanel();
+  panel.style.display=v110018IsArmEdit() ? "block" : "none";
+
+  for(const [path,ui] of ArmAnatomyStateV110019.controls){
+    const [group,key]=path.split(".");
+    const v=ArmAnatomyProfileV110019[group][key];
+    ui.input.value=String(v);
+    ui.out.textContent=Number(v).toFixed(3);
+  }
+}
+window.refreshArmAnatomyPanelV110019=v110019RefreshAnatomyPanel;
+
+window.reportArmAnatomyV110019=()=>{
+  const result={
+    profile:v110019CloneProfile(),
+    baselineCaptured:!!ArmAnatomyStateV110019.baselineByEditUUID.get(
+      manualTopo?.editMesh?.uuid
+    ),
+    rings:v110018ArmTopology()?.ringNames||[]
+  };
+  console.log("[V11.00.19 ARM ANATOMY]",result);
+  return result;
+};
+
+window.selfTestArmAnatomyV110019=()=>{
+  const errors=[];
+  const topo=v110018ArmTopology();
+  if(!topo)errors.push("structured arm topology not active");
+
+  for(const name of ["shoulderSocket","deltoidOuter","bicepPeak","preElbow"]){
+    if(topo && !topo.ringNames.includes(name))
+      errors.push(`missing anatomical ring: ${name}`);
+  }
+
+  const baseline=v110019EnsureBaseline();
+  if(!baseline)errors.push("V18 baseline not captured");
+
+  const p=ArmAnatomyProfileV110019;
+  if(!(p.bicepPeak.width>p.preElbow.width))
+    errors.push("default bicep width should exceed pre-elbow width");
+  if(!(p.deltoidOuter.width>1))
+    errors.push("default deltoid should be expanded");
+  if(!(p.shoulderSocket.depth<0))
+    errors.push("default shoulder socket should be recessed");
+
+  return {ok:errors.length===0,errors,profile:v110019CloneProfile()};
+};
+/* ================================================================
+   V11.00.17 BLENDER COMPONENT HANDLE ARCHITECTURE
+   ================================================================ */
+
+function v110017EnsureComponents(){
+  const data=topoGeometryArrays?.();
+  if(!data){
+    manualTopo.components={vertices:[],edges:[],faces:[]};
+    return manualTopo.components;
+  }
+
+  const edges=topoBuildEdgeList(data.faces);
+
+  const vertexSelected=new Set(manualTopo.selectedVertices||[]);
+  const edgeSelected=new Set(manualTopo.selectedEdges||[]);
+  const faceSelected=new Set(manualTopo.selectedFaces||[]);
+
+  manualTopo.components={
+    vertices:data.vertices.map((_,index)=>({
+      index,
+      selected:vertexSelected.has(index)
+    })),
+
+    edges:edges.map((e,index)=>({
+      index,
+      a:e.a,
+      b:e.b,
+      selected:edgeSelected.has(index)
+    })),
+
+    faces:data.faces.map((verts,index)=>({
+      index,
+      vertices:[...verts],
+      selected:faceSelected.has(index)
+    }))
+  };
+
+  return manualTopo.components;
+}
+
+function v110017SyncSetsFromComponents(){
+  const c=manualTopo.components;
+  if(!c)return;
+
+  manualTopo.selectedVertices.clear();
+  manualTopo.selectedEdges.clear();
+  manualTopo.selectedFaces.clear();
+
+  for(const v of c.vertices||[])
+    if(v.selected)manualTopo.selectedVertices.add(v.index);
+
+  for(const e of c.edges||[])
+    if(e.selected)manualTopo.selectedEdges.add(e.index);
+
+  for(const f of c.faces||[])
+    if(f.selected)manualTopo.selectedFaces.add(f.index);
+}
+
+function v110017ClearComponents(){
+  const c=manualTopo.components;
+  if(c){
+    for(const v of c.vertices||[])v.selected=false;
+    for(const e of c.edges||[])e.selected=false;
+    for(const f of c.faces||[])f.selected=false;
+  }
+
+  manualTopo.selectedVertices.clear();
+  manualTopo.selectedEdges.clear();
+  manualTopo.selectedFaces.clear();
+}
+
+function v110017SelectedMeshVertices(){
+  const c=manualTopo.components||v110017EnsureComponents();
+  const out=new Set();
+
+  for(const v of c.vertices||[]){
+    if(v.selected)out.add(v.index);
+  }
+
+  for(const e of c.edges||[]){
+    if(e.selected){
+      out.add(e.a);
+      out.add(e.b);
+    }
+  }
+
+  for(const f of c.faces||[]){
+    if(f.selected){
+      for(const vi of f.vertices)out.add(vi);
+    }
+  }
+
+  return [...out];
+}
+
+function v110017SelectVertex(index,{append=false,toggle=false}={}){
+  // A normal component click exits structured ring manipulation.
+  ArmRingEditorV110018.activeRingIndex=null;
+  v110018RefreshPanel?.();
+  const c=manualTopo.components||v110017EnsureComponents();
+  const v=c.vertices?.[index];
+  if(!v)return false;
+
+  if(!append)v110017ClearComponents();
+
+  v.selected=toggle ? !v.selected : true;
+  v110017SyncSetsFromComponents();
+  v110017ApplyComponentColors();
+  updateTopologyXYZGizmo?.();
+  return true;
+}
+
+function v110017SelectEdge(index,{append=false,toggle=false}={}){
+  // A normal component click exits structured ring manipulation.
+  ArmRingEditorV110018.activeRingIndex=null;
+  v110018RefreshPanel?.();
+  const c=manualTopo.components||v110017EnsureComponents();
+  const e=c.edges?.[index];
+  if(!e)return false;
+
+  if(!append)v110017ClearComponents();
+
+  e.selected=toggle ? !e.selected : true;
+  v110017SyncSetsFromComponents();
+  v110017ApplyComponentColors();
+  updateTopologyXYZGizmo?.();
+  return true;
+}
+
+function v110017SelectFace(index,{append=false,toggle=false}={}){
+  // A normal component click exits structured ring manipulation.
+  ArmRingEditorV110018.activeRingIndex=null;
+  v110018RefreshPanel?.();
+  const c=manualTopo.components||v110017EnsureComponents();
+  const f=c.faces?.[index];
+  if(!f)return false;
+
+  if(!append)v110017ClearComponents();
+
+  f.selected=toggle ? !f.selected : true;
+  v110017SyncSetsFromComponents();
+  v110017ApplyComponentColors();
+  updateTopologyXYZGizmo?.();
+  return true;
+}
+
+
+function v110017dDisposeVertexDotRenderer(){
+  const old=manualTopo.vertexDotRendererV110017d;
+  if(!old)return;
+  old.parent?.remove(old);
+  old.geometry?.dispose?.();
+  old.material?.dispose?.();
+  manualTopo.vertexDotRendererV110017d=null;
+}
+
+function v110017dBuildVertexDotRenderer(){
+  v110017dDisposeVertexDotRenderer();
+  if(!manualTopo?.editMesh)return null;
+
+  const data=topoGeometryArrays?.();
+  if(!data?.vertices?.length)return null;
+
+  // V11.00.17f: editor dots use actual tiny sphere geometry.
+  // This deliberately removes GL_POINTS and billboard orientation from the
+  // visibility equation.  They are render-only component markers.
+  const geom=new THREE.SphereGeometry(1,6,4);
+  const mat=new THREE.MeshBasicMaterial({
+    color:0xffffff,
+    vertexColors:true,
+    // V11.00.17i: visible front-side handles, hidden rear-side handles.
+    depthTest:true,
+    depthWrite:false,
+    transparent:false,
+    toneMapped:false,
+    polygonOffset:true,
+    polygonOffsetFactor:-3,
+    polygonOffsetUnits:-3
+  });
+
+  const dots=new THREE.InstancedMesh(geom,mat,data.vertices.length);
+  dots.name="TopoVertexDots_V110017f";
+  dots.userData.topologyComponentRenderer=true;
+  dots.userData.excludeSemanticSelection=true;
+  dots.userData.renderOnlyVertexMarkers=true;
+  dots.userData.excludeLegacyTopologyVisualScale=true;
+  dots.frustumCulled=false;
+  dots.renderOrder=10000;
+
+  const black=new THREE.Color(0x020202);
+  for(let i=0;i<data.vertices.length;i++)dots.setColorAt(i,black);
+  if(dots.instanceColor)dots.instanceColor.needsUpdate=true;
+
+  manualTopo.editMesh.add(dots);
+  manualTopo.vertexDotRendererV110017d=dots;
+  return dots;
+}
+
+function v110017dUpdateVertexDots(){
+  if(!manualTopo?.enabled || !manualTopo?.editMesh)return;
+
+  const data=topoGeometryArrays?.();
+  if(!data?.vertices?.length)return;
+
+  let dots=manualTopo.vertexDotRendererV110017d;
+  if(!dots || dots.count!==data.vertices.length)dots=v110017dBuildVertexDotRenderer();
+  if(!dots)return;
+
+  // V11.00.17g: renderer object itself stays identity-scaled. Individual
+  // vertex size lives only in instanceMatrix.
+  dots.position.set(0,0,0);
+  dots.quaternion.identity();
+  dots.scale.set(1,1,1);
+  dots.updateMatrix();
+
+  const c=manualTopo.components||v110017EnsureComponents();
+  const yellowVertices=new Set();
+
+  for(const v of c.vertices||[])if(v.selected)yellowVertices.add(v.index);
+  for(const e of c.edges||[])if(e.selected){
+    yellowVertices.add(e.a);
+    yellowVertices.add(e.b);
+  }
+  for(const f of c.faces||[])if(f.selected){
+    for(const vi of f.vertices)yellowVertices.add(vi);
+  }
+
+  const rect=renderer.domElement.getBoundingClientRect();
+  const viewportH=Math.max(1,rect.height);
+  const fovRad=THREE.MathUtils.degToRad(camera.fov||50);
+  const meshWorld=manualTopo.editMesh.matrixWorld;
+
+  const worldScale=new THREE.Vector3();
+  manualTopo.editMesh.getWorldScale(worldScale);
+  const avgScale=Math.max(
+    1e-6,
+    (Math.abs(worldScale.x)+Math.abs(worldScale.y)+Math.abs(worldScale.z))/3
+  );
+
+  const dummy=new THREE.Object3D();
+  const wp=new THREE.Vector3();
+  const cp=new THREE.Vector3();
+
+  const invMeshWorld=meshWorld.clone().invert();
+  const cameraLocal=new THREE.Vector3()
+    .copy(camera.position)
+    .applyMatrix4(invMeshWorld);
+  const towardCameraLocal=new THREE.Vector3();
+
+  const black=new THREE.Color(0x020202);
+  const yellow=new THREE.Color(0xffd400);
+
+  for(let i=0;i<data.vertices.length;i++){
+    const v=data.vertices[i];
+
+    wp.copy(v).applyMatrix4(meshWorld);
+    cp.copy(wp).applyMatrix4(camera.matrixWorldInverse);
+
+    const depth=Math.max(.01,-cp.z);
+    const worldPerPixel=(2*depth*Math.tan(fovRad*.5))/viewportH;
+
+    // Radius chosen for roughly an 8 px diameter.
+    const localRadius=(worldPerPixel*4.0)/avgScale;
+
+    // Visual-only offset prevents front-side z-fighting. Because depthTest
+    // remains enabled, points behind the arm stay occluded.
+    const localSurfaceOffset=(worldPerPixel*1.5)/avgScale;
+    towardCameraLocal.copy(cameraLocal).sub(v).normalize();
+
+    dummy.position
+      .copy(v)
+      .addScaledVector(towardCameraLocal,localSurfaceOffset);
+    dummy.quaternion.identity();
+    dummy.scale.setScalar(localRadius);
+    dummy.updateMatrix();
+
+    dots.setMatrixAt(i,dummy.matrix);
+    dots.setColorAt(i,yellowVertices.has(i)?yellow:black);
+  }
+
+  // Modern dots never inherit old helper colors/material mutation.
+  dots.material.color.setHex(0xffffff);
+
+  dots.instanceMatrix.needsUpdate=true;
+  if(dots.instanceColor)dots.instanceColor.needsUpdate=true;
+  dots.visible=true;
+}
+
+function v110017ApplyComponentColors(){
+  if(!manualTopo?.enabled || !manualTopo?.editMesh)return;
+
+  const c=manualTopo.components||v110017EnsureComponents();
+  const black=new THREE.Color(0x050505);
+  const yellow=new THREE.Color(0xffd400);
+
+  // VERTICES: same authoritative THREE.Points object, same indices.
+  const pts=manualTopo.vertexHandles?.isPoints
+    ? manualTopo.vertexHandles
+    : null;
+
+  if(pts){
+    const attr=
+      pts.geometry?.getAttribute?.("componentColor") ||
+      pts.geometry?.getAttribute?.("color");
+
+    if(attr){
+      const yellowVertices=new Set();
+
+      for(const v of c.vertices||[])
+        if(v.selected)yellowVertices.add(v.index);
+
+      for(const e of c.edges||[]){
+        if(e.selected){
+          yellowVertices.add(e.a);
+          yellowVertices.add(e.b);
+        }
+      }
+
+      for(const f of c.faces||[]){
+        if(f.selected){
+          for(const vi of f.vertices)yellowVertices.add(vi);
+        }
+      }
+
+      for(let i=0;i<attr.count;i++){
+        const col=yellowVertices.has(i)?yellow:black;
+        attr.setXYZ(i,col.r,col.g,col.b);
+      }
+
+      attr.needsUpdate=true;
+    }
+
+    pts.visible=true;
+    pts.frustumCulled=false;
+    pts.renderOrder=401;
+    pts.position.set(0,0,0);
+    pts.quaternion.identity();
+    pts.scale.set(1,1,1);
+    pts.updateMatrix();
+
+    if(pts.material){
+      pts.material.visible=true;
+      pts.material.depthTest=true;
+      pts.material.depthWrite=false;
+      pts.material.transparent=false;
+      pts.material.needsUpdate=true;
+    }
+  }
+
+  // EDGES: same authoritative LineSegments buffer, one segment per edge.
+  const wire=manualTopo.wireOverlay;
+  const attr=wire?.geometry?.getAttribute?.("color");
+
+  if(wire && attr){
+    for(const e of c.edges||[]){
+      const col=e.selected?yellow:black;
+      const i=e.index*2;
+      if(i+1>=attr.count)continue;
+
+      attr.setXYZ(i,col.r,col.g,col.b);
+      attr.setXYZ(i+1,col.r,col.g,col.b);
+    }
+
+    attr.needsUpdate=true;
+    wire.visible=true;
+    wire.renderOrder=400;
+
+    if(wire.material){
+      wire.material.visible=true;
+      wire.material.depthTest=true;
+      wire.material.depthWrite=false;
+      wire.material.transparent=false;
+      wire.material.needsUpdate=true;
+    }
+  }
+
+  v110017dUpdateVertexDots();
+  v110017RefreshFaceFill();
+
+  // Components never own semantic/entity selection.
+  topologyInspectorState.selectedEntity=null;
+
+  try{clearEntityBBox?.();}catch{}
+  try{
+    entityTransformControls?.detach?.();
+    if(entityTransformControls){
+      entityTransformControls.visible=false;
+      entityTransformControls.enabled=false;
+    }
+  }catch{}
+}
+
+function v110017RefreshFaceFill(){
+  const mesh=manualTopo?.editMesh;
+  const data=topoGeometryArrays?.();
+  if(!mesh||!data)return;
+
+  for(const name of [
+    "TopoSelectedEdgeOverlay",
+    "TopoSelectedVertexOverlay",
+    "TopoSelectedFaceOverlay"
+  ]){
+    const old=mesh.getObjectByName(name);
+    if(old){
+      old.parent?.remove(old);
+      old.geometry?.dispose?.();
+      old.material?.dispose?.();
+    }
+  }
+
+  manualTopo.selectedEdgeOverlay=null;
+  manualTopo.selectedVertexOverlay=null;
+  manualTopo.selectedFaceOverlay=null;
+
+  const selected=(manualTopo.components?.faces||[]).filter(f=>f.selected);
+  if(!selected.length)return;
+
+  const arr=[];
+  for(const f of selected){
+    for(const vi of f.vertices){
+      const v=data.vertices[vi];
+      if(v)arr.push(v.x,v.y,v.z);
+    }
+  }
+
+  if(!arr.length)return;
+
+  const g=new THREE.BufferGeometry();
+  g.setAttribute("position",new THREE.Float32BufferAttribute(arr,3));
+
+  const m=new THREE.MeshBasicMaterial({
+    color:0xffd400,
+    transparent:true,
+    opacity:.42,
+    side:THREE.DoubleSide,
+    depthTest:true,
+    depthWrite:false,
+    polygonOffset:true,
+    polygonOffsetFactor:-3,
+    polygonOffsetUnits:-3
+  });
+
+  const fill=new THREE.Mesh(g,m);
+  fill.name="TopoSelectedFaceOverlay";
+  fill.userData.topologyHelperV110014e=true;
+  fill.userData.excludeSemanticSelection=true;
+  fill.renderOrder=450;
+
+  mesh.add(fill);
+  manualTopo.selectedFaceOverlay=fill;
+}
+
 function topoRebuildHandles(){
+  v110017EnsureComponents();
+
+  // V11.00.15a: purge every legacy 3D vertex helper before rebuilding.
+  // Exactly one THREE.Points object is allowed to represent vertices.
+  if(manualTopo?.editMesh){
+    const purge=[];
+    manualTopo.editMesh.traverse(o=>{
+      if(o===manualTopo.editMesh)return;
+      const n=String(o.name||"");
+      if(
+        n==="TopoVertexHandles" ||
+        n==="TopoVertexVisualPointsV110014g" ||
+        n==="TopoVertexVisualPointsV110014d" ||
+        n==="TopoVertexPoints_V110015" ||
+        o.userData?.hitTestOnlyV110014g===true
+      ){
+        // edge/face hit meshes are retained below; only remove vertex objects here
+        if(
+          o.userData?.kind==="vertex" ||
+          /^TopoVertex/.test(n)
+        )purge.push(o);
+      }
+    });
+    for(const o of purge){
+      o.parent?.remove(o);
+      o.geometry?.dispose?.();
+      const mats=Array.isArray(o.material)?o.material:[o.material];
+      for(const m of mats)m?.dispose?.();
+    }
+  }
+
+
   topoClearOverlay();
   const data=topoGeometryArrays();
   if(!data || !manualTopo.editMesh)return;
@@ -9797,139 +11723,223 @@ function topoRebuildHandles(){
     new THREE.Float32BufferAttribute(wirePositions,3)
   );
 
-  const wireMat=new THREE.LineBasicMaterial({
-    color:topologyOverlayPaletteV1055().edge,
-    transparent:true,
-    opacity:.72,
-    depthTest:false,
-    depthWrite:false
+  // V11.00.15d: the base wireframe itself owns edge colors.
+  const wireColors=new Float32Array(edges.length*2*3);
+  const wireBlack=new THREE.Color(0x080808);
+  for(let i=0;i<edges.length*2;i++){
+    wireColors[i*3]=wireBlack.r;
+    wireColors[i*3+1]=wireBlack.g;
+    wireColors[i*3+2]=wireBlack.b;
+  }
+  wireGeo.setAttribute("color",new THREE.BufferAttribute(wireColors,3));
+
+  const isV11Arm=!!manualTopo.sourceMesh?.userData?.authoritativeTopologyV110013e;
+
+  // V11.00.17a: depth-correct Blender-like wire material.
+  // IMPORTANT: do not explicitly declare `attribute vec3 color`.
+  // Three.js injects it when vertexColors:true; redeclaring it breaks GLSL compile.
+  // Solid edit mesh writes normal depth. Wire tests against that depth,
+  // but gets a tiny clip-space bias toward the camera so front edges remain
+  // visible without revealing edges on the back side of the arm.
+  const wireMat=new THREE.ShaderMaterial({
+    vertexShader:`
+      varying vec3 vColor;
+
+      void main(){
+        vColor=color;
+
+        vec4 mvPosition=modelViewMatrix*vec4(position,1.0);
+        gl_Position=projectionMatrix*mvPosition;
+
+        // Small camera-facing depth bias only.
+        gl_Position.z -= 0.00085 * gl_Position.w;
+      }
+    `,
+    fragmentShader:`
+      varying vec3 vColor;
+
+      void main(){
+        gl_FragColor=vec4(vColor,1.0);
+      }
+    `,
+    vertexColors:true,
+    depthTest:true,
+    depthWrite:false,
+    transparent:false
   });
+
+  // Compatibility-only property for legacy inspector code.
+  wireMat.color=new THREE.Color(0xffffff);
 
   const wire=new THREE.LineSegments(wireGeo,wireMat);
   wire.name="TopoWireOverlay";
+  wire.userData.topologyHelperV110014e=true;
+  wire.userData.excludeSemanticSelection=true;
   wire.renderOrder=205;
   manualTopo.editMesh.add(wire);
   manualTopo.wireOverlay=wire;
 
-  // ----------------------------------------------------------
-  // VERTICES: noticeably larger Blender-like points.
-  // ----------------------------------------------------------
-  const vg=new THREE.SphereGeometry(.016,7,5);
-  const vmat=new THREE.MeshBasicMaterial({
-    // V10.55: white base material lets InstancedMesh.instanceColor
-    // become the actual visible point color.
-    color:0xffffff,
-    depthTest:false,
-    depthWrite:false
-  });
-  const inst=new THREE.InstancedMesh(vg,vmat,vertices.length);
-  inst.name="TopoVertexHandles";
-  inst.renderOrder=215;
+  // V11.00.15: ONE authoritative vertex object.
+  // The same THREE.Points both renders the Blender-like dots and receives
+  // vertex raycasts. There are no separate 3D vertex hit meshes.
+  {
+    // V11.00.15g: exact 1:1 Blender-style vertex display.
+    // The visible point object is populated directly from the editable
+    // geometry positions. Picking is screen-space and does not require
+    // any separate 3D hit mesh.
+    const pArr=[];
+    vertices.forEach(v=>pArr.push(v.x,v.y,v.z));
 
-  const m=new THREE.Matrix4();
-  const baseVertexColor=new THREE.Color(topologyOverlayPaletteV1055().vertex);
-  vertices.forEach((v,i)=>{
-    m.makeTranslation(v.x,v.y,v.z);
-    inst.setMatrixAt(i,m);
-    inst.setColorAt(i,baseVertexColor);
-  });
-  inst.instanceMatrix.needsUpdate=true;
-  if(inst.instanceColor)inst.instanceColor.needsUpdate=true;
-  inst.userData.kind="vertex";
-  manualTopo.editMesh.add(inst);
-  manualTopo.vertexHandles=inst;
+    const pg=new THREE.BufferGeometry();
+    pg.setAttribute("position",new THREE.Float32BufferAttribute(pArr,3));
 
-  // Apply current selected-set colors immediately.
-  refreshTopologyOverlayColorsV1055?.();
+    const colors=new Float32Array(vertices.length*3);
+    const black=new THREE.Color(0x080808);
+    for(let i=0;i<vertices.length;i++){
+      colors[i*3]=black.r;
+      colors[i*3+1]=black.g;
+      colors[i*3+2]=black.b;
+    }
+    // V11.00.17c: use a topology-specific attribute name.  This avoids all
+    // Three.js built-in `color` shader defines and gives the vertex renderer
+    // one explicit color authority.
+    pg.setAttribute("componentColor",new THREE.BufferAttribute(colors,3));
 
-  // ----------------------------------------------------------
-  // EDGE PICKING: invisible/wider cylinders for easy clicking.
-  // Actual visible edges come from wireOverlay and selected overlay.
-  // ----------------------------------------------------------
-  const edgeRoot=new THREE.Group();
-  edgeRoot.name="TopoEdgeHandles";
+    // Blender-style visible vertex handles.
+    //
+    // The previous PointsMaterial placed every point at exactly the same
+    // depth as the opaque edit surface.  The surface won the depth test on
+    // many pixels, so the handles existed but disappeared into the mesh.
+    //
+    // This shader applies a tiny clip-space depth bias toward the camera.
+    // Back-side vertices still fail the normal depth test against the arm,
+    // while front-side vertices render as crisp screen-space dots.
+    const pm=new THREE.ShaderMaterial({
+      uniforms:{
+        uPointSize:{value:7.0},
+        uDepthBias:{value:0.00125}
+      },
+      vertexShader:`
+        attribute vec3 componentColor;
+        varying vec3 vComponentColor;
+        uniform float uPointSize;
+        uniform float uDepthBias;
 
-  edges.forEach((e,ei)=>{
-    const a=vertices[e.a],b=vertices[e.b];
-    const mid=a.clone().add(b).multiplyScalar(.5);
-    const len=Math.max(.001,a.distanceTo(b));
+        void main(){
+          vComponentColor=componentColor;
+          vec4 clip=projectionMatrix*modelViewMatrix*vec4(position,1.0);
+          clip.z-=uDepthBias*clip.w;
+          gl_Position=clip;
+          gl_PointSize=uPointSize;
+        }
+      `,
+      fragmentShader:`
+        varying vec3 vComponentColor;
 
-    const geo=new THREE.CylinderGeometry(.035,.035,len,6);
-    const mat=new THREE.MeshBasicMaterial({
-      color:0xffffff,
-      transparent:true,
-      opacity:.001,
-      depthTest:false,
-      depthWrite:false
-    });
-
-    const mesh=new THREE.Mesh(geo,mat);
-    mesh.position.copy(mid);
-    mesh.quaternion.setFromUnitVectors(
-      new THREE.Vector3(0,1,0),
-      b.clone().sub(a).normalize()
-    );
-    mesh.userData={kind:"edge",edgeIndex:ei,a:e.a,b:e.b};
-    edgeRoot.add(mesh);
-  });
-
-  manualTopo.editMesh.add(edgeRoot);
-  manualTopo.edgeHandles=edgeRoot;
-
-  // ----------------------------------------------------------
-  // FACE PICKING: actual triangle-sized invisible hit surfaces.
-  // ----------------------------------------------------------
-  const faceRoot=new THREE.Group();
-  faceRoot.name="TopoFaceHandles";
-
-  faces.forEach((f,fi)=>{
-    const a=vertices[f[0]],b=vertices[f[1]],c=vertices[f[2]];
-    const g=new THREE.BufferGeometry();
-    g.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute([
-        a.x,a.y,a.z,
-        b.x,b.y,b.z,
-        c.x,c.y,c.z
-      ],3)
-    );
-
-    const mat=new THREE.MeshBasicMaterial({
-      color:0xffffff,
-      transparent:true,
-      opacity:.001,
-      depthTest:false,
+        void main(){
+          vec2 p=gl_PointCoord-vec2(0.5);
+          if(dot(p,p)>0.25)discard;
+          gl_FragColor=vec4(vComponentColor,1.0);
+        }
+      `,
+      depthTest:true,
       depthWrite:false,
-      side:THREE.DoubleSide
+      transparent:false
     });
+    pm.userData.topologyPointShaderV110016=true;
+    pm.userData.blenderPointAuthorityV110017c=true;
 
-    const mesh=new THREE.Mesh(g,mat);
-    mesh.userData={kind:"face",faceIndex:fi};
-    faceRoot.add(mesh);
-  });
+    // Compatibility-only property for legacy inspector code.
+    pm.color=new THREE.Color(0xffffff);
 
-  manualTopo.editMesh.add(faceRoot);
-  manualTopo.faceHandles=faceRoot;
+    const points=new THREE.Points(pg,pm);
+    points.name="TopoVertexPoints_V110015";
+    points.userData.kind="vertex";
+    points.userData.topologyHelperV110014e=true;
+    points.userData.excludeSemanticSelection=true;
+    points.userData.raycastThresholdV110015=.105;
+    points.renderOrder=240;
+    points.frustumCulled=false;
+    points.visible=true;
+    points.position.set(0,0,0);
+
+    manualTopo.editMesh.add(points);
+
+    points.userData.vertexAuthorityV110015a=true;
+    points.userData.excludeLegacyTopologyVisualScale=true;
+
+    manualTopo.vertexHandles=points;
+    manualTopo.vertexVisualPointsV110014b=points;
+    manualTopo.vertexVisualPointsV110014g=points;
+    manualTopo.vertexAuthorityV110015a=points;
+
+    // V11.00.17d visible Blender-style vertex dots.  These are rendering
+    // instances only; selection authority remains manualTopo.components.
+    v110017dBuildVertexDotRenderer();
+  }
+
+  // ----------------------------------------------------------
+  // V11.00.15g COMPONENT PICKING AUTHORITY
+  // No invisible vertex/edge/face helper meshes are built.
+  //
+  // vertex -> nearest projected real mesh vertex
+  // edge   -> nearest projected real mesh edge
+  // face   -> raycast the real editable mesh
+  // ----------------------------------------------------------
+  manualTopo.edgeHandles=null;
+  manualTopo.faceHandles=null;
 
   topoApplyModeVisibility();
   topoRefreshOverlayMaterials();
   topoUpdateStatus();
 
-  refreshTopologyOverlayColorsV1055();
+  v110017ApplyComponentColors();
+
+  // V11.00.14f: entering edit mode itself exposes the vertex dots.
+  if(manualTopo.vertexVisualPointsV110014b){
+    manualTopo.vertexVisualPointsV110014b.visible=true;
+    manualTopo.vertexVisualPointsV110014b.frustumCulled=false;
+  }
 }
 
 function topoApplyModeVisibility(){
+  if(manualTopo.enabled){
+    try{ clearEntityBBox?.(); }catch{}
+    try{
+      entityTransformControls?.detach?.();
+      if(entityTransformControls){
+        entityTransformControls.visible=false;
+        entityTransformControls.enabled=false;
+      }
+    }catch{}
+  }
+
   if(manualTopo.wireOverlay)
     manualTopo.wireOverlay.visible=true;
 
   if(manualTopo.vertexHandles)
-    manualTopo.vertexHandles.visible=manualTopo.mode==="vertex";
+    manualTopo.vertexHandles.visible=!!manualTopo.enabled;
 
-  if(manualTopo.edgeHandles)
-    manualTopo.edgeHandles.visible=manualTopo.mode==="edge";
-
-  if(manualTopo.faceHandles)
-    manualTopo.faceHandles.visible=manualTopo.mode==="face";
+  if(manualTopo.vertexVisualPointsV110014b){
+    const pts=manualTopo.vertexVisualPointsV110014b;
+    pts.visible=!!manualTopo.enabled;
+    pts.frustumCulled=false;
+    pts.renderOrder=240;
+    const m=pts.material;
+    if(m){
+      m.visible=true;
+      m.depthTest=true;
+      m.depthWrite=false;
+      if("vertexColors" in m)m.vertexColors=true;
+      if("size" in m)m.size=7;
+      if("sizeAttenuation" in m)m.sizeAttenuation=false;
+      if(m.uniforms?.uPointSize)m.uniforms.uPointSize.value=7.0;
+      if(m.uniforms?.uDepthBias)m.uniforms.uDepthBias.value=0.00125;
+      m.opacity=1;
+      m.transparent=false;
+      m.needsUpdate=true;
+    }
+  }
 
   updateTopologySelectionOverlays();
 }
@@ -9979,132 +11989,11 @@ function topoUpdateStatus(custom=null){
 
 
 function updateTopologySelectionOverlays(){
-  if(!manualTopo.editMesh)return;
-
-  for(const name of [
-    "TopoSelectedEdgeOverlay",
-    "TopoSelectedFaceOverlay"
-  ]){
-    const old=manualTopo.editMesh.getObjectByName(name);
-    if(old){
-      old.parent?.remove(old);
-      old.geometry?.dispose?.();
-      old.material?.dispose?.();
-    }
-  }
-
-  manualTopo.selectedEdgeOverlay=null;
-  manualTopo.selectedFaceOverlay=null;
-
-  const data=topoGeometryArrays();
-  if(!data)return;
-  const {vertices,faces}=data;
-  const edges=topoBuildEdgeList(faces);
-
-  // Bright orange selected edges.
-  if(manualTopo.selectedEdges.size){
-    const arr=[];
-    for(const ei of manualTopo.selectedEdges){
-      const e=edges[ei];
-      if(!e)continue;
-      const a=vertices[e.a],b=vertices[e.b];
-      arr.push(a.x,a.y,a.z,b.x,b.y,b.z);
-    }
-
-    if(arr.length){
-      const g=new THREE.BufferGeometry();
-      g.setAttribute(
-        "position",
-        new THREE.Float32BufferAttribute(arr,3)
-      );
-      const mat=new THREE.LineBasicMaterial({
-        color:TopologyOverlaySettingsV1055.selected,
-        depthTest:false,
-        depthWrite:false
-      });
-      const lines=new THREE.LineSegments(g,mat);
-      lines.name="TopoSelectedEdgeOverlay";
-      lines.renderOrder=225;
-      manualTopo.editMesh.add(lines);
-      manualTopo.selectedEdgeOverlay=lines;
-    }
-  }
-
-  // Entire selected faces are tinted orange, not just a center dot.
-  if(manualTopo.selectedFaces.size){
-    const arr=[];
-    for(const fi of manualTopo.selectedFaces){
-      const f=faces[fi];
-      if(!f)continue;
-
-      // Slight normal offset prevents z-fighting.
-      const a=vertices[f[0]],b=vertices[f[1]],c=vertices[f[2]];
-      const n=new THREE.Triangle(a,b,c).getNormal(new THREE.Vector3());
-      const off=.008;
-
-      for(const v of [a,b,c]){
-        arr.push(
-          v.x+n.x*off,
-          v.y+n.y*off,
-          v.z+n.z*off
-        );
-      }
-    }
-
-    if(arr.length){
-      const g=new THREE.BufferGeometry();
-      g.setAttribute(
-        "position",
-        new THREE.Float32BufferAttribute(arr,3)
-      );
-      const mat=new THREE.MeshBasicMaterial({
-        color:TopologyOverlaySettingsV1055.selected,
-        transparent:true,
-        opacity:.42,
-        side:THREE.DoubleSide,
-        depthTest:false,
-        depthWrite:false
-      });
-      const mesh=new THREE.Mesh(g,mat);
-      mesh.name="TopoSelectedFaceOverlay";
-      mesh.renderOrder=224;
-      manualTopo.editMesh.add(mesh);
-      manualTopo.selectedFaceOverlay=mesh;
-    }
-  }
+  v110017RefreshFaceFill();
 }
 
 function topoRefreshOverlayMaterials(){
-  const data=topoGeometryArrays();
-  if(!data)return;
-
-  if(manualTopo.vertexHandles){
-    const c=new THREE.Color();
-
-    // Force instanceColor creation.
-    if(!manualTopo.vertexHandles.instanceColor && data.vertices.length){
-      manualTopo.vertexHandles.setColorAt(0,new THREE.Color(0x8ccaff));
-    }
-
-    for(let i=0;i<data.vertices.length;i++){
-      c.set(
-        manualTopo.selectedVertices.has(i)
-          ? TopologyOverlaySettingsV1055.selected
-          : topologyOverlayPaletteV1055().vertex
-      );
-      manualTopo.vertexHandles.setColorAt(i,c);
-    }
-
-    if(manualTopo.vertexHandles.instanceColor){
-      manualTopo.vertexHandles.instanceColor.needsUpdate=true;
-    }
-  }
-
-  updateTopologySelectionOverlays();
-
-  refreshTorsoLegWorkspaceSelectionColorsV1055();
-
-  refreshTopologyOverlayColorsV1055();
+  v110017ApplyComponentColors?.();
 }
 
 
@@ -11252,8 +13141,8 @@ const TorsoLegVertexWorkspaceV1055={
   generation:0,
   radius:.0125,
   selectedRadius:.0125,
-  normalColor:0x67c7ff,
-  selectedColor:0xff8a20,
+  normalColor:0x080808,
+  selectedColor:0xffc400,
   validationMargin:.20
 };
 
@@ -11487,29 +13376,11 @@ function detectGroundLevelTorsoFragmentV1055(){
 }
 
 function shouldShowTorsoLegWorkspaceV1071(){
-  if(state?.mode!=="topology" || state?.template!=="rifleman" || !character)return false;
-
-  const torso=character.getObjectByName("Rifleman_WeldedTorso_V1055");
-  const lower=character.getObjectByName("Rifleman_LowerBodySkin_V138");
-  const selected=topologyInspectorState?.selectedEntity || null;
-  const active=manualTopo?.sourceMesh || topologyInspectorState?.activeTopologyMesh || null;
-  const multi=topologyInspectorState?.selectedTopologyMeshes || [];
-
-  const isRelevant=(o)=>{
-    if(!o)return false;
-    if(o===torso || o===lower)return true;
-    const n=String(o.name||"").toLowerCase();
-    const role=String(o.userData?.semanticRole||o.userData?.semanticRegion||"").toLowerCase();
-    return n.includes("torso") || n.includes("lowerbody") || n.includes("pelvis") ||
-           n.includes("leg") || role.includes("torso") || role.includes("pelvis") ||
-           role.includes("leg") || role.includes("lower-body");
-  };
-
-  // No semantic/entity selection means no persistent blue-dot cloud.
-  if(!selected && !active && !multi.length)return false;
-  return isRelevant(selected) || isRelevant(active) || multi.some(isRelevant);
+  // V11.00.14c:
+  // Do not automatically expose torso + leg companion vertex clouds.
+  // Only the explicitly opened topology mesh shows edit vertices.
+  return false;
 }
-
 function updateTorsoLegWorkspaceVisibilityV1071(){
   const show=shouldShowTorsoLegWorkspaceV1071();
   if(TorsoLegVertexWorkspaceV1055.root){
@@ -11549,6 +13420,9 @@ function torsoLegWorkspaceMeshesV1055(){
 
 function rebuildTorsoLegVertexWorkspaceV1055(){
   disposeTorsoLegVertexWorkspaceV1055();
+
+  // V11.00.14c: persistent cross-mesh torso/leg dots retired.
+  return;
 
   if(
     state?.mode!=="topology" ||
@@ -12650,6 +14524,18 @@ function setEntityGizmoModeV1063(mode){
 
 function attachEntityTransformGizmoV1063(object=null){
   if(!entityTransformControls)return;
+
+  // V11.00.14f: topology component editing uses only the topology gizmo.
+  if(
+    state?.mode==="topology" &&
+    manualTopo?.enabled &&
+    manualTopo?.editMesh
+  ){
+    entityTransformControls.detach?.();
+    entityTransformControls.visible=false;
+    entityTransformControls.enabled=false;
+    return;
+  }
 
   const exactHand=
     (isExactVisualHandV1099z10f?.(object) && object) ||
@@ -17561,6 +19447,19 @@ function applyRiflemanUpperBodyPassV1055(){
   }
 }
 
+
+const TopologyClickStageV110015f={
+  ownerUUID:null,
+  editMeshUUID:null,
+  stage:0   // 0=nothing, 1=entity selected, 2=mesh edit open
+};
+
+function resetTopologyClickStageV110015f(){
+  TopologyClickStageV110015f.ownerUUID=null;
+  TopologyClickStageV110015f.editMeshUUID=null;
+  TopologyClickStageV110015f.stage=0;
+}
+
 function topoRaycast(event){
   // V10.64: TransformControls owns the pointer while an entity axis is hot.
   // Without this guard, the same pointerdown also raycast-selected the mesh
@@ -17580,7 +19479,11 @@ function topoRaycast(event){
 
   // Modifier-click during mesh-only mode must not restore the outer
   // semantic/object outline. An ordinary left click starts a fresh cycle.
+  // V11.00.17b: an ordinary component click while mesh edit is open must
+  // remain inside mesh edit.  The old unconditional topoLeaveMeshOnly call
+  // tore down the component context before vertex/edge picking could run.
   if(
+    !manualTopo.enabled &&
     event.button===0 &&
     !(event.shiftKey || event.ctrlKey || event.metaKey)
   ){
@@ -17604,41 +19507,50 @@ function topoRaycast(event){
   ray.params.Points={threshold:.08};
   ray.setFromCamera(mouse,camera);
 
-  // V10.55 persistent torso/leg dots are always pickable in Vertex mode,
-  // independent of semantic filters and current edit-overlay visibility.
-  if(
-    manualTopo.mode==="vertex" &&
-    raycastTorsoLegWorkspaceV1055(ray,event)
-  ){
-    return;
-  }
+  // V11.00.17i TWO-STAGE INPUT GATE.
+  // These older component/workspace handlers used to execute before the
+  // explicit entity-selection block. That allowed the very first arm click
+  // to be stolen by a vertex/edge/loop picker.
+  const componentStageReadyV110017i=(
+    manualTopo.enabled===true &&
+    TopologyClickStageV110015f.stage===2
+  );
 
-  // V10.55 Alt-click = select nearest named loop.
-  // Shift+Alt-click adds the second loop for Loop Pair mode.
-  if(manualTopo.enabled && event.altKey && event.button===0){
-    if(altClickSelectNearestLoopV1044(event,ray))return;
-  }
+  if(componentStageReadyV110017i){
+    // V11.00.18: structured rifleman arm rings get first Alt-click authority.
+    if(v110018TryAltRingSelect?.(event))return true;
 
+    if(
+      manualTopo.mode==="vertex" &&
+      raycastTorsoLegWorkspaceV1055(ray,event)
+    ){
+      return true;
+    }
 
-  // After Esc #1, Shift/Ctrl-click opens another mesh directly in topology
-  // edit context without restoring semantic/object selection.
-  if(topoHandleMeshOnlyModifierClickV1031(event,ray)){
-    return;
-  }
+    if(event.altKey && event.button===0){
+      if(altClickSelectNearestLoopV1044(event,ray))return true;
+    }
 
-  // Outside mesh-only mode, Ctrl-click in Vertex mode remains the ordered cross-mesh
-  // Point A / Point B selection. Do this BEFORE ordinary edit-mesh picking.
-  if(
-    (event.ctrlKey || event.metaKey) &&
-    manualTopo.mode==="vertex"
-  ){
-    if(topoCrossMeshCtrlClickV1028(ray)){
-      return;
+    if(topoHandleMeshOnlyModifierClickV1031(event,ray)){
+      return true;
+    }
+
+    if(
+      (event.ctrlKey || event.metaKey) &&
+      manualTopo.mode==="vertex"
+    ){
+      if(topoCrossMeshCtrlClickV1028(ray)){
+        return true;
+      }
     }
   }
 
   // ----------------------------------------------------------
-  // NOT EDITING: click a visible semantic mesh to start.
+  // V11.00.15f TWO-STAGE SELECTION
+  //
+  // click 1 = semantic/entity selection only
+  // click 2 on same entity = enter mesh topology edit
+  // click 3+ = vertex/edge/face selection
   // ----------------------------------------------------------
   if(!manualTopo.enabled){
     const candidates=[];
@@ -17647,23 +19559,71 @@ function topoRaycast(event){
         o.isMesh &&
         o.visible &&
         o.geometry?.attributes?.position &&
-        !o.userData?.isBoneMesh
+        !o.userData?.isBoneMesh &&
+        !o.userData?.topologyHelperV110014e &&
+        !o.userData?.excludeSemanticSelection &&
+        !/^Topo(Vertex|Edge|Face|Wire|Selected)/.test(String(o.name||"")) &&
+        !String(o.name||"").startsWith("EditableTopology:")
       ){
         candidates.push(o);
       }
     });
 
     const hit=ray.intersectObjects(candidates,false)[0];
+
     if(hit){
       const owner=semanticOwnerFromHitV1043(hit.object)||hit.object;
-      const isRifle=String(owner?.userData?.semanticRole||"")==="Rifle";
-      const editMesh=hit.object;
+      const editMesh=resolveAuthoritativeTopologyMeshV1081d(hit.object) || hit.object;
 
-      // V10.64: the rifle is a compound semantic object. First click selects
-      // RifleRoot as a whole instead of automatically editing the child mesh
-      // with the highest vertex count (often the torus TriggerGuard).
+      const sameOwner=
+        TopologyClickStageV110015f.stage===1 &&
+        TopologyClickStageV110015f.ownerUUID===owner.uuid;
+
+      if(!sameOwner){
+        // -------- CLICK 1: ENTITY ONLY -----------------------------
+        topoClearSelection?.({record:false});
+        disposeTopologyXYZDragV1055?.();
+
+        TopologyClickStageV110015f.stage=1;
+        TopologyClickStageV110015f.ownerUUID=owner.uuid;
+        TopologyClickStageV110015f.editMeshUUID=editMesh.uuid;
+
+        selectSemanticTopologyEntityV1042(owner,{
+          beginEdit:false,
+          preferredMesh:editMesh
+        });
+
+        topologyInspectorState.selectedEntity=owner;
+        topologyInspectorState.activeTopologyMesh=editMesh;
+        owner.userData.activeEditableMeshUUID=editMesh.uuid;
+
+        topoClearMultiSelectionV1032?.();
+        topoAddMultiSelectedV1032?.(editMesh);
+
+        // Entity-level selection can keep the normal semantic outline,
+        // but no component gizmo or topology points exist yet.
+        disposeTopologyXYZDragV1055?.();
+
+        topoUpdateStatus(
+          `${owner.name||"Entity"} selected · click again to edit mesh`
+        );
+
+        debugLog?.("TOPO","V11.00.15f entity selected",{
+          owner:owner.name,
+          editMesh:editMesh.name,
+          stage:1
+        });
+
+        pushSelectionHistoryV1033("Entity selection");
+        return;
+      }
+
+      // -------- CLICK 2: ENTER MESH EDIT ---------------------------
+      TopologyClickStageV110015f.stage=2;
+      TopologyClickStageV110015f.editMeshUUID=editMesh.uuid;
+
       selectSemanticTopologyEntityV1042(owner,{
-        beginEdit:!isRifle,
+        beginEdit:true,
         preferredMesh:editMesh
       });
 
@@ -17671,103 +19631,236 @@ function topoRaycast(event){
       topologyInspectorState.activeTopologyMesh=editMesh;
       owner.userData.activeEditableMeshUUID=editMesh.uuid;
 
-      if(isRifle){
-        selectTopologyEntity(owner);
-        topoUpdateStatus("Rifle selected · double-click a rifle part to edit");
-        debugLog?.("TOPO","V10.64 RifleRoot semantic selection",{
-          owner:owner.name,hitMesh:editMesh.name
-        });
-      }else{
-        topoClearMultiSelectionV1032();
-        topoAddMultiSelectedV1032(editMesh);
+      try{clearEntityBBox?.();}catch{}
+      try{
+        entityTransformControls?.detach?.();
+        if(entityTransformControls){
+          entityTransformControls.visible=false;
+          entityTransformControls.enabled=false;
+        }
+      }catch{}
+
+      topoClearSelection?.({record:false});
+      topoApplyModeVisibility?.();
+      v110017EnsureComponents?.();
+      v110017ApplyComponentColors?.();
+      v110017dBuildVertexDotRenderer?.();
+      v110017dUpdateVertexDots?.();
+
+      // Retire old V11 arm picker/selection visuals for this edit session.
+      for(const S of ["L","R"]){
+        const st=RiflemanArmModelerV110011?.sides?.[S];
+        if(!st)continue;
+        if(st.pickGroup)st.pickGroup.visible=false;
+        if(st.selectionGroup){
+          st.selectionGroup.visible=false;
+          for(const child of st.selectionGroup.children)child.visible=false;
+        }
+        if(st.vertexHandle)st.vertexHandle.visible=false;
       }
-      pushSelectionHistoryV1033("Initial semantic mesh select");
+
+      topoUpdateStatus(
+        `${owner.name||"Entity"} mesh edit · choose vertex, edge or face`
+      );
+
+      debugLog?.("TOPO","V11.00.15f mesh edit entered",{
+        owner:owner.name,
+        editMesh:editMesh.name,
+        stage:2
+      });
+
+      pushSelectionHistoryV1033("Enter mesh edit");
+      return;
     }
+
+    // Clicking empty space clears the pending second-click stage.
+    resetTopologyClickStageV110015f();
     return;
   }
 
+
+function topoPointerPixelsV110015d(event){
+  const rect=renderer.domElement.getBoundingClientRect();
+  return {
+    x:event.clientX-rect.left,
+    y:event.clientY-rect.top,
+    rect
+  };
+}
+
+function topoProjectLocalVertexPixelsV110015d(local,mesh,rect){
+  const world=mesh.localToWorld(local.clone());
+  const ndc=world.project(camera);
+  return {
+    x:(ndc.x*.5+.5)*rect.width,
+    y:(-.5*ndc.y+.5)*rect.height,
+    z:ndc.z
+  };
+}
+
+function topoNearestVertexScreenV110015g(event,maxPx=11){
+  const data=topoGeometryArrays?.();
+  const mesh=manualTopo?.editMesh;
+  if(!data||!mesh)return -1;
+
+  const p=topoPointerPixelsV110015d(event);
+  mesh.updateWorldMatrix(true,false);
+
+  let best=-1;
+  let bestD=maxPx*maxPx;
+
+  for(let i=0;i<data.vertices.length;i++){
+    const q=topoProjectLocalVertexPixelsV110015d(data.vertices[i],mesh,p.rect);
+    if(q.z<-1 || q.z>1)continue;
+
+    const dx=q.x-p.x;
+    const dy=q.y-p.y;
+    const d=dx*dx+dy*dy;
+
+    if(d<bestD){
+      bestD=d;
+      best=i;
+    }
+  }
+
+  return best;
+}
+
+function topoPointSegmentDistanceSqV110015d(px,py,ax,ay,bx,by){
+  const abx=bx-ax,aby=by-ay;
+  const den=abx*abx+aby*aby;
+  let t=den>1e-8?((px-ax)*abx+(py-ay)*aby)/den:0;
+  t=Math.max(0,Math.min(1,t));
+  const qx=ax+abx*t,qy=ay+aby*t;
+  const dx=px-qx,dy=py-qy;
+  return dx*dx+dy*dy;
+}
+
+function topoNearestEdgeScreenV110015g(event,maxPx=9){
+  const data=topoGeometryArrays?.();
+  const mesh=manualTopo?.editMesh;
+  if(!data||!mesh)return -1;
+
+  const edges=topoBuildEdgeList(data.faces);
+  const p=topoPointerPixelsV110015d(event);
+  mesh.updateWorldMatrix(true,false);
+
+  let best=-1,bestD=maxPx*maxPx;
+  for(let ei=0;ei<edges.length;ei++){
+    const e=edges[ei];
+    const a=topoProjectLocalVertexPixelsV110015d(data.vertices[e.a],mesh,p.rect);
+    const b=topoProjectLocalVertexPixelsV110015d(data.vertices[e.b],mesh,p.rect);
+    if((a.z<-1||a.z>1)&&(b.z<-1||b.z>1))continue;
+    const d=topoPointSegmentDistanceSqV110015d(p.x,p.y,a.x,a.y,b.x,b.y);
+    if(d<bestD){bestD=d;best=ei;}
+  }
+  return best;
+}
+
+  // V11.00.17i: modern vertex/edge/face picking is legal only after
+  // click #2 has opened a real edit mesh.
+  const directComponentReadyV110017i=(
+    TopologyClickStageV110015f.stage===2 &&
+    manualTopo.enabled===true &&
+    !!manualTopo.editMesh &&
+    !!manualTopo.sourceMesh
+  );
+
+  if(!directComponentReadyV110017i){
+    return false;
+  }
+
   // ----------------------------------------------------------
-  // EDITING: element selection gets first priority.
+  // V11.00.17b BLENDER DIRECT COMPONENT PICKING
+  //
+  // Once mesh edit is open, the geometry itself is the authority:
+  //   vertex dot -> vertex
+  //   wire line  -> edge
+  //   remaining surface -> face
+  //
+  // The user does not need to pre-select a separate entity-level helper.
+  // Vertex gets first priority because its hit target is intentionally small.
   // ----------------------------------------------------------
   let consumed=false;
 
-  if(manualTopo.mode==="vertex" && manualTopo.vertexHandles){
-    const hits=ray.intersectObject(manualTopo.vertexHandles,false);
-    if(hits.length){
-      const id=hits[0].instanceId;
+  const vertexId=topoNearestVertexScreenV110015g(event,12);
+  if(Number.isInteger(vertexId) && vertexId>=0){
+    manualTopo.mode="vertex";
+    v110017SelectVertex(vertexId,{
+      append:!!event.shiftKey,
+      toggle:!!event.shiftKey
+    });
+    console.log("[V11.00.17f] vertex selected",vertexId);
+    debugLog?.("TOPO","V11.00.17f vertex selected",{vertexId});
+    consumed=true;
+  }
 
-      if(!event.shiftKey){
-        manualTopo.selectedVertices.clear();
-      }
-
-      if(
-        event.shiftKey &&
-        manualTopo.selectedVertices.has(id)
-      ){
-        manualTopo.selectedVertices.delete(id);
-      }else{
-        manualTopo.selectedVertices.add(id);
-      }
-
+  if(!consumed){
+    const edgeId=topoNearestEdgeScreenV110015g(event,9);
+    if(Number.isInteger(edgeId) && edgeId>=0){
+      manualTopo.mode="edge";
+      v110017SelectEdge(edgeId,{
+        append:!!event.shiftKey,
+        toggle:!!event.shiftKey
+      });
+      console.log("[V11.00.17f] edge selected",edgeId);
+      debugLog?.("TOPO","V11.00.17f edge selected",{edgeId});
       consumed=true;
     }
   }
 
-  if(!consumed && manualTopo.mode==="edge" && manualTopo.edgeHandles){
-    const hits=ray.intersectObjects(
-      manualTopo.edgeHandles.children,
-      false
-    );
-    if(hits.length){
-      const id=hits[0].object.userData.edgeIndex;
-
-      if(!event.shiftKey){
-        manualTopo.selectedEdges.clear();
-      }
-
-      if(
-        event.shiftKey &&
-        manualTopo.selectedEdges.has(id)
-      ){
-        manualTopo.selectedEdges.delete(id);
-      }else{
-        manualTopo.selectedEdges.add(id);
-      }
-
+  if(!consumed){
+    const hits=ray.intersectObject(manualTopo.editMesh,false);
+    const hit=hits[0];
+    if(hit && Number.isInteger(hit.faceIndex)){
+      manualTopo.mode="face";
+      v110017SelectFace(hit.faceIndex,{
+        append:!!event.shiftKey,
+        toggle:!!event.shiftKey
+      });
       consumed=true;
     }
   }
 
-  if(!consumed && manualTopo.mode==="face" && manualTopo.faceHandles){
-    const hits=ray.intersectObjects(
-      manualTopo.faceHandles.children,
-      false
-    );
-    if(hits.length){
-      const id=hits[0].object.userData.faceIndex;
-
-      if(!event.shiftKey){
-        manualTopo.selectedFaces.clear();
-      }
-
-      if(
-        event.shiftKey &&
-        manualTopo.selectedFaces.has(id)
-      ){
-        manualTopo.selectedFaces.delete(id);
-      }else{
-        manualTopo.selectedFaces.add(id);
-      }
-
-      consumed=true;
+  // Keep the toolbar mode indicator synchronized with what was clicked.
+  if(consumed){
+    for(const [id,m] of [
+      ["topoVertexBtn","vertex"],
+      ["topoEdgeBtn","edge"],
+      ["topoFaceBtn","face"]
+    ]){
+      document.getElementById(id)?.classList.toggle("active",manualTopo.mode===m);
     }
   }
 
   if(consumed){
-    topoRefreshOverlayMaterials();
-    topoUpdateStatus();
+    // V11.00.17h component click authority.
+    // Mark the event before any remaining capture/bubble listener can treat
+    // this as an entity/object selection.
+    event.__heroicTopologyComponentConsumed=true;
+
+    topologyInspectorState.selectedEntity=null;
+
+    try{clearEntityBBox?.();}catch{}
+    try{
+      entityTransformControls?.detach?.();
+      if(entityTransformControls){
+        entityTransformControls.visible=false;
+        entityTransformControls.enabled=false;
+      }
+    }catch{}
+
+    v110017ApplyComponentColors();
+
+    const ids=
+      manualTopo.mode==="vertex" ? [...manualTopo.selectedVertices] :
+      manualTopo.mode==="edge" ? [...manualTopo.selectedEdges] :
+      [...manualTopo.selectedFaces];
+
+    topoUpdateStatus(`${manualTopo.mode} ${ids.join(",")} selected`);
     updateTopologyXYZGizmo();
     renderMeshElementList();
+
     pushSelectionHistoryV1033(
       manualTopo.mode==="vertex"
         ? "Vertex selection"
@@ -17775,9 +19868,35 @@ function topoRaycast(event){
           ? "Edge selection"
           : "Face selection"
     );
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
     return;
   }
 
+
+  // V11.00.15d: component-edit clicks do not become object/entity selection.
+  // An explicit modifier workflow is required to switch semantic modules.
+  if(
+    manualTopo?.enabled &&
+    manualTopo?.editMesh &&
+    (manualTopo.mode==="vertex" || manualTopo.mode==="edge" || manualTopo.mode==="face") &&
+    event.button===0 &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey
+  ){
+    try{clearEntityBBox?.();}catch{}
+    try{
+      entityTransformControls?.detach?.();
+      if(entityTransformControls){
+        entityTransformControls.visible=false;
+        entityTransformControls.enabled=false;
+      }
+    }catch{}
+    return;
+  }
 
   // ----------------------------------------------------------
   // V10.44: PLAIN CLICK SWITCHES TO ANOTHER SEMANTIC MODULE.
@@ -17812,7 +19931,9 @@ function topoRaycast(event){
         o.visible &&
         o.geometry?.attributes?.position &&
         o!==manualTopo.sourceMesh &&
-        !o.userData?.isBoneMesh
+        !o.userData?.isBoneMesh &&
+        !o.userData?.topologyHelperV110014e &&
+        !o.userData?.excludeSemanticSelection
       ){
         candidates.push(o);
       }
@@ -25154,7 +27275,7 @@ function createLiveBoneVisual({
     const mat=new THREE.MeshBasicMaterial({
       color:0xc7d4df,
       transparent:true,
-      opacity:.82,
+      opacity:.88,
       depthTest:false,
       side:THREE.DoubleSide
     });
@@ -27464,7 +29585,7 @@ function init(){
         color,
         transparent:true,
         opacity:.95,
-        depthTest:false,
+        depthTest:true,
         depthWrite:false,
         side:THREE.DoubleSide
       })
@@ -27854,11 +29975,14 @@ function init(){
   seedSelectionHistoryV1033();
   renderControls();
   installPosePicking();
+  // V11.00.17i: topology owns LMB in capture phase, BUT topoRaycast now
+  // hard-gates all component handlers until selection stage 2.  Stage 0/1
+  // therefore remain entity/mesh-selection-only.
   renderer.domElement.addEventListener("pointerdown",e=>{
     if(state.mode==="topology" && e.button===0){
       topoRaycast(e);
     }
-  });
+  },true);
 
   // V10.64: double-click enters topology edit on the exact rifle component
   // under the cursor while retaining RifleRoot as semantic owner.
@@ -28324,16 +30448,41 @@ function animate(){
           st.shoulderPatch.visible=true;
           st.shoulderPatch.frustumCulled=false;
         }
+        const genericEditingThisArm=
+          manualTopo?.enabled && manualTopo?.sourceMesh===st?.mesh;
+
         if(st?.editOverlay){
-          st.editOverlay.visible=state?.mode==="topology";
+          st.editOverlay.visible=
+            state?.mode==="topology" &&
+            !!st.entitySelected &&
+            !genericEditingThisArm;
           st.editOverlay.geometry=st.mesh.geometry;
+          if(st.editOverlay.material){
+            st.editOverlay.material.color.setHex(0x050505);
+            st.editOverlay.material.opacity=.58;
+            st.editOverlay.material.depthTest=true;
+            st.editOverlay.material.depthWrite=false;
+          }
         }
         if(st?.editPoints){
-          st.editPoints.visible=state?.mode==="topology";
+          st.editPoints.visible=
+            state?.mode==="topology" &&
+            !!st.entitySelected &&
+            !genericEditingThisArm;
           st.editPoints.geometry=st.mesh.geometry;
+          if(st.editPoints.material){
+            st.editPoints.material.color.setHex(0x080808);
+            st.editPoints.material.size=4.5;
+            st.editPoints.material.sizeAttenuation=false;
+            st.editPoints.material.depthTest=true;
+            st.editPoints.material.depthWrite=false;
+          }
+        }
+        if(st?.entitySelected && state?.mode==="topology"){
+          v110014aSuppressLegacyArmEditVisuals(S);
         }
         if(st?.displayGroup){
-          st.displayGroup.visible=state?.mode==="topology";
+          st.displayGroup.visible=false;
           for(const c of st.displayGroup.children){
             c.visible=true;
             c.frustumCulled=false;
@@ -28348,6 +30497,231 @@ function animate(){
           debugLog?.("ERROR","V11.00.13c arm final-authority guard",String(err?.stack||err));
         }
       }
+    }
+
+    // V11.00.14f component-edit visual authority.
+    if(state?.mode==="topology" && manualTopo?.enabled && manualTopo?.editMesh){
+      try{ clearEntityBBox?.(); }catch{}
+      try{
+        entityTransformControls?.detach?.();
+        if(entityTransformControls){
+          entityTransformControls.visible=false;
+          entityTransformControls.enabled=false;
+        }
+      }catch{}
+
+      const pts=manualTopo.vertexVisualPointsV110014b;
+      if(pts){
+        pts.visible=true;
+        pts.frustumCulled=false;
+      }
+    }
+
+
+    if(state?.mode==="topology" && manualTopo?.enabled && manualTopo?.editMesh){
+      manualTopo.editMesh.traverse(o=>{
+        if(o.userData?.hitTestOnlyV110014g && o.material){
+          const mats=Array.isArray(o.material)?o.material:[o.material];
+          for(const m of mats){
+            m.visible=false;
+            m.opacity=0;
+            if("colorWrite" in m)m.colorWrite=false;
+          }
+        }
+      });
+
+      const pts=manualTopo.vertexVisualPointsV110014b;
+      if(pts){
+        pts.visible=true;
+        pts.frustumCulled=false;
+        if(pts.material){
+          pts.material.visible=true;
+          // V11.00.16 ShaderMaterial owns gl_PointSize.
+        }
+      }
+    }
+
+    if(state?.mode==="topology" && manualTopo?.enabled){
+      try{ clearEntityBBox?.(); }catch{}
+      try{
+        entityTransformControls?.detach?.();
+        if(entityTransformControls){
+          entityTransformControls.visible=false;
+          entityTransformControls.enabled=false;
+        }
+      }catch{}
+    }
+
+    if(state?.mode==="topology" && manualTopo?.enabled){
+      try{ clearEntityBBox?.(); }catch{}
+      try{
+        entityTransformControls?.detach?.();
+        if(entityTransformControls){
+          entityTransformControls.visible=false;
+          entityTransformControls.enabled=false;
+        }
+      }catch{}
+
+      // Remove stale helper/bounds meshes that are not the wire/points/gizmo.
+      const staleBounds=[];
+      scene?.traverse?.(o=>{
+        const n=String(o.name||"");
+        if(
+          o!==TopologyXYZDragV1055.root &&
+          (
+            n.includes("BBox") ||
+            n.includes("BoundingBox") ||
+            n.includes("VertexHandle") ||
+            o.userData?.vertexBoundingHelper===true
+          )
+        ){
+          if(!o.userData?.vertexAuthorityV110015a)staleBounds.push(o);
+        }
+      });
+      for(const o of staleBounds)o.visible=false;
+    }
+
+    if(state?.mode==="topology" && manualTopo?.enabled){
+      // V11.00.15b: hide any stale legacy V1029 gizmo objects.
+      scene?.traverse?.(o=>{
+        const n=String(o.name||"");
+        if(
+          n.includes("V1029") &&
+          (
+            n.includes("Gizmo") ||
+            n.includes("XYZ")
+          )
+        ){
+          o.visible=false;
+        }
+      });
+    }
+
+    if(
+      state?.mode==="topology" &&
+      manualTopo?.enabled &&
+      manualTopo?.editMesh
+    ){
+      for(const S of ["L","R"]){
+        const st=RiflemanArmModelerV110011?.sides?.[S];
+        if(!st)continue;
+
+        if(st.vertexHandle)st.vertexHandle.visible=false;
+        if(st.pickGroup)st.pickGroup.visible=false;
+        if(st.selectionGroup){
+          st.selectionGroup.visible=false;
+          for(const child of st.selectionGroup.children)child.visible=false;
+        }
+        if(st.editOverlay)st.editOverlay.visible=false;
+        if(st.editPoints)st.editPoints.visible=false;
+      }
+
+      // Remove any accidental object-level transform attachment.
+      try{
+        entityTransformControls?.detach?.();
+        if(entityTransformControls){
+          entityTransformControls.visible=false;
+          entityTransformControls.enabled=false;
+        }
+      }catch{}
+      try{clearEntityBBox?.();}catch{}
+    }
+
+    if(state?.mode==="topology" && manualTopo?.enabled){
+      try{clearEntityBBox?.();}catch{}
+
+      if(entityTransformControls){
+        try{entityTransformControls.detach?.();}catch{}
+        entityTransformControls.visible=false;
+        entityTransformControls.enabled=false;
+      }
+
+      // Hit geometry is raycast-only. Never render it.
+      for(const h of TopologyXYZDragV1055?.handles||[]){
+        if(h?.material){
+          const mats=Array.isArray(h.material)?h.material:[h.material];
+          for(const m of mats){
+            m.visible=false;
+            m.opacity=0;
+            if("colorWrite" in m)m.colorWrite=false;
+          }
+        }
+      }
+
+      const pts=manualTopo?.vertexHandles;
+      if(pts?.isPoints){
+        pts.visible=true;
+        pts.material.visible=true;
+      }
+    }
+
+    if(state?.mode==="topology" && manualTopo?.enabled && manualTopo?.editMesh){
+      // V11.00.15e final display authority. This is intentionally cheap for
+      // the low-poly RTS edit meshes and prevents any old overlay code from
+      // restoring black over a selected yellow component.
+      v110017ApplyComponentColors?.();
+
+      try{clearEntityBBox?.();}catch{}
+      try{
+        entityTransformControls?.detach?.();
+        if(entityTransformControls){
+          entityTransformControls.visible=false;
+          entityTransformControls.enabled=false;
+        }
+      }catch{}
+    }
+
+    if(
+      state?.mode==="topology" &&
+      manualTopo?.enabled &&
+      manualTopo?.editMesh
+    ){
+      // V11.00.16: one renderer only.
+      for(const S of ["L","R"]){
+        const st=RiflemanArmModelerV110011?.sides?.[S];
+        if(!st)continue;
+
+        if(st.vertexHandle)st.vertexHandle.visible=false;
+        if(st.pickGroup)st.pickGroup.visible=false;
+        if(st.selectionGroup){
+          st.selectionGroup.visible=false;
+          for(const child of st.selectionGroup.children)child.visible=false;
+        }
+        if(st.editOverlay)st.editOverlay.visible=false;
+        if(st.editPoints)st.editPoints.visible=false;
+      }
+
+      // The opaque edit mesh is the depth occluder.
+      const em=manualTopo.editMesh;
+      const mats=Array.isArray(em.material)?em.material:[em.material];
+      for(const m of mats){
+        if(!m)continue;
+        m.depthTest=true;
+        // Do not rewrite transparency/opacity here because some special
+        // topology sources intentionally use translucent edit clones.
+        if(m.opacity>=.99)m.depthWrite=true;
+      }
+
+      v110017ApplyComponentColors?.();
+    }
+
+    if(
+      state?.mode==="topology" &&
+      manualTopo?.enabled &&
+      manualTopo?.editMesh
+    ){
+      v110017ApplyComponentColors?.();
+
+      topologyInspectorState.selectedEntity=null;
+
+      try{ clearEntityBBox?.(); }catch{}
+      try{
+        entityTransformControls?.detach?.();
+        if(entityTransformControls){
+          entityTransformControls.visible=false;
+          entityTransformControls.enabled=false;
+        }
+      }catch{}
     }
 
     updateHandRotateBallAuthorityV1099z10c();
@@ -28527,6 +30901,1117 @@ window.reportArmRoutingV110013e = ()=>{
   return rows;
 };
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+window.debugVertexDotsOnTopV110017e=(enabled=true)=>{
+  const dots=manualTopo?.vertexDotRendererV110017d;
+  if(!dots?.material)return false;
+  dots.material.depthTest=!enabled;
+  dots.material.needsUpdate=true;
+  dots.visible=true;
+  console.log(
+    `[V11.00.17e] vertex dots ${enabled?"forced on top":"depth tested"}`
+  );
+  return true;
+};
+
+
+
+
+
+
+window.reportArmRingEditorV110018=()=>{
+  const topo=v110018ArmTopology();
+  const result={
+    active:!!topo,
+    indexed:!!manualTopo?.editMesh?.geometry?.index,
+    source:manualTopo?.sourceMesh?.name||null,
+    editMesh:manualTopo?.editMesh?.name||null,
+    ringCount:topo?.rings?.length??0,
+    ringSides:topo?.rings?.[0]?.length??0,
+    ringNames:topo?.ringNames||[],
+    ringKinds:topo?.ringKinds||[],
+    ringParams:topo?.ringParams||[],
+    activeRing:ArmRingEditorV110018.activeRingIndex,
+    falloffEnabled:ArmRingEditorV110018.falloffEnabled,
+    falloffRadius:ArmRingEditorV110018.falloffRadius,
+    selectedVertices:[...(manualTopo?.selectedVertices||[])]
+  };
+  console.log("[V11.00.18 ARM RING EDITOR]",result);
+  return result;
+};
+
+window.selfTestArmRingEditorV110018=()=>{
+  const r=reportArmRingEditorV110018();
+  const errors=[];
+
+  if(!r.active)errors.push("current edit mesh is not a structured V11 arm");
+  if(!r.indexed)errors.push("arm Edit Mode geometry lost its index");
+  if(r.ringCount<9)errors.push(`expected at least 9 rings, got ${r.ringCount}`);
+  if(r.ringSides!==8)errors.push(`expected 8 vertices per ring, got ${r.ringSides}`);
+  if(r.ringNames.slice(0,9).filter(Boolean).length<9)
+    errors.push("semantic ring names are incomplete");
+
+  const topo=v110018ArmTopology();
+  if(topo){
+    const flat=topo.rings.flat();
+    const unique=new Set(flat);
+    if(unique.size!==flat.length)
+      errors.push("ring vertex indices overlap unexpectedly");
+  }
+
+  return {
+    ok:errors.length===0,
+    errors,
+    report:r
+  };
+};
+
+window.selfTestTwoStageOcclusionV110017i=()=>{
+  const dots=manualTopo?.vertexDotRendererV110017d;
+  const stage=TopologyClickStageV110015f?.stage??0;
+  const errors=[];
+
+  if(stage<2){
+    if((manualTopo?.selectedVertices?.size||0)>0)
+      errors.push("vertex selected before stage 2");
+    if((manualTopo?.selectedEdges?.size||0)>0)
+      errors.push("edge selected before stage 2");
+    if((manualTopo?.selectedFaces?.size||0)>0)
+      errors.push("face selected before stage 2");
+  }
+
+  if(dots?.material?.depthTest!==true)
+    errors.push("vertex handles are still x-ray");
+
+  const result={
+    ok:errors.length===0,
+    errors,
+    stage,
+    manualTopoEnabled:!!manualTopo?.enabled,
+    stage2Ready:!!(
+      manualTopo?.enabled &&
+      stage===2 &&
+      manualTopo?.editMesh &&
+      manualTopo?.sourceMesh
+    ),
+    selectedVertices:[...(manualTopo?.selectedVertices||[])],
+    selectedEdges:[...(manualTopo?.selectedEdges||[])],
+    selectedFaces:[...(manualTopo?.selectedFaces||[])],
+    dots:{
+      object:dots?.name||null,
+      visible:dots?.visible??false,
+      count:dots?.count??0,
+      depthTest:dots?.material?.depthTest??null,
+      depthWrite:dots?.material?.depthWrite??null,
+      polygonOffset:dots?.material?.polygonOffset??null
+    }
+  };
+
+  console.log("[V11.00.17i TWO-STAGE + OCCLUSION]",result);
+  return result;
+};
+
+window.selfTestComponentClickIsolationV110017h=()=>{
+  const legacy=[];
+  for(const S of ["L","R"]){
+    const st=RiflemanArmModelerV110011?.sides?.[S];
+    if(!st)continue;
+    legacy.push({
+      side:S,
+      pickGroupVisible:st.pickGroup?.visible??null,
+      selectionGroupVisible:st.selectionGroup?.visible??null,
+      selectionChildrenVisible:
+        [...(st.selectionGroup?.children||[])].filter(o=>o.visible).length,
+      vertexHandleVisible:st.vertexHandle?.visible??null
+    });
+  }
+
+  const errors=[];
+  if(topologyInspectorState?.selectedEntity)
+    errors.push("semantic/entity selection leaked into component edit");
+  if(entityTransformControls?.object)
+    errors.push("entity TransformControls attached during component edit");
+  if(legacy.some(x=>x.pickGroupVisible))
+    errors.push("legacy arm pickGroup visible");
+  if(legacy.some(x=>x.selectionGroupVisible || x.selectionChildrenVisible))
+    errors.push("legacy arm selectionGroup visible");
+
+  const result={
+    ok:errors.length===0,
+    errors,
+    mode:manualTopo?.mode||null,
+    selectedVertices:[...(manualTopo?.selectedVertices||[])],
+    selectedEdges:[...(manualTopo?.selectedEdges||[])],
+    selectedFaces:[...(manualTopo?.selectedFaces||[])],
+    semanticSelected:topologyInspectorState?.selectedEntity?.name||null,
+    entityTransformAttached:entityTransformControls?.object?.name||null,
+    legacy
+  };
+  console.log("[V11.00.17h COMPONENT CLICK ISOLATION]",result);
+  return result;
+};
+
+window.selfTestLegacyVertexScaleAuthorityV110017g=()=>{
+  const pts=manualTopo?.vertexHandles;
+  const dots=manualTopo?.vertexDotRendererV110017d;
+  const errors=[];
+
+  if(!manualTopo?.enabled)errors.push("mesh edit is not open");
+
+  if(pts){
+    if(isTopologyVertexVisualV1044(pts))
+      errors.push("legacy visual scaler still claims authoritative THREE.Points");
+    if(Math.abs(pts.scale.x-1)>1e-5 ||
+       Math.abs(pts.scale.y-1)>1e-5 ||
+       Math.abs(pts.scale.z-1)>1e-5)
+      errors.push(`THREE.Points object scale is ${pts.scale.toArray().join(",")}`);
+  }
+
+  if(dots){
+    if(isTopologyVertexVisualV1044(dots))
+      errors.push("legacy visual scaler still claims vertex InstancedMesh");
+    if(Math.abs(dots.scale.x-1)>1e-5 ||
+       Math.abs(dots.scale.y-1)>1e-5 ||
+       Math.abs(dots.scale.z-1)>1e-5)
+      errors.push(`dot renderer scale is ${dots.scale.toArray().join(",")}`);
+  }
+
+  const result={
+    ok:errors.length===0,
+    errors,
+    points:{
+      name:pts?.name||null,
+      visible:pts?.visible??false,
+      scale:pts?.scale?.toArray?.()||null,
+      legacyScalerClaims:pts?isTopologyVertexVisualV1044(pts):null
+    },
+    dots:{
+      name:dots?.name||null,
+      visible:dots?.visible??false,
+      count:dots?.count??0,
+      scale:dots?.scale?.toArray?.()||null,
+      legacyScalerClaims:dots?isTopologyVertexVisualV1044(dots):null
+    }
+  };
+
+  console.log("[V11.00.17g LEGACY SCALE AUTHORITY]",result);
+  return result;
+};
+
+window.selfTestGuaranteedVertexDotsV110017f=()=>{
+  const dots=manualTopo?.vertexDotRendererV110017d;
+  const data=topoGeometryArrays?.();
+  const errors=[];
+
+  if(!manualTopo?.enabled)errors.push("mesh edit is not open");
+  if(TopologyClickStageV110015f?.stage!==2)errors.push("mesh edit stage is not 2");
+  if(!dots?.isInstancedMesh)errors.push("vertex sphere InstancedMesh missing");
+  if(!dots?.visible)errors.push("vertex sphere renderer hidden");
+  if(dots?.material?.depthTest!==false)
+    errors.push("guaranteed-visible vertex dots unexpectedly depth tested");
+  if((dots?.count||0)!==(data?.vertices?.length||0))
+    errors.push("dot count does not match topology vertex count");
+
+  const result={
+    ok:errors.length===0,
+    errors,
+    stage:TopologyClickStageV110015f?.stage??null,
+    meshEdit:!!manualTopo?.enabled,
+    object:dots?.name||null,
+    dots:dots?.count??0,
+    vertices:data?.vertices?.length??0,
+    visible:dots?.visible??false,
+    depthTest:dots?.material?.depthTest??null,
+    renderOrder:dots?.renderOrder??null,
+    selectedVertices:[...(manualTopo?.selectedVertices||[])],
+    selectedEdges:[...(manualTopo?.selectedEdges||[])]
+  };
+  console.log("[V11.00.17f GUARANTEED VERTEX DOTS]",result);
+  return result;
+};
+
+window.selfTestVertexSurfaceOffsetV110017e=()=>{
+  const dots=manualTopo?.vertexDotRendererV110017d;
+  const errors=[];
+  if(!manualTopo?.enabled)errors.push("mesh edit is not open");
+  if(!dots?.isInstancedMesh)errors.push("billboard vertex renderer missing");
+  if(!dots?.visible)errors.push("billboard vertex renderer hidden");
+  if(!dots?.material?.polygonOffset)errors.push("polygon offset missing");
+  return {
+    ok:errors.length===0,
+    errors,
+    dots:dots?.name||null,
+    count:dots?.count??0,
+    visible:dots?.visible??false,
+    depthTest:dots?.material?.depthTest??null,
+    polygonOffset:dots?.material?.polygonOffset??null,
+    polygonOffsetFactor:dots?.material?.polygonOffsetFactor??null
+  };
+};
+
+window.selfTestVertexDotBillboardsV110017d=()=>{
+  const dots=manualTopo?.vertexDotRendererV110017d;
+  const data=topoGeometryArrays?.();
+  const errors=[];
+  if(!manualTopo?.enabled)errors.push("mesh edit is not open");
+  if(!dots?.isInstancedMesh)errors.push("vertex dot InstancedMesh missing");
+  if(!dots?.visible)errors.push("vertex dot renderer hidden");
+  if((dots?.count||0)!==(data?.vertices?.length||0))errors.push("dot count mismatch");
+  if(!dots?.instanceColor)errors.push("per-dot color buffer missing");
+
+  const result={
+    ok:errors.length===0,errors,
+    object:dots?.name||null,
+    dotCount:dots?.count??0,
+    topologyVertices:data?.vertices?.length??0,
+    visible:dots?.visible??false,
+    depthTest:dots?.material?.depthTest??null,
+    instanceColorCount:dots?.instanceColor?.count??0
+  };
+  console.log("[V11.00.17d VERTEX DOT BILLBOARDS]",result);
+  return result;
+};
+
+window.selfTestVisibleVertexHandlesV110017c=()=>{
+  const p=manualTopo?.vertexHandles;
+  const attr=p?.geometry?.getAttribute?.("componentColor");
+  const errors=[];
+
+  if(!manualTopo?.enabled)errors.push("mesh edit is not open");
+  if(!p?.isPoints)errors.push("authoritative THREE.Points object missing");
+  if(!p?.visible)errors.push("vertex points object hidden");
+  if(!p?.material?.isShaderMaterial)errors.push("depth-biased point shader missing");
+  if(!attr?.count)errors.push("componentColor attribute missing");
+  if((p?.material?.uniforms?.uPointSize?.value||0)<6)
+    errors.push("point size below Blender-style visibility target");
+  if((p?.material?.uniforms?.uDepthBias?.value||0)<=0)
+    errors.push("point depth bias missing");
+
+  const result={
+    ok:errors.length===0,
+    errors,
+    pointObject:p?.name||null,
+    pointCount:p?.geometry?.attributes?.position?.count??0,
+    colorCount:attr?.count??0,
+    visible:p?.visible??false,
+    shaderCompiledPath:!!p?.material?.isShaderMaterial,
+    pointSize:p?.material?.uniforms?.uPointSize?.value??null,
+    depthBias:p?.material?.uniforms?.uDepthBias?.value??null,
+    depthTest:p?.material?.depthTest??null,
+    selectedVertices:[...(manualTopo?.selectedVertices||[])]
+  };
+  console.log("[V11.00.17c VISIBLE VERTEX HANDLES]",result);
+  return result;
+};
+
+window.selfTestDirectComponentPickingV110017b=()=>{
+  const pts=manualTopo?.vertexHandles;
+  const wire=manualTopo?.wireOverlay;
+  const errors=[];
+
+  if(!manualTopo?.enabled)errors.push("mesh edit is not open");
+  if(TopologyClickStageV110015f?.stage!==2)errors.push("click stage is not mesh-edit stage 2");
+  if(!pts?.isPoints)errors.push("authoritative vertex renderer missing");
+  if(!pts?.visible)errors.push("vertex renderer is hidden");
+  if(!(pts?.material?.isShaderMaterial))errors.push("vertex renderer is not depth-biased ShaderMaterial");
+  if((pts?.material?.uniforms?.uPointSize?.value??0)<5)errors.push("vertex handles are too small");
+  if(!wire?.isLineSegments)errors.push("wire renderer missing");
+  if(!wire?.visible)errors.push("wire renderer is hidden");
+  if(entityTransformControls?.object)errors.push("entity transform controls still attached");
+  if(topologyInspectorState?.bboxHelper?.visible)errors.push("entity bbox still visible");
+
+  const result={
+    ok:errors.length===0,
+    errors,
+    stage:TopologyClickStageV110015f?.stage??null,
+    meshEdit:!!manualTopo?.enabled,
+    pointObject:pts?.name||null,
+    pointCount:pts?.geometry?.attributes?.position?.count??0,
+    pointVisible:pts?.visible??false,
+    pointMaterial:pts?.material?.type||null,
+    pointSize:pts?.material?.uniforms?.uPointSize?.value??pts?.material?.size??null,
+    sizeAttenuation:pts?.material?.sizeAttenuation??null,
+    wireVisible:wire?.visible??false,
+    mode:manualTopo?.mode||null
+  };
+  console.log("[V11.00.17b DIRECT COMPONENT PICKING]",result);
+  return result;
+};
+
+window.reportTopologyShaderMaterialsV110017a=()=>{
+  const pts=manualTopo?.vertexHandles;
+  const wire=manualTopo?.wireOverlay;
+
+  const summarize=(o)=>({
+    object:o?.name||null,
+    materialType:o?.material?.type||null,
+    shaderMaterial:!!o?.material?.isShaderMaterial,
+    vertexColors:o?.material?.vertexColors??null,
+    visible:o?.visible??false,
+    depthTest:o?.material?.depthTest??null,
+    depthWrite:o?.material?.depthWrite??null,
+    vertexShaderHasExplicitColorAttribute:
+      /\battribute\s+vec3\s+color\s*;/.test(o?.material?.vertexShader||""),
+    fragmentShaderHasExplicitColorAttribute:
+      /\battribute\s+vec3\s+color\s*;/.test(o?.material?.fragmentShader||"")
+  });
+
+  const result={
+    points:summarize(pts),
+    wire:summarize(wire)
+  };
+
+  console.log("[V11.00.17a TOPOLOGY SHADERS]",result);
+  return result;
+};
+
+window.selfTestTopologyShadersV110017a=()=>{
+  const report=reportTopologyShaderMaterialsV110017a();
+  const errors=[];
+
+  for(const [label,x] of Object.entries(report)){
+    if(!x.shaderMaterial)
+      errors.push(`${label} is not ShaderMaterial`);
+    if(x.vertexShaderHasExplicitColorAttribute)
+      errors.push(`${label} explicitly redeclares injected color attribute`);
+  }
+
+  return {
+    ok:errors.length===0,
+    errors,
+    report
+  };
+};
+
+window.reportBlenderComponentHandlesV110017=()=>{
+  const c=manualTopo?.components;
+  const pts=manualTopo?.vertexHandles;
+  const wire=manualTopo?.wireOverlay;
+
+  const result={
+    stage:TopologyClickStageV110015f?.stage??null,
+    meshEdit:!!manualTopo?.enabled,
+    mode:manualTopo?.mode||null,
+    source:manualTopo?.sourceMesh?.name||null,
+
+    componentCounts:{
+      vertices:c?.vertices?.length??0,
+      edges:c?.edges?.length??0,
+      faces:c?.faces?.length??0
+    },
+
+    selected:{
+      vertices:(c?.vertices||[]).filter(x=>x.selected).map(x=>x.index),
+      edges:(c?.edges||[]).filter(x=>x.selected).map(x=>x.index),
+      faces:(c?.faces||[]).filter(x=>x.selected).map(x=>x.index)
+    },
+
+    selectedMeshVertices:v110017SelectedMeshVertices(),
+
+    vertexRenderer:{
+      name:pts?.name||null,
+      isPoints:!!pts?.isPoints,
+      visible:pts?.visible??false,
+      colorCount:pts?.geometry?.getAttribute?.("color")?.count??0
+    },
+
+    edgeRenderer:{
+      name:wire?.name||null,
+      isLineSegments:!!wire?.isLineSegments,
+      visible:wire?.visible??false,
+      colorCount:wire?.geometry?.getAttribute?.("color")?.count??0
+    },
+
+    legacyHitObjects:{
+      edgeHandles:!!manualTopo?.edgeHandles,
+      faceHandles:!!manualTopo?.faceHandles
+    },
+
+    entitySelection:
+      topologyInspectorState?.selectedEntity?.name||null,
+
+    bboxVisible:
+      topologyInspectorState?.bboxHelper?.visible??false,
+
+    entityTransformAttached:
+      !!entityTransformControls?.object,
+
+    yellowVertexOverlayExists:
+      !!manualTopo?.editMesh?.getObjectByName?.("TopoSelectedVertexOverlay"),
+
+    yellowEdgeOverlayExists:
+      !!manualTopo?.editMesh?.getObjectByName?.("TopoSelectedEdgeOverlay")
+  };
+
+  console.log("[V11.00.17 BLENDER COMPONENT HANDLES]",result);
+  return result;
+};
+
+window.selfTestBlenderComponentHandlesV110017=()=>{
+  if(!manualTopo?.enabled || !manualTopo?.editMesh){
+    return {
+      ok:false,
+      errors:["Open mesh-edit mode first"]
+    };
+  }
+
+  v110017EnsureComponents();
+  v110017ApplyComponentColors();
+
+  const errors=[];
+  const c=manualTopo.components;
+
+  if(!c?.vertices?.length)errors.push("no vertex components");
+  if(!c?.edges?.length)errors.push("no edge components");
+  if(!c?.faces?.length)errors.push("no face components");
+  if(!manualTopo.vertexHandles?.isPoints)
+    errors.push("vertex renderer is not THREE.Points");
+  if(!manualTopo.wireOverlay?.isLineSegments)
+    errors.push("edge renderer is not THREE.LineSegments");
+  if(manualTopo.edgeHandles)
+    errors.push("legacy edge hit handles still exist");
+  if(manualTopo.faceHandles)
+    errors.push("legacy face hit handles still exist");
+  if(manualTopo.editMesh.getObjectByName("TopoSelectedVertexOverlay"))
+    errors.push("legacy selected vertex overlay exists");
+  if(manualTopo.editMesh.getObjectByName("TopoSelectedEdgeOverlay"))
+    errors.push("legacy selected edge overlay exists");
+  if(entityTransformControls?.object)
+    errors.push("entity TransformControls attached");
+  if(topologyInspectorState?.bboxHelper?.visible)
+    errors.push("entity bbox visible");
+
+  return {
+    ok:errors.length===0,
+    errors,
+    report:reportBlenderComponentHandlesV110017()
+  };
+};
+
+window.reportComponentSelectionV110016b=()=>{
+  const result={
+    stage:TopologyClickStageV110015f?.stage??null,
+    meshEdit:!!manualTopo?.enabled,
+    mode:manualTopo?.mode||null,
+    selectedEntity:topologyInspectorState?.selectedEntity?.name||null,
+    selectedVertices:[...(manualTopo?.selectedVertices||[])],
+    selectedEdges:[...(manualTopo?.selectedEdges||[])],
+    selectedFaces:[...(manualTopo?.selectedFaces||[])],
+    bboxVisible:topologyInspectorState?.bboxHelper?.visible??false,
+    entityTransformAttached:!!entityTransformControls?.object,
+    pointVisible:manualTopo?.vertexHandles?.visible??false,
+    selectedVertexOverlay:!!manualTopo?.editMesh?.getObjectByName?.("TopoSelectedVertexOverlay"),
+    selectedEdgeOverlay:!!manualTopo?.editMesh?.getObjectByName?.("TopoSelectedEdgeOverlay")
+  };
+  console.log("[V11.00.16b COMPONENT SELECTION]",result);
+  return result;
+};
+
+window.reportSecondClickRuntimeV110016a=()=>{
+  const pts=manualTopo?.vertexHandles;
+  const wire=manualTopo?.wireOverlay;
+
+  const result={
+    stage:TopologyClickStageV110015f?.stage??null,
+    manualTopoEnabled:!!manualTopo?.enabled,
+    source:manualTopo?.sourceMesh?.name||null,
+    editMesh:manualTopo?.editMesh?.name||null,
+    pointObject:pts?.name||null,
+    pointVisible:pts?.visible??false,
+    pointShader:!!pts?.material?.userData?.topologyPointShaderV110016,
+    wireObject:wire?.name||null,
+    wireVisible:wire?.visible??false,
+    wireShader:!!wire?.material?.isShaderMaterial,
+    selectedVertices:[...(manualTopo?.selectedVertices||[])],
+    selectedEdges:[...(manualTopo?.selectedEdges||[])],
+    selectedFaces:[...(manualTopo?.selectedFaces||[])]
+  };
+
+  console.log("[V11.00.16a SECOND CLICK RUNTIME]",result);
+  return result;
+};
+
+window.reportTopologyRendererV110016=()=>{
+  const pts=manualTopo?.vertexHandles;
+  const wire=manualTopo?.wireOverlay;
+
+  const editMats=manualTopo?.editMesh
+    ? (Array.isArray(manualTopo.editMesh.material)
+        ? manualTopo.editMesh.material
+        : [manualTopo.editMesh.material])
+    : [];
+
+  const result={
+    source:manualTopo?.sourceMesh?.name||null,
+    editMesh:manualTopo?.editMesh?.name||null,
+    stage:TopologyClickStageV110015f?.stage??null,
+    mode:manualTopo?.mode||null,
+
+    pointObject:pts?.name||null,
+    pointVisible:pts?.visible??false,
+    pointShader:!!pts?.material?.userData?.topologyPointShaderV110016,
+    pointDepthTest:pts?.material?.depthTest??null,
+    pointDepthWrite:pts?.material?.depthWrite??null,
+    pointColorCount:pts?.geometry?.getAttribute?.("color")?.count??0,
+
+    wireObject:wire?.name||null,
+    wireVisible:wire?.visible??false,
+    wireShader:!!wire?.material?.isShaderMaterial,
+    wireDepthTest:wire?.material?.depthTest??null,
+    wireDepthWrite:wire?.material?.depthWrite??null,
+
+    editMeshDepth:editMats.map(m=>({
+      opacity:m?.opacity??null,
+      transparent:m?.transparent??null,
+      depthTest:m?.depthTest??null,
+      depthWrite:m?.depthWrite??null
+    })),
+
+    selectedVertices:[...(manualTopo?.selectedVertices||[])],
+    selectedEdges:[...(manualTopo?.selectedEdges||[])],
+    selectedFaces:[...(manualTopo?.selectedFaces||[])]
+  };
+
+  console.log("[V11.00.16 TOPOLOGY RENDERER]",result);
+  return result;
+};
+
+window.reportBlenderComponentSelectionV110015g=()=>{
+  const pts=manualTopo?.vertexHandles;
+  const wire=manualTopo?.wireOverlay;
+  const pc=pts?.geometry?.getAttribute?.("color");
+  const wc=wire?.geometry?.getAttribute?.("color");
+
+  const selectedPointColors=[];
+  for(const vi of manualTopo?.selectedVertices||[]){
+    if(pc && vi>=0 && vi<pc.count){
+      selectedPointColors.push({
+        vi,
+        rgb:[
+          +pc.getX(vi).toFixed(3),
+          +pc.getY(vi).toFixed(3),
+          +pc.getZ(vi).toFixed(3)
+        ]
+      });
+    }
+  }
+
+  const selectedEdgeColors=[];
+  for(const ei of manualTopo?.selectedEdges||[]){
+    const i=ei*2;
+    if(wc && i>=0 && i<wc.count){
+      selectedEdgeColors.push({
+        ei,
+        rgb:[
+          +wc.getX(i).toFixed(3),
+          +wc.getY(i).toFixed(3),
+          +wc.getZ(i).toFixed(3)
+        ]
+      });
+    }
+  }
+
+  const result={
+    stage:TopologyClickStageV110015f?.stage??null,
+    mode:manualTopo?.mode||null,
+    source:manualTopo?.sourceMesh?.name||null,
+    pointAuthority:pts?.name||null,
+    pointCount:pts?.geometry?.attributes?.position?.count??0,
+    pointVisible:pts?.visible??false,
+    pointDepthTest:pts?.material?.depthTest??null,
+    pointSize:pts?.material?.uniforms?.uPointSize?.value??pts?.material?.size??null,
+    edgeHelpers:manualTopo?.edgeHandles??null,
+    faceHelpers:manualTopo?.faceHandles??null,
+    selectedVertices:[...(manualTopo?.selectedVertices||[])],
+    selectedEdges:[...(manualTopo?.selectedEdges||[])],
+    selectedFaces:[...(manualTopo?.selectedFaces||[])],
+    selectedPointColors,
+    selectedEdgeColors,
+    bboxVisible:topologyInspectorState?.bboxHelper?.visible??false,
+    transformAttached:!!entityTransformControls?.object
+  };
+
+  console.log("[V11.00.15g BLENDER COMPONENT SELECTION]",result);
+  return result;
+};
+
+window.reportTwoStageTopologyV110015f=()=>{
+  const p=manualTopo?.vertexHandles;
+  const pc=p?.geometry?.getAttribute?.("componentColor") || p?.geometry?.getAttribute?.("color");
+  const selectedPointSamples=[];
+
+  for(const vi of manualTopo?.selectedVertices||[]){
+    if(pc && vi>=0 && vi<pc.count){
+      selectedPointSamples.push({
+        vi,
+        rgb:[
+          +pc.getX(vi).toFixed(3),
+          +pc.getY(vi).toFixed(3),
+          +pc.getZ(vi).toFixed(3)
+        ]
+      });
+    }
+  }
+
+  const result={
+    clickStage:{...TopologyClickStageV110015f},
+    manualTopoEnabled:!!manualTopo?.enabled,
+    source:manualTopo?.sourceMesh?.name||null,
+    points:p?.name||null,
+    isPoints:!!p?.isPoints,
+    pointsVisible:p?.visible??false,
+    pointCount:p?.geometry?.attributes?.position?.count??0,
+    pointSize:p?.material?.size??null,
+    selectedVertices:[...(manualTopo?.selectedVertices||[])],
+    selectedEdges:[...(manualTopo?.selectedEdges||[])],
+    selectedFaces:[...(manualTopo?.selectedFaces||[])],
+    selectedPointSamples,
+    bboxVisible:topologyInspectorState?.bboxHelper?.visible??false,
+    objectTransformAttached:!!entityTransformControls?.object
+  };
+
+  console.log("[V11.00.15f TWO STAGE TOPOLOGY]",result);
+  return result;
+};
+
+window.reportVertexDepthBiasAuthorityV110015e=()=>{
+  const p=manualTopo?.vertexHandles;
+  const w=manualTopo?.wireOverlay;
+  const pc=p?.geometry?.getAttribute?.("componentColor") || p?.geometry?.getAttribute?.("color");
+  const wc=w?.geometry?.getAttribute?.("color");
+
+  const selectedVertexColors=[];
+  for(const vi of manualTopo?.selectedVertices||[]){
+    if(pc && vi>=0 && vi<pc.count){
+      selectedVertexColors.push({
+        vi,
+        rgb:[
+          +pc.getX(vi).toFixed(3),
+          +pc.getY(vi).toFixed(3),
+          +pc.getZ(vi).toFixed(3)
+        ]
+      });
+    }
+  }
+
+  const selectedEdgeColors=[];
+  for(const ei of manualTopo?.selectedEdges||[]){
+    const i=ei*2;
+    if(wc && i>=0 && i+1<wc.count){
+      selectedEdgeColors.push({
+        ei,
+        rgb:[
+          +wc.getX(i).toFixed(3),
+          +wc.getY(i).toFixed(3),
+          +wc.getZ(i).toFixed(3)
+        ]
+      });
+    }
+  }
+
+  const result={
+    mode:manualTopo?.mode||null,
+    pointObject:p?.name||null,
+    isPoints:!!p?.isPoints,
+    pointVisible:p?.visible??null,
+    pointMaterialVisible:p?.material?.visible??null,
+    pointSize:p?.material?.size??null,
+    pointDepthTest:p?.material?.depthTest??null,
+    pointRenderOrder:p?.renderOrder??null,
+    pointColorCount:pc?.count??0,
+    selectedVertices:[...(manualTopo?.selectedVertices||[])],
+    selectedVertexColors,
+    selectedEdges:[...(manualTopo?.selectedEdges||[])],
+    selectedEdgeColors,
+    wireVertexColors:!!w?.material?.vertexColors,
+    bboxVisible:topologyInspectorState?.bboxHelper?.visible??false,
+    objectTransformAttached:!!entityTransformControls?.object
+  };
+
+  console.log("[V11.00.15e VERTEX DEPTH BIAS AUTHORITY]",result);
+  return result;
+};
+
+window.reportAuthoritativeComponentColorsV110015d=()=>{
+  const pointAttr=(manualTopo?.vertexHandles?.geometry?.getAttribute?.("componentColor") || manualTopo?.vertexHandles?.geometry?.getAttribute?.("color"));
+  const wireAttr=manualTopo?.wireOverlay?.geometry?.getAttribute?.("color");
+
+  const pointSamples=[];
+  for(const vi of manualTopo?.selectedVertices||[]){
+    if(pointAttr && vi<pointAttr.count){
+      pointSamples.push([
+        vi,
+        +pointAttr.getX(vi).toFixed(3),
+        +pointAttr.getY(vi).toFixed(3),
+        +pointAttr.getZ(vi).toFixed(3)
+      ]);
+    }
+  }
+
+  const wireSamples=[];
+  for(const ei of manualTopo?.selectedEdges||[]){
+    const i=ei*2;
+    if(wireAttr && i+1<wireAttr.count){
+      wireSamples.push([
+        ei,
+        +wireAttr.getX(i).toFixed(3),
+        +wireAttr.getY(i).toFixed(3),
+        +wireAttr.getZ(i).toFixed(3)
+      ]);
+    }
+  }
+
+  const result={
+    mode:manualTopo?.mode||null,
+    selectedVertices:[...(manualTopo?.selectedVertices||[])],
+    selectedEdges:[...(manualTopo?.selectedEdges||[])],
+    selectedFaces:[...(manualTopo?.selectedFaces||[])],
+    pointSamples,
+    wireSamples,
+    pointVertexColors:!!manualTopo?.vertexHandles?.material?.vertexColors,
+    wireVertexColors:!!manualTopo?.wireOverlay?.material?.vertexColors,
+    bboxVisible:topologyInspectorState?.bboxHelper?.visible??false,
+    objectTransformAttached:!!entityTransformControls?.object,
+    gizmoHitMaterialsVisible:(TopologyXYZDragV1055?.handles||[])
+      .some(h=>{
+        const ms=Array.isArray(h.material)?h.material:[h.material];
+        return ms.some(m=>m?.visible!==false);
+      })
+  };
+
+  console.log("[V11.00.15d COMPONENT COLORS]",result);
+  return result;
+};
+
+window.reportSingleTopologyAuthorityV110015c=()=>{
+  const arm={};
+  for(const S of ["L","R"]){
+    const st=RiflemanArmModelerV110011?.sides?.[S];
+    arm[S]=st?{
+      vertexHandleVisible:st.vertexHandle?.visible??false,
+      pickGroupVisible:st.pickGroup?.visible??false,
+      editOverlayVisible:st.editOverlay?.visible??false,
+      editPointsVisible:st.editPoints?.visible??false
+    }:null;
+  }
+
+  const result={
+    manualTopoEnabled:!!manualTopo?.enabled,
+    source:manualTopo?.sourceMesh?.name||null,
+    vertexAuthority:manualTopo?.vertexHandles?.name||null,
+    isPoints:!!manualTopo?.vertexHandles?.isPoints,
+    selectedVertices:[...(manualTopo?.selectedVertices||[])],
+    selectedEdges:[...(manualTopo?.selectedEdges||[])],
+    selectedFaces:[...(manualTopo?.selectedFaces||[])],
+    yellowEdgeOverlay:!!manualTopo?.selectedEdgeOverlay,
+    yellowFaceOverlay:!!manualTopo?.selectedFaceOverlay,
+    bboxVisible:topologyInspectorState?.bboxHelper?.visible??false,
+    entityTransformAttached:!!entityTransformControls?.object,
+    legacyArm:arm
+  };
+  console.log("[V11.00.15c SINGLE TOPOLOGY AUTHORITY]",result);
+  return result;
+};
+
+window.reportLegacyGizmoBridgeV110015b=()=>{
+  const legacy=[];
+  scene?.traverse?.(o=>{
+    const n=String(o.name||"");
+    if(n.includes("V1029") && (n.includes("Gizmo")||n.includes("XYZ"))){
+      legacy.push({name:n,visible:o.visible});
+    }
+  });
+  const result={
+    manualTopoEnabled:!!manualTopo?.enabled,
+    authoritativeRoot:TopologyXYZDragV1055?.root?.name||null,
+    authoritativeRootVisible:TopologyXYZDragV1055?.root?.visible??null,
+    legacy,
+    bboxVisible:topologyInspectorState?.bboxHelper?.visible??false
+  };
+  console.log("[V11.00.15b LEGACY GIZMO BRIDGE]",result);
+  return result;
+};
+
+window.reportTopologyVertexAuthorityV110015a=()=>{
+  const p=manualTopo?.vertexAuthorityV110015a;
+  const gizmos=[];
+  scene?.traverse?.(o=>{
+    if(o.name==="TopologyXYZDrag_V1055" || o.userData?.topologyComponentGizmoV110015a){
+      gizmos.push({name:o.name,visible:o.visible,uuid:o.uuid});
+    }
+  });
+
+  const strayVertexObjects=[];
+  manualTopo?.editMesh?.traverse?.(o=>{
+    if(o===manualTopo.editMesh)return;
+    const n=String(o.name||"");
+    if(/^TopoVertex/.test(n)){
+      strayVertexObjects.push({
+        name:n,
+        isPoints:!!o.isPoints,
+        visible:o.visible,
+        authority:!!o.userData?.vertexAuthorityV110015a
+      });
+    }
+  });
+
+  const result={
+    authorityName:p?.name||null,
+    isPoints:!!p?.isPoints,
+    pointCount:p?.geometry?.attributes?.position?.count??0,
+    pointVisible:p?.visible??null,
+    bboxVisible:topologyInspectorState?.bboxHelper?.visible??false,
+    entityTransformAttached:!!entityTransformControls?.object,
+    gizmoCount:gizmos.length,
+    gizmos,
+    strayVertexObjects,
+    ctrl:!!TopologyXYZDragV1055?.ctrl,
+    mode:TopologyXYZDragV1055?.mode||null
+  };
+  console.log("[V11.00.15a TOPOLOGY AUTHORITY]",result);
+  return result;
+};
+
+window.reportTopologyVertexAuthorityV110015=()=>{
+  const p=manualTopo?.vertexHandles;
+  const d=TopologyXYZDragV1055;
+  const result={
+    enabled:!!manualTopo?.enabled,
+    source:manualTopo?.sourceMesh?.name||null,
+    vertexObject:p?.name||null,
+    isPoints:!!p?.isPoints,
+    visible:p?.visible??null,
+    pointCount:p?.geometry?.attributes?.position?.count??0,
+    pointSize:p?.material?.size??null,
+    selectedVertices:[...(manualTopo?.selectedVertices||[])],
+    selectedEdges:[...(manualTopo?.selectedEdges||[])],
+    bboxVisible:topologyInspectorState?.bboxHelper?.visible??false,
+    entityTransformAttached:!!entityTransformControls?.object,
+    ctrlRotate:!!d?.ctrl,
+    translateVisuals:d?.translateVisuals?.length??0,
+    rotateVisuals:d?.rotateVisuals?.length??0,
+    activeDragMode:d?.mode||null
+  };
+  console.log("[V11.00.15 TOPOLOGY VERTEX AUTHORITY]",result);
+  return result;
+};
+
+window.reportFlatTopologyPointsV110014g=()=>{
+  const pts=manualTopo?.vertexVisualPointsV110014b;
+  const vertexHit=manualTopo?.vertexHandles;
+  const edgeHit=manualTopo?.edgeHandles?.children?.[0];
+  const faceHit=manualTopo?.faceHandles?.children?.[0];
+  const result={
+    enabled:!!manualTopo?.enabled,
+    source:manualTopo?.sourceMesh?.name||null,
+    pointsObject:pts?.name||null,
+    pointsVisible:pts?.visible??null,
+    pointCount:pts?.geometry?.attributes?.position?.count??0,
+    pointSize:pts?.material?.uniforms?.uPointSize?.value??pts?.material?.size??null,
+    pointMaterialVisible:pts?.material?.visible??null,
+    vertexHitVisible:vertexHit?.visible??null,
+    vertexHitMaterialVisible:vertexHit?.material?.visible??null,
+    edgeHitMaterialVisible:edgeHit?.material?.visible??null,
+    faceHitMaterialVisible:faceHit?.material?.visible??null
+  };
+  console.log("[V11.00.14g FLAT TOPOLOGY POINTS]",result);
+  return result;
+};
+
+window.reportComponentEditAuthorityV110014f=()=>{
+  const pts=manualTopo?.vertexVisualPointsV110014b;
+  const result={
+    enabled:!!manualTopo?.enabled,
+    mode:manualTopo?.mode||null,
+    source:manualTopo?.sourceMesh?.name||null,
+    selectedEntity:topologyInspectorState?.selectedEntity?.name||null,
+    bboxExists:!!topologyInspectorState?.bboxHelper,
+    bboxVisible:topologyInspectorState?.bboxHelper?.visible??false,
+    objectTransformAttached:entityTransformControls?.object?.name||null,
+    pointsExist:!!pts,
+    pointsVisible:pts?.visible??null,
+    pointCount:pts?.geometry?.attributes?.position?.count??0,
+    pointSize:pts?.material?.uniforms?.uPointSize?.value??pts?.material?.size??null,
+    pointDepthTest:pts?.material?.depthTest??null,
+    edgeHitOpacity:manualTopo?.edgeHandles?.children?.[0]?.material?.opacity??null,
+    edgeHitColorWrite:manualTopo?.edgeHandles?.children?.[0]?.material?.colorWrite??null
+  };
+  console.log("[V11.00.14f COMPONENT EDIT AUTHORITY]",result);
+  return result;
+};
+
+window.reportComponentSelectionVisualsV110014e=()=>{
+  const data=topoGeometryArrays?.();
+  const edges=data ? topoBuildEdgeList(data.faces) : [];
+  const edgeEndpoints=[];
+  for(const ei of manualTopo?.selectedEdges||[]){
+    const e=edges[ei];
+    if(e)edgeEndpoints.push([e.a,e.b]);
+  }
+
+  const result={
+    mode:manualTopo?.mode||null,
+    selectedVertices:[...(manualTopo?.selectedVertices||[])],
+    selectedEdges:[...(manualTopo?.selectedEdges||[])],
+    selectedEdgeEndpoints:edgeEndpoints,
+    selectedFaces:[...(manualTopo?.selectedFaces||[])],
+    pointsVisible:manualTopo?.vertexVisualPointsV110014b?.visible??null,
+    pointCount:manualTopo?.vertexVisualPointsV110014b?.geometry?.attributes?.position?.count??0,
+    selectedEdgeOverlay:!!manualTopo?.selectedEdgeOverlay,
+    entityBBoxVisible:topologyInspectorState?.bboxHelper?.visible??false,
+    entityTransformAttached:!!entityTransformControls?.object
+  };
+  console.log("[V11.00.14e COMPONENT SELECTION]",result);
+  return result;
+};
+
+window.reportTopologyDepthVisualsV110014d=()=>{
+  const edit=manualTopo?.editMesh;
+  const wire=edit?.getObjectByName?.("TopoWireOverlay");
+  const pts=edit?.getObjectByName?.("TopoVertexVisualPointsV110014g");
+  const result={
+    source:manualTopo?.sourceMesh?.name||null,
+    mode:manualTopo?.mode||null,
+    wireColor:wire?.material?.color?.getHexString?.()||null,
+    wireOpacity:wire?.material?.opacity??null,
+    wireDepthTest:wire?.material?.depthTest??null,
+    pointsPresent:!!pts,
+    pointsVisible:pts?.visible??null,
+    pointSize:pts?.material?.uniforms?.uPointSize?.value??pts?.material?.size??null,
+    pointDepthTest:pts?.material?.depthTest??null,
+    visiblePointCount:pts?.geometry?.attributes?.position?.count??0
+  };
+  console.log("[V11.00.14d TOPOLOGY DEPTH VISUALS]",result);
+  return result;
+};
+
+window.reportBlackTopologyStateV110014c=()=>{
+  const edit=manualTopo?.editMesh;
+  const source=manualTopo?.sourceMesh;
+  const wire=edit?.getObjectByName?.("TopoWireOverlay");
+  const bbox=topologyInspectorState?.bboxHelper;
+  const ws=typeof TorsoLegVertexWorkspaceV1055!=="undefined"
+    ? TorsoLegVertexWorkspaceV1055
+    : null;
+  const result={
+    overlayMode:TopologyOverlaySettingsV1055?.mode||null,
+    source:source?.name||null,
+    wireColor:wire?.material?.color?.getHexString?.()||null,
+    bboxColor:bbox?.material?.color?.getHexString?.()||null,
+    torsoLegWorkspaceVisible:ws?.root?.visible??false,
+    torsoLegWorkspaceEntries:ws?.entries?.length??0,
+    selectedColor:new THREE.Color(TopologyOverlaySettingsV1055.selected).getHexString()
+  };
+  console.log("[V11.00.14c BLACK TOPOLOGY]",result);
+  return result;
+};
+
+window.reportGenericTopoVisualsV110014b=()=>{
+  const source=manualTopo?.sourceMesh;
+  const edit=manualTopo?.editMesh;
+  const wire=edit?.getObjectByName?.("TopoWireOverlay");
+  const pts=edit?.getObjectByName?.("TopoVertexVisualPointsV110014g");
+  const bboxState={
+    source:source?.name||null,
+    isV11:!!source?.userData?.authoritativeTopologyV110013e,
+    wireColor:wire?.material?.color?.getHexString?.()||null,
+    wireVisible:wire?.visible??null,
+    pointsColorMode:!!pts?.material?.vertexColors,
+    pointsVisible:pts?.visible??null,
+    pointSize:pts?.material?.uniforms?.uPointSize?.value??pts?.material?.size??null,
+    mode:manualTopo?.mode||null
+  };
+  console.log("[V11.00.14b GENERIC TOPO VISUALS]",bboxState);
+  return bboxState;
+};
+
+window.reportArmEditVisualsV110014a=()=>{
+  const M=window.RiflemanArmModelerV110011;
+  const rows=[];
+  for(const S of ["L","R"]){
+    const st=M?.sides?.[S];
+    rows.push({
+      side:S,
+      selected:!!st?.entitySelected,
+      editWireVisible:st?.editOverlay?.visible??null,
+      editWireColor:st?.editOverlay?.material?.color?.getHexString?.()||null,
+      editPointsVisible:st?.editPoints?.visible??null,
+      editPointsColor:st?.editPoints?.material?.color?.getHexString?.()||null,
+      pickGroupVisible:st?.pickGroup?.visible??null,
+      pickOpacity:st?.pickGroup?.children?.[0]?.material?.opacity??null,
+      legacyDisplayVisible:st?.displayGroup?.visible??null
+    });
+  }
+  console.table(rows);
+  return rows;
+};
+
+window.reportArmEditCageV110014=()=>{
+  const M=window.RiflemanArmModelerV110011;
+  const rows=["L","R"].map(S=>{
+    const st=M?.sides?.[S];
+    return {
+      side:S,
+      entitySelected:!!st?.entitySelected,
+      wireVisible:st?.editOverlay?.visible??null,
+      pointsVisible:st?.editPoints?.visible??null,
+      selectedType:st?.selected?.type||null,
+      selectedRing:st?.selected?.ring??null,
+      selectedSlot:st?.selected?.slot??null
+    };
+  });
+  console.table(rows);
+  return rows;
+};
+
+window.reportV11ArmBoneBootstrapV110013f = ()=>{
+  const root =
+    window.RiflemanArmModelerV110011?.characterRoot ||
+    scene?.getObjectByName?.("Rifleman_V10_SolidBody_FaceHoodBeard") ||
+    character ||
+    null;
+  const rows=[];
+  for(const S of ["L","R"]){
+    const arm=root?.getObjectByName?.(`Rifleman_SkinnedArm_${S}_V1060`);
+    const bones=arm?.skeleton?.bones||[];
+    rows.push({
+      side:S,
+      sourceArm:arm?.name||null,
+      sourceArmVisible:arm?.visible??null,
+      skeletonBones:bones.length,
+      upper:bones.find(b=>b.name===`HH_upper_arm.${S}` || b.name===`upper_arm.${S}`)?.name||null,
+      fore:bones.find(b=>b.name===`HH_forearm.${S}` || b.name===`forearm.${S}`)?.name||null,
+      hand:bones.find(b=>b.name===`HH_hand.${S}` || b.name===`hand.${S}`)?.name||null
+    });
+  }
+  console.table(rows);
+  return {rows,missing:window.__v110013fMissingBones||null};
+};
+
 window.reportV11ArmStartupState = ()=>{
   const M=window.RiflemanArmModelerV110011;
   const result={
@@ -28554,14 +32039,82 @@ const RiflemanArmModelerV110011={installed:false,ringSides:8,sides:{},activePick
 window.__RiflemanArmModelerV110011Installed=window.__RiflemanArmModelerV110011Installed===true;
 function v110011Root(){return character||scene?.getObjectByName?.('Rifleman_V10_SolidBody_FaceHoodBeard')||null;}
 function v110011Bone(side,role){
-  const root=v110011Root(); const rig=root?.userData?.heroicHumanoidRig||root?.userData?.humanoidRig||null;
-  const map={upper:`upper_arm.${side}`,fore:`forearm.${side}`,hand:`hand.${side}`};
-  let b=rig?.getBone?.(map[role])||scene?.getObjectByName?.(map[role]);
-  if(!b&&root)root.traverse(o=>{if(!b&&o.isBone&&o.name===map[role])b=o;}); return b;
+  const root=v110011Root();
+  const logicalMap={
+    upper:`upper_arm.${side}`,
+    fore:`forearm.${side}`,
+    hand:`hand.${side}`
+  };
+  const logical=logicalMap[role];
+  if(!logical)return null;
+
+  // V11.00.13f primary bootstrap:
+  // the canonical V1060 SkinnedMesh already owns the skeleton that is proven
+  // to drive the arm. Resolve the HH_* bone directly from that skeleton.
+  const sourceArm=root?.getObjectByName?.(`Rifleman_SkinnedArm_${side}_V1060`);
+  const bones=sourceArm?.skeleton?.bones || [];
+
+  let b=bones.find(x=>
+    x?.name===`HH_${logical}` ||
+    x?.name===logical ||
+    x?.userData?.heroicBoneName===logical ||
+    x?.userData?.logicalName===logical
+  );
+
+  // Some historical builds only store the canonical name in userData.
+  if(!b){
+    b=bones.find(x=>
+      String(x?.name||"").endsWith(logical) ||
+      String(x?.userData?.heroicName||"")===logical
+    );
+  }
+
+  if(b)return b;
+
+  // Secondary fallback: character-attached rig object when available.
+  const rig=
+    root?.userData?.heroicHumanoidRig ||
+    root?.userData?.humanoidRig ||
+    null;
+
+  b=rig?.getBone?.(logical) || null;
+  if(b)return b;
+
+  // Final scene/root traversal accepts both HH_ prefixed and logical names.
+  b=scene?.getObjectByName?.(`HH_${logical}`) ||
+    scene?.getObjectByName?.(logical) ||
+    null;
+
+  if(!b && root){
+    root.traverse(o=>{
+      if(b || !o?.isBone)return;
+      if(
+        o.name===`HH_${logical}` ||
+        o.name===logical ||
+        o.userData?.heroicBoneName===logical
+      ) b=o;
+    });
+  }
+  return b;
 }
 function v110011Local(o){const p=new THREE.Vector3();o?.getWorldPosition?.(p);const root=v110011Root();return root?root.worldToLocal(p):p;}
 function v110011Landmarks(side){
-  const upper=v110011Bone(side,'upper'),fore=v110011Bone(side,'fore'),hand=v110011Bone(side,'hand'); if(!upper||!fore||!hand)return null;
+  const upper=v110011Bone(side,'upper');
+  const fore=v110011Bone(side,'fore');
+  const hand=v110011Bone(side,'hand');
+  if(!upper||!fore||!hand){
+    if(!window.__v110013fMissingBones)window.__v110013fMissingBones={};
+    window.__v110013fMissingBones[side]={
+      upper:upper?.name||null,
+      fore:fore?.name||null,
+      hand:hand?.name||null,
+      sourceArm:!!v110011Root()?.getObjectByName?.(`Rifleman_SkinnedArm_${side}_V1060`),
+      skeletonBoneNames:
+        v110011Root()?.getObjectByName?.(`Rifleman_SkinnedArm_${side}_V1060`)
+          ?.skeleton?.bones?.map(b=>b.name) || []
+    };
+    return null;
+  }
   const shoulderBone=v110011Local(upper), eb=v110011Local(fore), wrist=v110011Local(hand), sign=side==='L'?1:-1;
 
   // V11.00.12 shoulder socket visual correction:
@@ -28598,7 +32151,18 @@ function v110011Build(side,st){
   const ringNames=['shoulderSocket','deltoidOuter','bicepPeak','preElbow','elbowUpper','elbowApex','elbowLower','elbowToForearm','bracerSocket'];
   const edges=[],faces=[];for(let r=0;r<9;r++)for(let j=0;j<8;j++)edges.push({a:rings[r][j],b:rings[r][(j+1)%8],type:'circumferential',ring:r,slot:j});
   for(let r=0;r<8;r++)for(let j=0;j<8;j++){edges.push({a:rings[r][j],b:rings[r+1][j],type:'longitudinal',ring:r,slot:j});faces.push({ring:r,slot:j,verts:[rings[r][j],rings[r][(j+1)%8],rings[r+1][(j+1)%8],rings[r+1][j]]});}
-  g.userData.armTopologyV110011={side,rings,ringNames,edges,faces,sharedShoulderRing:rings[0].slice()};return g;
+  g.userData.armTopologyV110011={
+    side,
+    rings,
+    ringNames,
+    ringKinds:ringNames.map(()=>"semantic"),
+    ringParams:ringNames.map((_,i)=>i),
+    semanticRingNames:[...ringNames],
+    edges,
+    faces,
+    sharedShoulderRing:rings[0].slice()
+  };
+  return g;
 }
 function v110011ShoulderPatch(side,st){
   const root=v110011Root();
@@ -28669,155 +32233,65 @@ function v110012RebuildDisplay(side){
   const st=RiflemanArmModelerV110011.sides[side];
   if(!st?.displayGroup)return;
   v110011Clear(st.displayGroup);
-
-  const topo=st.mesh.geometry.userData.armTopologyV110011;
-  const p=st.mesh.geometry.attributes.position;
-
-  // Visible Blender-like edge cage.
-  for(const e of topo.edges){
-    const a=new THREE.Vector3().fromBufferAttribute(p,e.a);
-    const b=new THREE.Vector3().fromBufferAttribute(p,e.b);
-    const line=new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([a,b]),
-      new THREE.LineBasicMaterial({
-        color:0x39bfff,
-        transparent:true,
-        opacity:.82,
-        depthTest:false,
-        depthWrite:false
-      })
-    );
-    line.renderOrder=5000;
-    line.frustumCulled=false;
-    line.userData.armDisplayEdgeV110013={side,edge:e};
-    st.displayGroup.add(line);
-  }
-
-  // Screen-sized points remain readable regardless of camera zoom.
-  const pts=[];
-  const refs=[];
-  for(let r=0;r<topo.rings.length;r++){
-    for(let j=0;j<8;j++){
-      const vi=topo.rings[r][j];
-      const q=new THREE.Vector3().fromBufferAttribute(p,vi);
-      pts.push(q.x,q.y,q.z);
-      refs.push({ring:r,slot:j,vertexIndex:vi});
-    }
-  }
-  const pg=new THREE.BufferGeometry();
-  pg.setAttribute("position",new THREE.Float32BufferAttribute(pts,3));
-  const pointObj=new THREE.Points(
-    pg,
-    new THREE.PointsMaterial({
-      color:0xe8eef4,
-      size:7.0,
-      sizeAttenuation:false,
-      depthTest:false,
-      depthWrite:false
-    })
-  );
-  pointObj.name=`ArmEditVertices_${side}_V110013`;
-  pointObj.renderOrder=5100;
-  pointObj.frustumCulled=false;
-  pointObj.userData.armVertexRefsV110013=refs;
-  st.displayGroup.add(pointObj);
-
-  // Explicit selected point overlay in orange.
-  if(st.selected?.type==="vertex"){
-    const vi=topo.rings[st.selected.ring][st.selected.slot];
-    const q=new THREE.Vector3().fromBufferAttribute(p,vi);
-    const sg=new THREE.BufferGeometry().setFromPoints([q]);
-    const sp=new THREE.Points(
-      sg,
-      new THREE.PointsMaterial({
-        color:0xff7a00,
-        size:12.0,
-        sizeAttenuation:false,
-        depthTest:false,
-        depthWrite:false
-      })
-    );
-    sp.name=`ArmSelectedVertex_${side}_V110013`;
-    sp.renderOrder=5200;
-    sp.frustumCulled=false;
-    st.displayGroup.add(sp);
-  }
-
-  st.displayGroup.visible=state?.mode==="topology";
+  st.displayGroup.visible=false;
 }
 function v110012SelectVertex(side,ring,slot){
+  // V11.00.15c:
+  // Legacy V11 arm vertex handles are retired while the generic manualTopo
+  // editor owns component editing. Do not create ArmVertexTransformHandle
+  // objects and do not attach entityTransformControls.
+  if(manualTopo?.enabled && manualTopo?.editMesh){
+    return false;
+  }
+
   const st=RiflemanArmModelerV110011.sides[side];
-  if(!st)return;
+  if(!st)return false;
+
   st.selected={type:"vertex",ring,slot};
-  RiflemanArmModelerV110011.activeSelection={type:"vertex",side,ring,slot};
-  v110012RebuildDisplay(side);
-  v110011Selection(side);
-
-  const topo=st.mesh.geometry.userData.armTopologyV110011;
-  const vi=topo.rings[ring][slot];
-  const local=new THREE.Vector3().fromBufferAttribute(st.mesh.geometry.attributes.position,vi);
-
-  if(!st.vertexHandle){
-    st.vertexHandle=new THREE.Object3D();
-    st.vertexHandle.name=`ArmVertexTransformHandle_${side}_V110012`;
-    st.mesh.parent.add(st.vertexHandle);
-  }
-  st.vertexHandle.position.copy(local);
-  st.vertexHandle.userData.armVertexHandleV110012={side,ring,slot};
-  st.vertexHandle.visible=true;
-
-  // Attach the existing editor gizmo to the actual selected vertex handle.
-  if(typeof entityTransformControls!=="undefined" && entityTransformControls){
-    entityTransformControls.detach?.();
-    entityTransformControls.attach?.(st.vertexHandle);
-    entityTransformControls.setMode?.("translate");
-    entityTransformControls.setSpace?.("local");
-    entityTransformControls.visible=true;
-    entityTransformControls.enabled=true;
-  }
-  debugLog?.("V11 ARM",`vertex selected ${side} ring=${ring} slot=${slot}`);
+  return true;
 }
 
 function v110012ApplyVertexHandle(side){
-  const st=RiflemanArmModelerV110011.sides[side];
-  const h=st?.vertexHandle;
-  const sel=st?.selected;
-  if(!h || sel?.type!=="vertex")return;
-
-  const topo=st.mesh.geometry.userData.armTopologyV110011;
-  const vi=topo.rings[sel.ring][sel.slot];
-  const current=new THREE.Vector3().fromBufferAttribute(st.mesh.geometry.attributes.position,vi);
-  const delta=h.position.clone().sub(current);
-  if(delta.lengthSq()<1e-12)return;
-
-  st.vertexOffsets[sel.ring][sel.slot].add(delta);
-  // Rebuild mesh and then restore handle to resulting point.
-  v110011Rebuild(side);
-  const topo2=st.mesh.geometry.userData.armTopologyV110011;
-  const vi2=topo2.rings[sel.ring][sel.slot];
-  h.position.copy(new THREE.Vector3().fromBufferAttribute(st.mesh.geometry.attributes.position,vi2));
+  if(manualTopo?.enabled && manualTopo?.editMesh)return;
+  // Legacy compatibility only; generic V11 topology editing owns arm vertices.
 }
 
 function v110012SyncTopologyMode(){
   const mode=RiflemanArmModelerV110011.activePickMode;
+
   for(const S of ["L","R"]){
     const st=RiflemanArmModelerV110011.sides[S];
     if(!st)continue;
-    if(st.displayGroup)st.displayGroup.visible=state?.mode==="topology";
-    if(st.vertexHandle)st.vertexHandle.visible=state?.mode==="topology" && st.selected?.type==="vertex";
+
+    if(st.displayGroup)st.displayGroup.visible=false;
+
+    // No legacy point/edge/face picker visuals or temporary vertex handle
+    // while generic topology editing is active.
+    const genericOwns=!!(manualTopo?.enabled && manualTopo?.editMesh);
+
+    if(st.vertexHandle){
+      st.vertexHandle.visible=false;
+    }
+    if(st.pickGroup){
+      st.pickGroup.visible=!genericOwns && state?.mode==="topology";
+    }
+    if(st.editOverlay && genericOwns)st.editOverlay.visible=false;
+    if(st.editPoints && genericOwns)st.editPoints.visible=false;
   }
+
   document.getElementById("topoVertexBtn")?.classList.toggle("active",mode==="vertex");
   document.getElementById("topoEdgeBtn")?.classList.toggle("active",mode==="edge");
   document.getElementById("topoFaceBtn")?.classList.toggle("active",mode==="face");
 }
+
 function v110011Pickers(side){
   const st=RiflemanArmModelerV110011.sides[side];if(!st)return;v110011Clear(st.pickGroup);const topo=st.mesh.geometry.userData.armTopologyV110011,p=st.mesh.geometry.attributes.position;
-  for(let r=0;r<9;r++)for(let j=0;j<8;j++){const vi=topo.rings[r][j],q=new THREE.Vector3().fromBufferAttribute(p,vi),m=new THREE.Mesh(new THREE.SphereGeometry(.04,6,4),v110011PickMat(0x55ccff,.04));m.position.copy(q);m.userData.armPickV110008={mode:'vertex',side,ring:r,slot:j,vertexIndex:vi};st.pickGroup.add(m);}
-  for(const e of topo.edges){const a=new THREE.Vector3().fromBufferAttribute(p,e.a),b=new THREE.Vector3().fromBufferAttribute(p,e.b),len=a.distanceTo(b),m=new THREE.Mesh(new THREE.CylinderGeometry(.032,.032,len,6,1,true),v110011PickMat(0x66ddff,.025));m.position.copy(a.clone().lerp(b,.5));m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),b.clone().sub(a).normalize());m.userData.armPickV110008={mode:'edge',side,edge:e};st.pickGroup.add(m);}
-  for(const f of topo.faces){const pts=f.verts.map(i=>new THREE.Vector3().fromBufferAttribute(p,i)),g=new THREE.BufferGeometry().setFromPoints(pts);g.setIndex([0,1,2,0,2,3]);const m=new THREE.Mesh(g,v110011PickMat(0x44aaff,.01));m.userData.armPickV110008={mode:'face',side,face:f};st.pickGroup.add(m);}
+  for(let r=0;r<9;r++)for(let j=0;j<8;j++){const vi=topo.rings[r][j],q=new THREE.Vector3().fromBufferAttribute(p,vi),m=new THREE.Mesh(new THREE.SphereGeometry(.04,6,4),v110011PickMat(0x000000,0));m.position.copy(q);m.userData.armPickV110008={mode:'vertex',side,ring:r,slot:j,vertexIndex:vi};st.pickGroup.add(m);}
+  for(const e of topo.edges){const a=new THREE.Vector3().fromBufferAttribute(p,e.a),b=new THREE.Vector3().fromBufferAttribute(p,e.b),len=a.distanceTo(b),m=new THREE.Mesh(new THREE.CylinderGeometry(.032,.032,len,6,1,true),v110011PickMat(0x000000,0));m.position.copy(a.clone().lerp(b,.5));m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),b.clone().sub(a).normalize());m.userData.armPickV110008={mode:'edge',side,edge:e};st.pickGroup.add(m);}
+  for(const f of topo.faces){const pts=f.verts.map(i=>new THREE.Vector3().fromBufferAttribute(p,i)),g=new THREE.BufferGeometry().setFromPoints(pts);g.setIndex([0,1,2,0,2,3]);const m=new THREE.Mesh(g,v110011PickMat(0x000000,0));m.userData.armPickV110008={mode:'face',side,face:f};st.pickGroup.add(m);}
 }
-function v110011SelectLoop(side,ring){const st=RiflemanArmModelerV110011.sides[side];if(!st)return;st.selected={type:'loop',ring:THREE.MathUtils.clamp(ring|0,0,8)};v110011Selection(side);}
-function v110011Selection(side){const st=RiflemanArmModelerV110011.sides[side];if(!st)return;v110011Clear(st.selectionGroup);if(st.selected?.type!=='loop')return;const topo=st.mesh.geometry.userData.armTopologyV110011,p=st.mesh.geometry.attributes.position,pts=topo.rings[st.selected.ring].map(i=>new THREE.Vector3().fromBufferAttribute(p,i));pts.push(pts[0].clone());const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0xffcc33,depthTest:false}));line.renderOrder=1000;st.selectionGroup.add(line);}
+function v110011SelectLoop(side,ring){const st=RiflemanArmModelerV110011.sides[side];if(!st)return;window.armSelectEntity?.(side,true);st.selected={type:'loop',ring:THREE.MathUtils.clamp(ring|0,0,8)};v110011Selection(side);}
+function v110011Selection(side){const st=RiflemanArmModelerV110011.sides[side];if(!st)return;v110011Clear(st.selectionGroup);if(st.selected?.type!=='loop')return;const topo=st.mesh.geometry.userData.armTopologyV110011,p=st.mesh.geometry.attributes.position,pts=topo.rings[st.selected.ring].map(i=>new THREE.Vector3().fromBufferAttribute(p,i));pts.push(pts[0].clone());const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0xffc400,depthTest:false,depthWrite:false}));line.renderOrder=1000;st.selectionGroup.add(line);}
 function v110011Rebuild(side){const st=RiflemanArmModelerV110011.sides[side];if(!st)return;const old=st.mesh.geometry;st.mesh.geometry=v110011Build(side,st);v110011Pickers(side);v110011Selection(side);v110012RebuildDisplay(side);v110013bRefreshEditOverlay(side);if(st.shoulderPatch){st.shoulderPatch.parent?.remove(st.shoulderPatch);st.shoulderPatch.geometry?.dispose?.();}st.shoulderPatch=v110011ShoulderPatch(side,st);old?.dispose?.();}
 function v110011MoveLoop(side,r,x=0,y=0,z=0){const st=RiflemanArmModelerV110011.sides[side];if(!st)return;st.ringOffsets[r].add(new THREE.Vector3(x,y,z));v110011Rebuild(side);}
 function v110011ScaleLoop(side,r,u=1,v=u){const st=RiflemanArmModelerV110011.sides[side];if(!st)return;st.ringScales[r].u*=u;st.ringScales[r].v*=v;v110011Rebuild(side);}
@@ -28826,34 +32300,82 @@ function v110011Profile(side,r,j,u,v){const st=RiflemanArmModelerV110011.sides[s
 function v110011ElbowControl(side,o={}){const st=RiflemanArmModelerV110011.sides[side];if(!st)return;const L=st.landmarks,sign=side==='L'?1:-1;if(Number.isFinite(o.width))L.elbowApex.x+=sign*o.width;if(Number.isFinite(o.drop)){L.elbowUpper.y-=o.drop*.45;L.elbowApex.y-=o.drop;L.elbowLower.y-=o.drop*.72;}if(o.upper)L.elbowUpper.add(new THREE.Vector3(...o.upper));if(o.apex)L.elbowApex.add(new THREE.Vector3(...o.apex));if(o.lower)L.elbowLower.add(new THREE.Vector3(...o.lower));v110011Rebuild(side);}
 function v110011ElbowBend(side,degrees){const st=RiflemanArmModelerV110011.sides[side];if(!st)return;const L=st.landmarks,pivot=L.elbowUpper.clone(),sign=side==='L'?1:-1,q=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,sign),THREE.MathUtils.degToRad(degrees-st.elbowDegrees));for(const k of ['elbowApex','elbowLower','elbowToForearm','bracerSocket'])L[k].sub(pivot).applyQuaternion(q).add(pivot);st.elbowDegrees=degrees;v110011Rebuild(side);}
 function v110011Retire(side){const root=v110011Root();for(const n of [`Rifleman_SkinnedArm_${side}_V1060`,`Rifleman_ArmContinuity_${side}_V1080`,`Rifleman_ShoulderBridge_${side}_V1081g`,`Rifleman_LowPolyArm_${side}_V110007`]){const o=root?.getObjectByName?.(n);if(o){o.visible=false;o.userData.retiredByV110011=true;o.userData.semanticSelectable=false;o.userData.topologySelectable=false;o.raycast=()=>{};}}}
-function v110011InstallPicking(){if(window.__v110011Picking)return;window.__v110011Picking=true;renderer.domElement.addEventListener('pointerdown',e=>{if(state?.mode!=='topology'||e.button!==0)return;const rect=renderer.domElement.getBoundingClientRect(),mouse=new THREE.Vector2(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1),ray=new THREE.Raycaster();ray.setFromCamera(mouse,camera);const list=[];for(const S of ['L','R'])for(const c of RiflemanArmModelerV110011.sides[S]?.pickGroup?.children||[])if(c.userData.armPickV110008?.mode===RiflemanArmModelerV110011.activePickMode)list.push(c);const hit=ray.intersectObjects(list,false)[0];if(!hit)return;const q=hit.object.userData.armPickV110008;if(q.mode==='vertex')v110012SelectVertex(q.side,q.ring,q.slot);else if(q.mode==='edge'&&q.edge.type==='circumferential')v110011SelectLoop(q.side,q.edge.ring);else if(q.mode==='face')v110011SelectLoop(q.side,q.face.ring);e.preventDefault();e.stopPropagation();},true);}
+function v110011InstallPicking(){
+  if(window.__v110011Picking)return;
+  window.__v110011Picking=true;
+
+  renderer.domElement.addEventListener("pointerdown",e=>{
+    // V11.00.15c:
+    // Generic manualTopo is the sole component-selection authority.
+    // The historical V110011 arm picker is retained only as a fallback when
+    // no generic edit mesh is open.
+    if(
+      state?.mode!=="topology" ||
+      e.button!==0 ||
+      (manualTopo?.enabled && manualTopo?.editMesh)
+    ){
+      return;
+    }
+
+    const rect=renderer.domElement.getBoundingClientRect();
+    const mouse=new THREE.Vector2(
+      ((e.clientX-rect.left)/rect.width)*2-1,
+      -((e.clientY-rect.top)/rect.height)*2+1
+    );
+    const ray=new THREE.Raycaster();
+    ray.setFromCamera(mouse,camera);
+
+    const list=[];
+    for(const S of ["L","R"]){
+      const st=RiflemanArmModelerV110011.sides[S];
+      if(!st?.entitySelected)continue;
+      for(const c of st.pickGroup?.children||[]){
+        if(
+          c.userData.armPickV110008?.mode===
+          RiflemanArmModelerV110011.activePickMode
+        ){
+          list.push(c);
+        }
+      }
+    }
+
+    const hit=ray.intersectObjects(list,false)[0];
+    if(!hit)return;
+
+    const q=hit.object.userData.armPickV110008;
+    if(q.mode==="vertex")v110012SelectVertex(q.side,q.ring,q.slot);
+    else if(q.mode==="edge"&&q.edge.type==="circumferential")
+      v110011SelectLoop(q.side,q.edge.ring);
+    else if(q.mode==="face")
+      v110011SelectLoop(q.side,q.face.ring);
+
+    e.preventDefault();
+    e.stopPropagation();
+  },true);
+}
+
 
 function v110013bBuildEditOverlay(side){
   const st=RiflemanArmModelerV110011.sides[side];
   if(!st?.mesh)return;
-
-  if(st.editOverlay){
-    st.editOverlay.parent?.remove(st.editOverlay);
-    st.editOverlay.material?.dispose?.();
-  }
-  if(st.editPoints){
-    st.editPoints.parent?.remove(st.editPoints);
-    st.editPoints.material?.dispose?.();
+  for(const o of [st.editOverlay,st.editPoints]){
+    if(o?.parent)o.parent.remove(o);
+    o?.material?.dispose?.();
   }
 
   const overlay=new THREE.Mesh(
     st.mesh.geometry,
     new THREE.MeshBasicMaterial({
-      color:0x38c8ff,
+      color:0x050505,
       wireframe:true,
       transparent:true,
-      opacity:.72,
-      depthTest:false,
+      opacity:.58,
+      depthTest:true,
       depthWrite:false,
       side:THREE.DoubleSide
     })
   );
-  overlay.name=`Rifleman_ArmEditWire_${side}_V110013b`;
+  overlay.name=`Rifleman_ArmEditWire_${side}_V110014`;
   overlay.renderOrder=7000;
   overlay.frustumCulled=false;
   overlay.raycast=()=>{};
@@ -28863,26 +32385,37 @@ function v110013bBuildEditOverlay(side){
   const pts=new THREE.Points(
     st.mesh.geometry,
     new THREE.PointsMaterial({
-      color:0xf4f7fb,
-      size:8,
+      color:0x080808,
+      size:4.5,
       sizeAttenuation:false,
-      depthTest:false,
+      depthTest:true,
       depthWrite:false
     })
   );
-  pts.name=`Rifleman_ArmEditPoints_${side}_V110013b`;
+  pts.name=`Rifleman_ArmEditPoints_${side}_V110014`;
   pts.renderOrder=7100;
   pts.frustumCulled=false;
   pts.raycast=()=>{};
   st.mesh.parent.add(pts);
   st.editPoints=pts;
-}
 
+  overlay.visible=false;
+  pts.visible=false;
+}
 function v110013bRefreshEditOverlay(side){
   const st=RiflemanArmModelerV110011.sides[side];
   if(!st)return;
+
+  // V11.00.15c: duplicate arm-specific wire/points are retired whenever
+  // generic manualTopo editing is active.
+  if(manualTopo?.enabled && manualTopo?.editMesh){
+    if(st.editOverlay)st.editOverlay.visible=false;
+    if(st.editPoints)st.editPoints.visible=false;
+    return;
+  }
+
   v110013bBuildEditOverlay(side);
-  const on=state?.mode==="topology";
+  const on=state?.mode==="topology" && !!st.entitySelected;
   if(st.editOverlay)st.editOverlay.visible=on;
   if(st.editPoints)st.editPoints.visible=on;
 }
@@ -28909,6 +32442,57 @@ function v110013bSuppressPoseTargets(root){
 }
 window.__v110013bSuppressPoseTargets = v110013bSuppressPoseTargets;
 
+
+function v110014aSuppressLegacyArmEditVisuals(side){
+  const st=RiflemanArmModelerV110011.sides[side];
+  if(!st)return;
+
+  // Raycast proxies remain active but visually absent.
+  if(st.pickGroup){
+    st.pickGroup.visible=true;
+    st.pickGroup.traverse(o=>{
+      if(!o.material)return;
+      const mats=Array.isArray(o.material)?o.material:[o.material];
+      for(const m of mats){
+        m.transparent=true;
+        m.opacity=0;
+        m.depthWrite=false;
+        if("colorWrite" in m)m.colorWrite=false;
+        m.needsUpdate=true;
+      }
+    });
+  }
+
+  // This old V11 visual group is deliberately retired.
+  if(st.displayGroup)st.displayGroup.visible=false;
+
+  // Suppress selection boxes / outlines parented to this arm.
+  st.mesh?.traverse?.(o=>{
+    if(o===st.mesh)return;
+    const n=String(o.name||"");
+    if(
+      /outline|selection|bounds|bbox|wireframe/i.test(n) &&
+      !/ArmEditWire|ArmEditPoints/i.test(n)
+    ){
+      o.visible=false;
+    }
+  });
+
+  // Common scene-level editor helpers that reference the selected arm.
+  scene?.traverse?.(o=>{
+    if(!o?.visible)return;
+    const n=String(o.name||"");
+    const ud=o.userData||{};
+    const target=ud.target||ud.owner||ud.source||ud.selectedObject||null;
+    if(
+      target===st.mesh &&
+      /outline|selection|bounds|bbox|highlight/i.test(n)
+    ){
+      o.visible=false;
+    }
+  });
+}
+
 function v110011Install(){
   if(RiflemanArmModelerV110011.installed)return true;const root=v110011Root();if(!root)return false;RiflemanArmModelerV110011.characterRoot=root;RiflemanArmModelerV110011.material=new THREE.MeshStandardMaterial({
     color:0x754b3f,
@@ -28921,7 +32505,7 @@ function v110011Install(){
     depthTest:true,
     depthWrite:true
   });
-  for(const side of ['L','R']){const landmarks=v110011Landmarks(side);if(!landmarks)continue;const st={side,landmarks,elbowDegrees:0,ringOffsets:Array.from({length:9},()=>new THREE.Vector3()),ringScales:Array.from({length:9},()=>({u:1,v:1})),vertexOffsets:Array.from({length:9},()=>Array.from({length:8},()=>new THREE.Vector3())),profiles:v110011Profiles(),selected:{type:'loop',ring:5},pickGroup:new THREE.Group(),selectionGroup:new THREE.Group(),displayGroup:new THREE.Group(),vertexHandle:null,editOverlay:null,editPoints:null,mesh:null,shoulderPatch:null};RiflemanArmModelerV110011.sides[side]=st;const mesh=new THREE.Mesh(v110011Build(side,st),RiflemanArmModelerV110011.material);mesh.name=`Rifleman_LowPolyArm_${side}_V110011`;mesh.userData={
+  for(const side of ['L','R']){const landmarks=v110011Landmarks(side);if(!landmarks)continue;const st={side,landmarks,elbowDegrees:0,ringOffsets:Array.from({length:9},()=>new THREE.Vector3()),ringScales:Array.from({length:9},()=>({u:1,v:1})),vertexOffsets:Array.from({length:9},()=>Array.from({length:8},()=>new THREE.Vector3())),profiles:v110011Profiles(),selected:null,entitySelected:false,pickGroup:new THREE.Group(),selectionGroup:new THREE.Group(),displayGroup:new THREE.Group(),vertexHandle:null,editOverlay:null,editPoints:null,mesh:null,shoulderPatch:null};RiflemanArmModelerV110011.sides[side]=st;const mesh=new THREE.Mesh(v110011Build(side,st),RiflemanArmModelerV110011.material);mesh.name=`Rifleman_LowPolyArm_${side}_V110011`;mesh.userData={
       ...mesh.userData,
       v110008SelectableTopology:true,
       v110009SharedShoulderBoundary:true,
@@ -28931,7 +32515,8 @@ function v110011Install(){
       topologySelectable:true,
       semanticRole:'Arm',
       side,
-      authoritativeTopologyV110013e:true
+      authoritativeTopologyV110013e:true,
+      suppressObjectOutlineInTopologyV110014a:true
     };st.mesh=mesh;
     mesh.visible=true;
     mesh.frustumCulled=false;
@@ -28944,7 +32529,23 @@ function v110011Install(){
     v110011Retire(side);v110011ElbowControl(side,{width:.10,drop:.09});v110011ElbowBend(side,42);}
   window.RiflemanArmModelerV110011=RiflemanArmModelerV110011;
   v110011InstallPicking();
-  window.armPickMode=m=>{m=String(m).toLowerCase();if(['vertex','edge','face'].includes(m)){RiflemanArmModelerV110011.activePickMode=m;v110012SyncTopologyMode();}};window.armSelectLoop=(s,r)=>v110011SelectLoop(String(s).toUpperCase(),r);window.armMoveLoop=(s,r,x,y,z)=>v110011MoveLoop(String(s).toUpperCase(),r,x,y,z);window.armScaleLoop=(s,r,u,v)=>v110011ScaleLoop(String(s).toUpperCase(),r,u,v);window.armMoveVertex=(s,r,j,x,y,z)=>v110011MoveVertex(String(s).toUpperCase(),r,j,x,y,z);window.armSetProfilePoint=(s,r,j,u,v)=>v110011Profile(String(s).toUpperCase(),r,j,u,v);window.armSetElbow=(s,d)=>v110011ElbowBend(String(s).toUpperCase(),d);window.armElbowControl=(s,o)=>v110011ElbowControl(String(s).toUpperCase(),o||{});window.armShowPickers=(on=true)=>{for(const S of ['L','R'])if(RiflemanArmModelerV110011.sides[S])RiflemanArmModelerV110011.sides[S].pickGroup.visible=!!on;};
+  window.armPickMode=m=>{m=String(m).toLowerCase();if(['vertex','edge','face'].includes(m)){RiflemanArmModelerV110011.activePickMode=m;v110012SyncTopologyMode();}};window.armSelectEntity=(side,on=true)=>{
+    side=String(side).toUpperCase();
+    for(const S of ["L","R"]){
+      const st=RiflemanArmModelerV110011.sides[S];
+      if(!st)continue;
+      st.entitySelected=(S===side)&&!!on;
+      if(st.editOverlay)st.editOverlay.visible=state?.mode==="topology"&&st.entitySelected;
+      if(st.editPoints)st.editPoints.visible=state?.mode==="topology"&&st.entitySelected;
+      if(st.entitySelected)v110014aSuppressLegacyArmEditVisuals(S);
+      if(st.displayGroup)st.displayGroup.visible=false;
+      if(!st.entitySelected){
+        st.selected=null;
+        if(st.selectionGroup)v110011Clear(st.selectionGroup);
+      }
+    }
+    return true;
+  };window.armSelectLoop=(s,r)=>v110011SelectLoop(String(s).toUpperCase(),r);window.armMoveLoop=(s,r,x,y,z)=>v110011MoveLoop(String(s).toUpperCase(),r,x,y,z);window.armScaleLoop=(s,r,u,v)=>v110011ScaleLoop(String(s).toUpperCase(),r,u,v);window.armMoveVertex=(s,r,j,x,y,z)=>v110011MoveVertex(String(s).toUpperCase(),r,j,x,y,z);window.armSetProfilePoint=(s,r,j,u,v)=>v110011Profile(String(s).toUpperCase(),r,j,u,v);window.armSetElbow=(s,d)=>v110011ElbowBend(String(s).toUpperCase(),d);window.armElbowControl=(s,o)=>v110011ElbowControl(String(s).toUpperCase(),o||{});window.armShowPickers=(on=true)=>{for(const S of ['L','R'])if(RiflemanArmModelerV110011.sides[S])RiflemanArmModelerV110011.sides[S].pickGroup.visible=!!on;};
   
   window.reportPoseTargetSuppressionV110013c=()=>{
     const root =
@@ -29018,7 +32619,11 @@ window.reportArmTopologyV110011=(side='R')=>{side=String(side).toUpperCase();con
   const leftReady=!!RiflemanArmModelerV110011.sides.L?.mesh;
   const rightReady=!!RiflemanArmModelerV110011.sides.R?.mesh;
   if(!leftReady || !rightReady){
-    throw new Error(`V11 arm installation incomplete: left=${leftReady} right=${rightReady}`);
+    const missing=window.__v110013fMissingBones||null;
+    throw new Error(
+      `V11 arm installation incomplete: left=${leftReady} right=${rightReady}`+
+      (missing?` missingBones=${JSON.stringify(missing)}`:"")
+    );
   }
 
   RiflemanArmModelerV110011.installed=true;
@@ -29029,8 +32634,8 @@ window.reportArmTopologyV110011=(side='R')=>{side=String(side).toUpperCase();con
     st.mesh.visible=true;
     st.mesh.frustumCulled=false;
     st.mesh.material.visible=true;
-    if(st.editOverlay)st.editOverlay.visible=state?.mode==='topology';
-    if(st.editPoints)st.editPoints.visible=state?.mode==='topology';
+    if(st.editOverlay)st.editOverlay.visible=false;
+    if(st.editPoints)st.editPoints.visible=false;
     if(st.pickGroup)st.pickGroup.visible=true;
   }
 
@@ -29052,6 +32657,19 @@ function v110011Schedule(){
     }catch(err){
       RiflemanArmModelerV110011.installed=false;
       window.__RiflemanArmModelerV110011Installed=false;
+
+      // Clean only V11 objects created by an incomplete attempt.
+      const root=v110011Root();
+      for(const S of ['L','R']){
+        const st=RiflemanArmModelerV110011.sides[S];
+        for(const o of [
+          st?.mesh,st?.pickGroup,st?.selectionGroup,st?.displayGroup,
+          st?.shoulderPatch,st?.editOverlay,st?.editPoints,st?.vertexHandle
+        ]){
+          if(o?.parent)o.parent.remove(o);
+        }
+        delete RiflemanArmModelerV110011.sides[S];
+      }
       if(!window.__v110013dInstallErrorLogged){
         window.__v110013dInstallErrorLogged=true;
         console.error('[V11.00.13d] arm installation error',err);
@@ -29405,6 +33023,16 @@ let v139Focused=null;
 
 function v139IsVertex(o){
   const n=(o?.name||"").toLowerCase(),u=o?.userData||{};
+
+  // V11.00.17h: V139 predates the one-buffer/InstancedMesh component system.
+  // It must not recolor or rescale modern authoritative vertex renderers.
+  if(
+    u.excludeLegacyTopologyVisualScale===true ||
+    u.topologyComponentRenderer===true ||
+    u.vertexAuthorityV110015a===true ||
+    u.renderOnlyVertexMarkers===true
+  )return false;
+
   return !!(u.topologyVertex || u.vertexIndex!==undefined ||
     n.includes("vertexhelper") || n.includes("vertex_handle") ||
     n.includes("vertexpoint") || n.includes("topovertex"));
@@ -29704,7 +33332,7 @@ window.V139TopologySelection={
 </script>
 
 
-<div id="v110007ArmHelp" style="position:fixed;left:14px;bottom:52px;z-index:1200;background:rgba(7,15,23,.94);border:1px solid #31506b;border-radius:6px;padding:8px 10px;font:11px ui-monospace,Consolas,monospace;color:#b9d7ea;pointer-events:none"><b style="color:#fff">V11.00.13e ARM MODELING</b> · final V11 arm authority + Blender-like edit cage<br>armPickMode('vertex'|'edge'|'face') · armSelectLoop('L',5) · armElbowControl('L',{width:.05,drop:.05})</div>
+<div id="v110007ArmHelp" style="position:fixed;left:14px;bottom:52px;z-index:1200;background:rgba(7,15,23,.94);border:1px solid #31506b;border-radius:6px;padding:8px 10px;font:11px ui-monospace,Consolas,monospace;color:#b9d7ea;pointer-events:none"><b style="color:#fff">V11.00.13f ARM MODELING</b> · final V11 arm authority + Blender-like edit cage<br>armPickMode('vertex'|'edge'|'face') · armSelectLoop('L',5) · armElbowControl('L',{width:.05,drop:.05})</div>
 
 </body>
 </html>
