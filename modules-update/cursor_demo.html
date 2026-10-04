@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>Third-Person Shooter Cursor Demo</title>
+<style>
+  html,body { margin:0; height:100%; overflow:hidden; background:#111; font-family:system-ui,sans-serif; }
+  canvas { display:block; }
+  #hud { position:fixed; inset:0; pointer-events:none; }
+  #reticle { position:absolute; left:50%; top:50%; width:160px; height:160px; transform:translate(-50%,-50%); }
+  .arm { position:absolute; left:50%; top:50%; width:5px; height:22px; border-radius:3px; transform-origin:50% 50%; }
+  .white { background:#fff; box-shadow:0 0 4px #000,0 0 3px #fff; }
+  .red { background:#ff3038; box-shadow:0 0 5px #ff3038; }
+  /* White + is fixed forever. */
+  #wU { transform:translate(-50%,-42px); }
+  #wD { transform:translate(-50%,20px); }
+  #wL { transform:translate(-42px,-50%) rotate(90deg); }
+  #wR { transform:translate(20px,-50%) rotate(90deg); }
+  /* Red X arms are positioned from JS because spread changes. */
+  .dot { position:absolute; left:50%; top:50%; width:5px; height:5px; border-radius:50%; background:#ff3038;
+         transform:translate(-50%,-50%); box-shadow:0 0 6px #ff3038; }
+  #info { position:fixed; left:18px; top:18px; color:white; background:#0009; padding:12px 14px;
+          border:1px solid #ffffff33; border-radius:8px; font-size:13px; line-height:1.45; }
+  #spreadBar { width:180px; height:6px; background:#ffffff22; margin-top:7px; }
+  #spreadFill { height:100%; width:0%; background:#ff3038; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <div id="reticle">
+    <!-- Fixed WHITE + -->
+    <i id="wU" class="arm white"></i><i id="wD" class="arm white"></i>
+    <i id="wL" class="arm white"></i><i id="wR" class="arm white"></i>
+
+    <!-- Dynamic RED X -->
+    <i id="r0" class="arm red"></i><i id="r1" class="arm red"></i>
+    <i id="r2" class="arm red"></i><i id="r3" class="arm red"></i>
+    <b class="dot"></b>
+  </div>
+
+  <div id="info">
+    <b>Cursor Demo v0.1</b><br>
+    Mouse = aim camera<br>
+    Hold LMB / Space = fire<br>
+    R = reset<br>
+    <span id="state">spread: 0.00</span>
+    <div id="spreadBar"><div id="spreadFill"></div></div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x171b20);
+scene.fog = new THREE.Fog(0x171b20, 22, 65);
+
+const camera = new THREE.PerspectiveCamera(62, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0, 3.0, 7.5);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.prepend(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xaecfff,0x252018,2.1));
+const sun = new THREE.DirectionalLight(0xffffff,3);
+sun.position.set(5,10,4); sun.castShadow=true; scene.add(sun);
+
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(80,80),
+  new THREE.MeshStandardMaterial({color:0x34383b,roughness:1})
+);
+ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; scene.add(ground);
+
+const grid = new THREE.GridHelper(80,80,0x65707a,0x41484e);
+grid.position.y=.01; scene.add(grid);
+
+// Simple target dummy
+const target = new THREE.Group();
+const body = new THREE.Mesh(
+  new THREE.CapsuleGeometry(.55,1.15,5,10),
+  new THREE.MeshStandardMaterial({color:0x59636d,roughness:.7})
+);
+body.position.y=1.25; body.castShadow=true; target.add(body);
+const head = new THREE.Mesh(
+  new THREE.SphereGeometry(.38,16,12),
+  new THREE.MeshStandardMaterial({color:0x707b86})
+);
+head.position.y=2.35; target.add(head);
+target.position.set(0,0,-9); scene.add(target);
+
+// A shoulder-camera placeholder player.
+const player = new THREE.Mesh(
+  new THREE.CapsuleGeometry(.48,1.2,5,10),
+  new THREE.MeshStandardMaterial({color:0xd8dde2,roughness:.5})
+);
+player.position.set(-1.25,1.2,2.1); scene.add(player);
+
+let yaw=0, pitch=-0.06, firing=false;
+let spread=0;                       // 0..1 visual recoil/accuracy bloom
+const SPREAD_GAIN=1.75;             // bloom per second while firing
+const SPREAD_RECOVERY=2.35;         // recovery per second
+const MAX_RED_RADIUS=43;            // px from center
+const MIN_RED_RADIUS=13;            // px from center
+
+const red = [0,1,2,3].map(i=>document.querySelector('#r'+i));
+const state = document.querySelector('#state');
+const fill = document.querySelector('#spreadFill');
+
+function setRedX(s) {
+  // Only RED X changes. White + never receives an animation transform.
+  const radius = THREE.MathUtils.lerp(MIN_RED_RADIUS,MAX_RED_RADIUS,s);
+  const dirs = [
+    [-1,-1, -45], [1,-1, 45],
+    [-1, 1,  45], [1, 1,-45]
+  ];
+  dirs.forEach((d,i)=>{
+    const len = Math.hypot(d[0],d[1]);
+    const x = d[0]/len*radius, y=d[1]/len*radius;
+    red[i].style.transform =
+      `translate(calc(-50% + ${x}px),calc(-50% + ${y}px)) rotate(${d[2]}deg)`;
+  });
+  state.textContent=`spread: ${s.toFixed(2)} | red radius: ${radius.toFixed(1)} px`;
+  fill.style.width=(s*100)+'%';
+}
+setRedX(0);
+
+addEventListener('mousedown',e=>{ if(e.button===0) firing=true; });
+addEventListener('mouseup',e=>{ if(e.button===0) firing=false; });
+addEventListener('keydown',e=>{
+  if(e.code==='Space'){ firing=true; e.preventDefault(); }
+  if(e.code==='KeyR'){ spread=0; }
+});
+addEventListener('keyup',e=>{ if(e.code==='Space') firing=false; });
+
+addEventListener('mousemove',e=>{
+  if(document.pointerLockElement===renderer.domElement){
+    yaw -= e.movementX*.0022;
+    pitch = THREE.MathUtils.clamp(pitch-e.movementY*.0017,-.45,.3);
+  }
+});
+renderer.domElement.addEventListener('click',()=>renderer.domElement.requestPointerLock());
+
+const clock=new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),.033);
+
+  if(firing) spread=Math.min(1,spread+SPREAD_GAIN*dt);
+  else spread=Math.max(0,spread-SPREAD_RECOVERY*dt);
+  setRedX(spread);
+
+  // Mild third-person camera aiming, while reticle stays screen centered.
+  camera.rotation.order='YXZ';
+  camera.rotation.y=yaw;
+  camera.rotation.x=pitch;
+
+  // Give the target a little motion so the fixed screen-space cursor is obvious.
+  target.position.x=Math.sin(performance.now()*.00045)*2.2;
+
+  renderer.render(scene,camera);
+}
+animate();
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
